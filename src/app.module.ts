@@ -22,6 +22,7 @@ import { InventoryModule } from './modules/inventory/inventory.module'
 import { PurchaseModule } from './modules/purchase/purchase.module'
 import { SalesOrderModule } from './modules/sales-order/sales-order.module'
 import { ShipmentModule } from './modules/shipment/shipment.module'
+import { PaymentModule } from './modules/payment/payment.module'
 
 @Module({
   imports: [
@@ -77,11 +78,12 @@ import { ShipmentModule } from './modules/shipment/shipment.module'
     // 字典服务
     DictionaryModule,
 
-    // 库存 + 采购 + 订单 + 发货
+    // 库存 + 采购 + 订单 + 发货 + 收款
     InventoryModule,
     PurchaseModule,
     SalesOrderModule,
     ShipmentModule,
+    PaymentModule,
   ],
   controllers: [AppController],
 })
