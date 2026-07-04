@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { TypeOrmModule } from '@nestjs/typeorm'
 import { WinstonModule } from 'nest-winston'
 import { RedisModule } from './common/redis/redis.module'
+import { AuthModule } from './modules/auth/auth.module'
+import { UserModule } from './modules/user/user.module'
 import { loggerConfig } from './config/logger.config'
 import { AppController } from './app.controller'
 
@@ -38,6 +40,10 @@ import { AppController } from './app.controller'
 
     // Redis 全局模块
     RedisModule,
+
+    // 业务模块
+    AuthModule,
+    UserModule,
   ],
   controllers: [AppController],
 })
