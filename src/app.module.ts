@@ -5,6 +5,15 @@ import { WinstonModule } from 'nest-winston'
 import { RedisModule } from './common/redis/redis.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { UserModule } from './modules/user/user.module'
+import { SupplierModule } from './modules/supplier/supplier.module'
+import { CategoryModule } from './modules/category/category.module'
+import { ProductModule } from './modules/product/product.module'
+import { SalespersonModule } from './modules/salesperson/salesperson.module'
+import { ExpressCompanyModule } from './modules/express-company/express-company.module'
+import { TransportChannelModule } from './modules/transport-channel/transport-channel.module'
+import { CostTypeModule } from './modules/cost-type/cost-type.module'
+import { SystemConfigModule } from './modules/system-config/system-config.module'
+import { CommonContactModule } from './modules/common-contact/common-contact.module'
 import { loggerConfig } from './config/logger.config'
 import { AppController } from './app.controller'
 
@@ -41,9 +50,20 @@ import { AppController } from './app.controller'
     // Redis 全局模块
     RedisModule,
 
-    // 业务模块
+    // 认证 & 用户
     AuthModule,
     UserModule,
+
+    // 基础资料模块
+    SupplierModule,
+    CategoryModule,
+    ProductModule,
+    SalespersonModule,
+    ExpressCompanyModule,
+    TransportChannelModule,
+    CostTypeModule,
+    SystemConfigModule,
+    CommonContactModule,
   ],
   controllers: [AppController],
 })
