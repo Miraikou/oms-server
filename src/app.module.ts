@@ -18,6 +18,8 @@ import { loggerConfig } from './config/logger.config'
 import { AppController } from './app.controller'
 import { SequenceModule } from './common/services/sequence.module'
 import { DictionaryModule } from './modules/dictionary/dictionary.module'
+import { InventoryModule } from './modules/inventory/inventory.module'
+import { PurchaseModule } from './modules/purchase/purchase.module'
 
 @Module({
   imports: [
@@ -72,6 +74,10 @@ import { DictionaryModule } from './modules/dictionary/dictionary.module'
 
     // 字典服务
     DictionaryModule,
+
+    // 库存 + 采购
+    InventoryModule,
+    PurchaseModule,
   ],
   controllers: [AppController],
 })
