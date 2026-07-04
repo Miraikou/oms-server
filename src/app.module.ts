@@ -20,6 +20,7 @@ import { SequenceModule } from './common/services/sequence.module'
 import { DictionaryModule } from './modules/dictionary/dictionary.module'
 import { InventoryModule } from './modules/inventory/inventory.module'
 import { PurchaseModule } from './modules/purchase/purchase.module'
+import { SalesOrderModule } from './modules/sales-order/sales-order.module'
 
 @Module({
   imports: [
@@ -75,9 +76,10 @@ import { PurchaseModule } from './modules/purchase/purchase.module'
     // 字典服务
     DictionaryModule,
 
-    // 库存 + 采购
+    // 库存 + 采购 + 订单
     InventoryModule,
     PurchaseModule,
+    SalesOrderModule,
   ],
   controllers: [AppController],
 })
