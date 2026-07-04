@@ -16,6 +16,8 @@ import { SystemConfigModule } from './modules/system-config/system-config.module
 import { CommonContactModule } from './modules/common-contact/common-contact.module'
 import { loggerConfig } from './config/logger.config'
 import { AppController } from './app.controller'
+import { SequenceModule } from './common/services/sequence.module'
+import { DictionaryModule } from './modules/dictionary/dictionary.module'
 
 @Module({
   imports: [
@@ -50,6 +52,9 @@ import { AppController } from './app.controller'
     // Redis 全局模块
     RedisModule,
 
+    // 编号生成全局模块
+    SequenceModule,
+
     // 认证 & 用户
     AuthModule,
     UserModule,
@@ -64,6 +69,9 @@ import { AppController } from './app.controller'
     CostTypeModule,
     SystemConfigModule,
     CommonContactModule,
+
+    // 字典服务
+    DictionaryModule,
   ],
   controllers: [AppController],
 })
