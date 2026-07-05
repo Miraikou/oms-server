@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common'
+import { Controller, Get, Param, Query, UseGuards, NotFoundException } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
 import { LoginLogService } from './login-log.service'
@@ -24,9 +24,19 @@ export class LoginLogController {
     @Query('page') page?: number,
     @Query('pageSize') pageSize?: number,
   ) {
+    // 安全转换 loginResult：空字符串和非数字字符串均视为未传入
+    const loginResultNum =
+      loginResult !== undefined && loginResult !== ''
+        ? Number(loginResult)
+        : undefined
+    const safeLoginResult =
+      loginResultNum !== undefined && !isNaN(loginResultNum)
+        ? loginResultNum
+        : undefined
+
     return this.loginLogService.findAll({
       username,
-      loginResult: loginResult !== undefined ? Number(loginResult) : undefined,
+      loginResult: safeLoginResult,
       startTime,
       endTime,
       page,
@@ -36,7 +46,11 @@ export class LoginLogController {
 
   @Get(':id')
   @ApiOperation({ summary: '登录日志详情' })
-  findOne(@Param('id') id: string) {
-    return this.loginLogService.findOne(id)
+  async findOne(@Param('id') id: string) {
+    const log = await this.loginLogService.findOne(id)
+    if (!log) {
+      throw new NotFoundException(`登录日志 ${id} 不存在`)
+    }
+    return log
   }
 }

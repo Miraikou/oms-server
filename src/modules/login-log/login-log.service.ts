@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository, Between, Like } from 'typeorm'
+import { Repository } from 'typeorm'
 import { SysLoginLog } from '../auth/entities/sys-login-log.entity'
 
 /** 登录日志查询参数 */
@@ -31,34 +31,40 @@ export class LoginLogService {
    * @param query 查询参数
    */
   async findAll(query: LoginLogQuery) {
-    const page = query.page || 1
-    const pageSize = query.pageSize || 20
-    const qb = this.loginLogRepo.createQueryBuilder('log')
+    const page = parseInt(String(query.page), 10) || 1
+    const pageSize = parseInt(String(query.pageSize), 10) || 20
 
-    // 条件过滤
-    if (query.username) {
-      qb.andWhere('log.username LIKE :username', { username: `%${query.username}%` })
-    }
-    if (query.loginResult !== undefined && query.loginResult !== null) {
-      qb.andWhere('log.loginResult = :loginResult', { loginResult: query.loginResult })
-    }
-    if (query.startTime && query.endTime) {
-      qb.andWhere('log.loginTime BETWEEN :startTime AND :endTime', {
-        startTime: query.startTime,
-        endTime: query.endTime,
-      })
-    } else if (query.startTime) {
-      qb.andWhere('log.loginTime >= :startTime', { startTime: query.startTime })
-    } else if (query.endTime) {
-      qb.andWhere('log.loginTime <= :endTime', { endTime: query.endTime })
-    }
+    try {
+      const qb = this.loginLogRepo.createQueryBuilder('log')
 
-    qb.orderBy('log.loginTime', 'DESC')
-      .skip((page - 1) * pageSize)
-      .take(pageSize)
+      // 条件过滤
+      if (query.username) {
+        qb.andWhere('log.username LIKE :username', { username: `%${query.username}%` })
+      }
+      if (query.loginResult !== undefined && query.loginResult !== null) {
+        qb.andWhere('log.loginResult = :loginResult', { loginResult: query.loginResult })
+      }
+      if (query.startTime && query.endTime) {
+        qb.andWhere('log.loginTime BETWEEN :startTime AND :endTime', {
+          startTime: query.startTime,
+          endTime: query.endTime,
+        })
+      } else if (query.startTime) {
+        qb.andWhere('log.loginTime >= :startTime', { startTime: query.startTime })
+      } else if (query.endTime) {
+        qb.andWhere('log.loginTime <= :endTime', { endTime: query.endTime })
+      }
 
-    const [list, total] = await qb.getManyAndCount()
-    return { list, total, page, pageSize }
+      qb.orderBy('log.loginTime', 'DESC')
+        .skip((page - 1) * pageSize)
+        .take(pageSize)
+
+      const [list, total] = await qb.getManyAndCount()
+      return { list, total, page, pageSize }
+    } catch (error) {
+      this.logger.error('查询登录日志失败', error instanceof Error ? error.stack : error)
+      throw error
+    }
   }
 
   /**
