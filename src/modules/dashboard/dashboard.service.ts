@@ -255,13 +255,8 @@ export class DashboardService {
    */
   async getPendingItems() {
     type CountResult = Array<{ count: string }>;
-    const [
-      pendingShipment,
-      pendingPayment,
-      pendingReceipt,
-      inventoryWarnings,
-    ]: [CountResult, CountResult, CountResult, CountResult] =
-      await Promise.all([
+    const [pendingShipment, pendingPayment, pendingReceipt, inventoryWarnings] =
+      (await Promise.all([
         this.dataSource.query(
           `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND shipment_status IN (1, 2)`,
         ),
@@ -273,9 +268,9 @@ export class DashboardService {
         ),
         this.dataSource.query(
           `SELECT COUNT(*) AS count FROM inventory
-           WHERE CAST(available_quantity AS DECIMAL(18,4)) < CAST(minimum_stock AS DECIMAL(18,4))`,
+         WHERE CAST(available_quantity AS DECIMAL(18,4)) < CAST(minimum_stock AS DECIMAL(18,4))`,
         ),
-      ]);
+      ])) as [CountResult, CountResult, CountResult, CountResult];
 
     return {
       pendingShipment: parseInt(pendingShipment[0]?.count || '0'),
