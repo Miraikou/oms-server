@@ -6,6 +6,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { RoleModule } from './modules/role/role.module';
 import { MenuModule } from './modules/menu/menu.module';
 import { OperationLogModule } from './modules/operation-log/operation-log.module';
+import { LoginLogModule } from './modules/login-log/login-log.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { SupplierModule } from './modules/supplier/supplier.module';
@@ -70,6 +71,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     RoleModule,
     MenuModule,
     OperationLogModule,
+    LoginLogModule,
 
     // 认证 & 用户
     AuthModule,
