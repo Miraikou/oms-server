@@ -159,7 +159,9 @@ export class PurchaseReturnService {
       qb.andWhere('r.returnDate <= :endDate', { endDate: query.endDate })
     }
 
-    qb.orderBy('r.createdTime', 'DESC')
+    const sortField = query.sortField || 'createdTime'
+    const sortOrder = query.sortOrder || 'DESC'
+    qb.orderBy(`r.${sortField}`, sortOrder)
       .skip((page - 1) * pageSize)
       .take(pageSize)
 

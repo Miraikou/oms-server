@@ -147,7 +147,10 @@ export class AuthService {
    * @param userId 用户 ID（从 JWT 中提取）
    */
   async getProfile(userId: string) {
-    const user = await this.userRepo.findOne({ where: { id: userId } })
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: { id: true, username: true, realName: true },
+    })
     if (!user) {
       throw new UnauthorizedException('用户不存在')
     }

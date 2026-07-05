@@ -277,10 +277,18 @@ export class MenuService {
   /**
    * 查询全部菜单含按钮（用于菜单管理页面）
    */
-  async findAllWithButtons() {
-    const menus = await this.menuRepo
-      .createQueryBuilder('menu')
-      .orderBy('menu.sortNo', 'ASC')
+  async findAllWithButtons(query?: { keyword?: string; status?: number }) {
+    const qb = this.menuRepo.createQueryBuilder('menu')
+
+    if (query?.keyword) {
+      qb.andWhere('menu.menuName LIKE :kw', { kw: `%${query.keyword}%` })
+    }
+    if (query?.status !== undefined) {
+      qb.andWhere('menu.status = :status', { status: query.status })
+    }
+
+    const menus = await qb
+      .orderBy('menu.sort', 'ASC')
       .addOrderBy('menu.createdTime', 'ASC')
       .getMany()
 

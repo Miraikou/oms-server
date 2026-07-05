@@ -1,5 +1,6 @@
-import { IsOptional, IsString, IsNumberString } from 'class-validator'
+import { IsOptional, IsString, IsIn } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
+import { Type } from 'class-transformer'
 
 /** 菜单查询 DTO */
 export class QueryMenuDto {
@@ -10,6 +11,7 @@ export class QueryMenuDto {
 
   @ApiProperty({ required: false, description: '状态筛选' })
   @IsOptional()
-  @IsNumberString()
+  @Type(() => Number)
+  @IsIn([0, 1])
   status?: number
 }

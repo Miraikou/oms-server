@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { ShipmentService } from './shipment.service'
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
-import type { CreateShipmentDto, QueryShipmentDto } from './dto/shipment.dto'
+import { CreateShipmentDto, QueryShipmentDto } from './dto/shipment.dto'
 
 @ApiTags('发货管理')
 @ApiBearerAuth()

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
+import { Repository, DataSource } from 'typeorm'
 import * as bcrypt from 'bcryptjs'
 import { SysUser } from './entities/sys-user.entity'
 import { RoleService } from '../role/role.service'
@@ -21,14 +21,15 @@ export class UserService {
     @InjectRepository(SysUser)
     private readonly userRepo: Repository<SysUser>,
     private readonly roleService: RoleService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
    * 分页查询用户列表
    */
   async findAll(query: QueryUserDto) {
-    const page = query.page || 1
-    const pageSize = query.pageSize || 20
+    const page = query.page ?? 1
+    const pageSize = query.pageSize ?? 20
 
     const qb = this.userRepo.createQueryBuilder('user')
       .select([
@@ -56,7 +57,9 @@ export class UserService {
       qb.andWhere('user.status = :status', { status: query.status })
     }
 
-    qb.orderBy('user.createdTime', 'DESC')
+    const sortField = query.sortField || 'createdTime'
+    const sortOrder = query.sortOrder || 'DESC'
+    qb.orderBy(`user.${sortField}`, sortOrder)
       .skip((page - 1) * pageSize)
       .take(pageSize)
 
@@ -97,7 +100,7 @@ export class UserService {
   }
 
   /**
-   * 创建用户
+   * 创建用户（事务：用户保存 + 角色分配原子执行）
    */
   async create(dto: CreateUserDto) {
     // 检查用户名是否已存在
@@ -108,34 +111,37 @@ export class UserService {
       throw new ConflictException('用户名已存在')
     }
 
-    const user = this.userRepo.create({
-      id: snowflake.nextId(),
-      username: dto.username,
-      password: await bcrypt.hash(dto.password, 10),
-      realName: dto.realName,
-      phone: dto.phone || null,
-      email: dto.email || null,
-      status: dto.status ?? 1,
-      remark: dto.remark || null,
+    return this.dataSource.transaction(async (manager) => {
+      const user = manager.create(SysUser, {
+        id: snowflake.nextId(),
+        username: dto.username,
+        password: await bcrypt.hash(dto.password, 10),
+        realName: dto.realName,
+        phone: dto.phone || null,
+        email: dto.email || null,
+        status: dto.status ?? 1,
+        remark: dto.remark || null,
+      })
+
+      const saved = await manager.save(user)
+
+      // 分配角色（roleIds 为空数组时不操作，避免无角色登录）
+      if (dto.roleIds && dto.roleIds.length > 0) {
+        await this.roleService.assignUserRoles(saved.id, dto.roleIds)
+      }
+
+      return {
+        id: saved.id,
+        username: saved.username,
+        realName: saved.realName,
+        status: saved.status,
+      }
     })
-
-    const saved = await this.userRepo.save(user)
-
-    // 分配角色
-    if (dto.roleIds && dto.roleIds.length > 0) {
-      await this.roleService.assignUserRoles(saved.id, dto.roleIds)
-    }
-
-    return {
-      id: saved.id,
-      username: saved.username,
-      realName: saved.realName,
-      status: saved.status,
-    }
   }
 
   /**
-   * 更新用户
+   * 更新用户（事务：用户保存 + 角色分配原子执行）
+   * 传 roleIds: [] 会清除全部角色（有意的安全管理操作）
    */
   async update(id: string, dto: UpdateUserDto) {
     const user = await this.userRepo.findOne({ where: { id } })
@@ -143,20 +149,22 @@ export class UserService {
       throw new NotFoundException('用户不存在')
     }
 
-    if (dto.realName !== undefined) user.realName = dto.realName
-    if (dto.phone !== undefined) user.phone = dto.phone
-    if (dto.email !== undefined) user.email = dto.email
-    if (dto.status !== undefined) user.status = dto.status
-    if (dto.remark !== undefined) user.remark = dto.remark
+    return this.dataSource.transaction(async (manager) => {
+      if (dto.realName !== undefined) user.realName = dto.realName
+      if (dto.phone !== undefined) user.phone = dto.phone
+      if (dto.email !== undefined) user.email = dto.email
+      if (dto.status !== undefined) user.status = dto.status
+      if (dto.remark !== undefined) user.remark = dto.remark
 
-    await this.userRepo.save(user)
+      await manager.save(user)
 
-    // 更新角色
-    if (dto.roleIds !== undefined) {
-      await this.roleService.assignUserRoles(id, dto.roleIds)
-    }
+      // 仅当明确传入 roleIds 时才更新角色
+      if (dto.roleIds !== undefined) {
+        await this.roleService.assignUserRoles(id, dto.roleIds)
+      }
 
-    return { id: user.id, username: user.username, realName: user.realName }
+      return { id: user.id, username: user.username, realName: user.realName }
+    })
   }
 
   /**

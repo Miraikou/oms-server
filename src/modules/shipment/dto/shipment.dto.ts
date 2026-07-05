@@ -1,47 +1,84 @@
-/**
- * 发货管理 DTO
- */
+import { IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator'
+import { Type } from 'class-transformer'
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
 
 /** 发货明细项 DTO */
-export interface CreateShipmentItemDto {
-  /** 订单商品 ID */
+export class CreateShipmentItemDto {
+  @ApiProperty({ description: '订单商品 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '订单商品不能为空' })
   orderItemId: string
-  /** 发货数量 */
+
+  @ApiProperty({ description: '发货数量' })
+  @IsString()
+  @IsNotEmpty({ message: '发货数量不能为空' })
   quantity: string
 }
 
 /** 创建发货单 DTO */
-export interface CreateShipmentDto {
-  /** 订单 ID */
+export class CreateShipmentDto {
+  @ApiProperty({ description: '订单 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '订单不能为空' })
   orderId: string
-  /** 快递公司 ID */
+
+  @ApiProperty({ description: '快递公司 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '快递公司不能为空' })
   expressCompanyId: string
-  /** 快递单号 */
+
+  @ApiProperty({ description: '快递单号' })
+  @IsString()
+  @IsNotEmpty({ message: '快递单号不能为空' })
   trackingNo: string
-  /** 发货日期 */
+
+  @ApiProperty({ description: '发货日期' })
+  @IsString()
+  @IsNotEmpty({ message: '发货日期不能为空' })
   shipmentDate: string
-  /** 备注 */
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
   remark?: string
-  /** 发货明细（至少一项） */
+
+  @ApiProperty({ description: '发货明细（至少一项）', type: [CreateShipmentItemDto] })
+  @IsArray({ message: '发货明细不能为空' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateShipmentItemDto)
   items: CreateShipmentItemDto[]
 }
 
 /** 发货查询 DTO */
-export interface QueryShipmentDto {
-  /** 发货单号（模糊） */
+export class QueryShipmentDto extends PaginationParamsDto {
+  @ApiPropertyOptional({ description: '发货单号（模糊）' })
+  @IsString()
+  @IsOptional()
   shipmentNo?: string
-  /** 订单 ID */
+
+  @ApiPropertyOptional({ description: '订单 ID' })
+  @IsString()
+  @IsOptional()
   orderId?: string
-  /** 快递公司 ID */
+
+  @ApiPropertyOptional({ description: '快递公司 ID' })
+  @IsString()
+  @IsOptional()
   expressCompanyId?: string
-  /** 快递单号（模糊） */
+
+  @ApiPropertyOptional({ description: '快递单号（模糊）' })
+  @IsString()
+  @IsOptional()
   trackingNo?: string
-  /** 开始日期 */
+
+  @ApiPropertyOptional({ description: '开始日期' })
+  @IsString()
+  @IsOptional()
   startDate?: string
-  /** 结束日期 */
+
+  @ApiPropertyOptional({ description: '结束日期' })
+  @IsString()
+  @IsOptional()
   endDate?: string
-  /** 页码 */
-  page?: number
-  /** 每页条数 */
-  pageSize?: number
 }

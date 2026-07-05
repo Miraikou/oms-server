@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { PurchaseReturnService } from './purchase-return.service'
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
-import type { CreatePurchaseReturnDto, QueryPurchaseReturnDto } from './dto/purchase-return.dto'
+import { CreatePurchaseReturnDto, QueryPurchaseReturnDto } from './dto/purchase-return.dto'
 
 @ApiTags('采购退货')
 @ApiBearerAuth()

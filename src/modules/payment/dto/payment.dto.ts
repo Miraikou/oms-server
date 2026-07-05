@@ -1,39 +1,69 @@
-/**
- * 收款管理 DTO
- */
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator'
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
 
 /** 创建收款 DTO */
-export interface CreatePaymentDto {
-  /** 订单 ID */
+export class CreatePaymentDto {
+  @ApiProperty({ description: '订单 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '订单不能为空' })
   orderId: string
-  /** 本次收款（USD） */
+
+  @ApiProperty({ description: '本次收款（USD）' })
+  @IsString()
+  @IsNotEmpty({ message: '收款金额不能为空' })
   usdAmount: string
-  /** 实际汇率 */
+
+  @ApiProperty({ description: '实际汇率' })
+  @IsString()
+  @IsNotEmpty({ message: '汇率不能为空' })
   exchangeRate: string
-  /** 实际到账人民币 */
+
+  @ApiProperty({ description: '实际到账人民币' })
+  @IsString()
+  @IsNotEmpty({ message: '到账金额不能为空' })
   cnyAmount: string
-  /** 收款日期 */
+
+  @ApiProperty({ description: '收款日期' })
+  @IsString()
+  @IsNotEmpty({ message: '收款日期不能为空' })
   paymentDate: string
-  /** 收款方式 */
+
+  @ApiPropertyOptional({ description: '收款方式' })
+  @IsString()
+  @IsOptional()
   paymentMethod?: string
-  /** 付款方 */
+
+  @ApiPropertyOptional({ description: '付款方' })
+  @IsString()
+  @IsOptional()
   payer?: string
-  /** 备注 */
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
   remark?: string
 }
 
 /** 收款查询 DTO */
-export interface QueryPaymentDto {
-  /** 收款单号（模糊） */
+export class QueryPaymentDto extends PaginationParamsDto {
+  @ApiPropertyOptional({ description: '收款单号（模糊）' })
+  @IsString()
+  @IsOptional()
   paymentNo?: string
-  /** 订单 ID */
+
+  @ApiPropertyOptional({ description: '订单 ID' })
+  @IsString()
+  @IsOptional()
   orderId?: string
-  /** 开始日期 */
+
+  @ApiPropertyOptional({ description: '开始日期' })
+  @IsString()
+  @IsOptional()
   startDate?: string
-  /** 结束日期 */
+
+  @ApiPropertyOptional({ description: '结束日期' })
+  @IsString()
+  @IsOptional()
   endDate?: string
-  /** 页码 */
-  page?: number
-  /** 每页条数 */
-  pageSize?: number
 }

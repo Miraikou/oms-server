@@ -31,7 +31,7 @@ export class MenuController {
   @Get()
   @ApiOperation({ summary: '菜单列表（树形，含按钮）' })
   findAll(@Query() query: QueryMenuDto) {
-    return this.menuService.findAllWithButtons()
+    return this.menuService.findAllWithButtons(query)
   }
 
   @Get(':id')

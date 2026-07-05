@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { PaymentService } from './payment.service'
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
-import type { CreatePaymentDto, QueryPaymentDto } from './dto/payment.dto'
+import { CreatePaymentDto, QueryPaymentDto } from './dto/payment.dto'
 
 @ApiTags('收款管理')
 @ApiBearerAuth()

@@ -283,7 +283,9 @@ export class ShipmentService {
       qb.andWhere('s.shipmentDate <= :endDate', { endDate: query.endDate })
     }
 
-    qb.orderBy('s.createdTime', 'DESC')
+    const sortField = query.sortField || 'createdTime'
+    const sortOrder = query.sortOrder || 'DESC'
+    qb.orderBy(`s.${sortField}`, sortOrder)
       .skip((page - 1) * pageSize)
       .take(pageSize)
 

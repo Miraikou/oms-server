@@ -6,7 +6,7 @@ import { Inventory } from './entities/inventory.entity'
 import { InventoryBatch } from './entities/inventory-batch.entity'
 import { InventoryFlow } from './entities/inventory-flow.entity'
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
-import type { QueryInventoryDto, QueryInventoryFlowDto } from './dto/inventory-adjustment.dto'
+import { QueryInventoryDto, QueryInventoryFlowDto } from './dto/inventory-adjustment.dto'
 
 @ApiTags('库存管理')
 @ApiBearerAuth()

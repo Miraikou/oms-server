@@ -195,15 +195,15 @@ export class SalesReturnService {
           }
         }
 
-        // 5. 更新订单明细 returnedQuantity
-        const orderItems = await manager.find(SalesOrderItem, {
-          where: { orderId: dto.orderId, productId: shipItem!.productId },
+        // 5. 更新订单明细 returnedQuantity（精确到发货明细对应的 orderItemId）
+        const orderItem = await manager.findOne(SalesOrderItem, {
+          where: { id: shipItem!.orderItemId },
         })
-        for (const oi of orderItems) {
-          oi.returnedQuantity = (
-            parseFloat(oi.returnedQuantity) + parseFloat(dtoItem.quantity)
+        if (orderItem) {
+          orderItem.returnedQuantity = (
+            parseFloat(orderItem.returnedQuantity) + parseFloat(dtoItem.quantity)
           ).toFixed(4)
-          await manager.save(oi)
+          await manager.save(orderItem)
         }
       }
 
@@ -246,7 +246,9 @@ export class SalesReturnService {
       qb.andWhere('r.returnDate <= :endDate', { endDate: query.endDate })
     }
 
-    qb.orderBy('r.createdTime', 'DESC')
+    const sortField = query.sortField || 'createdTime'
+    const sortOrder = query.sortOrder || 'DESC'
+    qb.orderBy(`r.${sortField}`, sortOrder)
       .skip((page - 1) * pageSize)
       .take(pageSize)
 
