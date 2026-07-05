@@ -1,5 +1,6 @@
 import { IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
 
 /** 通用名称类 DTO（适用于快递公司/运输渠道/成本类型等简单模块） */
 export class CreateNameDto {
@@ -39,7 +40,7 @@ export class UpdateNameDto {
   remark?: string
 }
 
-export class QueryNameDto {
+export class QueryNameDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '关键词' })
   @IsString()
   @IsOptional()
@@ -49,12 +50,4 @@ export class QueryNameDto {
   @IsIn([0, 1])
   @IsOptional()
   status?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  page?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  pageSize?: number
 }

@@ -8,6 +8,8 @@ import { AuthService } from './auth.service'
 import { JwtStrategy } from './strategies/jwt.strategy'
 import { SysUser } from '../user/entities/sys-user.entity'
 import { SysLoginLog } from './entities/sys-login-log.entity'
+import { RoleModule } from '../role/role.module'
+import { MenuModule } from '../menu/menu.module'
 
 /**
  * 认证模块
@@ -17,6 +19,8 @@ import { SysLoginLog } from './entities/sys-login-log.entity'
   imports: [
     TypeOrmModule.forFeature([SysUser, SysLoginLog]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    RoleModule,
+    MenuModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

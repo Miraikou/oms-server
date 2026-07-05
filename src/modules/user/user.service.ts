@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import * as bcrypt from 'bcryptjs'
 import { SysUser } from './entities/sys-user.entity'
+import { RoleService } from '../role/role.service'
 import type { CreateUserDto, UpdateUserDto, QueryUserDto } from './dto/user.dto'
 import { snowflake } from '@/common/utils/snowflake'
 
@@ -19,6 +20,7 @@ export class UserService {
   constructor(
     @InjectRepository(SysUser)
     private readonly userRepo: Repository<SysUser>,
+    private readonly roleService: RoleService,
   ) {}
 
   /**
@@ -88,7 +90,10 @@ export class UserService {
       throw new NotFoundException('用户不存在')
     }
 
-    return user
+    // 查询用户角色
+    const roles = await this.roleService.findUserRoles(id)
+
+    return { ...user, roles }
   }
 
   /**
@@ -116,6 +121,11 @@ export class UserService {
 
     const saved = await this.userRepo.save(user)
 
+    // 分配角色
+    if (dto.roleIds && dto.roleIds.length > 0) {
+      await this.roleService.assignUserRoles(saved.id, dto.roleIds)
+    }
+
     return {
       id: saved.id,
       username: saved.username,
@@ -140,6 +150,11 @@ export class UserService {
     if (dto.remark !== undefined) user.remark = dto.remark
 
     await this.userRepo.save(user)
+
+    // 更新角色
+    if (dto.roleIds !== undefined) {
+      await this.roleService.assignUserRoles(id, dto.roleIds)
+    }
 
     return { id: user.id, username: user.username, realName: user.realName }
   }
@@ -174,10 +189,22 @@ export class UserService {
 
   /**
    * 创建种子管理员账号（仅当不存在 admin 用户时）
+   * 自动分配 SUPER_ADMIN 角色
    */
   async seedAdmin() {
     const admin = await this.userRepo.findOne({ where: { username: 'admin' } })
-    if (admin) return null
+    if (admin) {
+      // 确保 admin 已有 SUPER_ADMIN 角色
+      const roles = await this.roleService.findUserRoleCodes(admin.id)
+      if (!roles.includes('SUPER_ADMIN')) {
+        const superAdminRole = await this.roleService.findAllActive()
+        const saRole = superAdminRole.find((r) => r.roleCode === 'SUPER_ADMIN')
+        if (saRole) {
+          await this.roleService.assignUserRoles(admin.id, [saRole.id])
+        }
+      }
+      return null
+    }
 
     const newAdmin = this.userRepo.create({
       id: snowflake.nextId(),
@@ -187,6 +214,15 @@ export class UserService {
       status: 1,
     })
 
-    return this.userRepo.save(newAdmin)
+    const saved = await this.userRepo.save(newAdmin)
+
+    // 分配 SUPER_ADMIN 角色
+    const allRoles = await this.roleService.findAllActive()
+    const saRole = allRoles.find((r) => r.roleCode === 'SUPER_ADMIN')
+    if (saRole) {
+      await this.roleService.assignUserRoles(saved.id, [saRole.id])
+    }
+
+    return saved
   }
 }

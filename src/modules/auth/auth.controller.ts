@@ -62,6 +62,18 @@ export class AuthController {
   }
 
   /**
+   * 获取当前用户的菜单树（供前端动态路由）
+   * GET /api/v1/auth/menus
+   */
+  @Get('menus')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '获取当前用户菜单和权限' })
+  async getUserMenus(@CurrentUser() user: JwtPayload) {
+    return this.authService.getUserMenus(user.sub)
+  }
+
+  /**
    * 修改密码
    * POST /api/v1/auth/change-password
    */

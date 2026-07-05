@@ -11,6 +11,8 @@ import * as bcrypt from 'bcryptjs'
 import { ConfigService } from '@nestjs/config'
 import { SysUser } from '../user/entities/sys-user.entity'
 import { SysLoginLog } from './entities/sys-login-log.entity'
+import { RoleService } from '../role/role.service'
+import { MenuService } from '../menu/menu.service'
 import type { LoginDto, ChangePasswordDto } from './dto/auth.dto'
 import { snowflake } from '../../common/utils/snowflake'
 
@@ -35,6 +37,8 @@ export class AuthService {
     private readonly loginLogRepo: Repository<SysLoginLog>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly roleService: RoleService,
+    private readonly menuService: MenuService,
   ) {}
 
   /**
@@ -75,6 +79,9 @@ export class AuthService {
 
     this.logger.log(`用户 ${user.username} 登录成功`)
 
+    // 查询用户角色
+    const roles = await this.roleService.findUserRoleCodes(user.id)
+
     return {
       accessToken,
       refreshToken,
@@ -82,7 +89,7 @@ export class AuthService {
         id: user.id,
         username: user.username,
         realName: user.realName,
-        roles: [], // 步骤 12 RBAC 中完善
+        roles,
       },
     }
   }
@@ -145,12 +152,30 @@ export class AuthService {
       throw new UnauthorizedException('用户不存在')
     }
 
+    const roles = await this.roleService.findUserRoleCodes(userId)
+
     return {
       id: user.id,
       username: user.username,
       realName: user.realName,
-      roles: [], // 步骤 12 RBAC 中完善
+      roles,
     }
+  }
+
+  /**
+   * 获取当前用户的菜单树和权限标识列表
+   * @param userId 用户 ID
+   */
+  async getUserMenus(userId: string) {
+    // 检查是否有 SUPER_ADMIN 角色，直接返回全部菜单
+    const roleCodes = await this.roleService.findUserRoleCodes(userId)
+    if (roleCodes.includes('SUPER_ADMIN')) {
+      const menus = await this.menuService.findAll()
+      const permissions = await this.menuService.findAllPermissions()
+      return { menus, permissions }
+    }
+
+    return this.menuService.findUserPermissions(userId)
   }
 
   /**

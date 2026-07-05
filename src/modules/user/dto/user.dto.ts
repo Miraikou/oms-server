@@ -1,5 +1,6 @@
-import { IsNotEmpty, IsOptional, IsString, MinLength, IsIn, IsEmail } from 'class-validator'
+import { IsNotEmpty, IsOptional, IsString, IsArray, MinLength, IsIn, IsEmail } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
 
 /** 创建用户 DTO */
 export class CreateUserDto {
@@ -38,6 +39,12 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   remark?: string
+
+  @ApiPropertyOptional({ description: '角色 ID 列表', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  roleIds?: string[]
 }
 
 /** 更新用户 DTO */
@@ -66,10 +73,16 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   remark?: string
+
+  @ApiPropertyOptional({ description: '角色 ID 列表', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  roleIds?: string[]
 }
 
 /** 用户查询 DTO */
-export class QueryUserDto {
+export class QueryUserDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '关键词（用户名/姓名）' })
   @IsString()
   @IsOptional()
@@ -79,14 +92,6 @@ export class QueryUserDto {
   @IsIn([0, 1])
   @IsOptional()
   status?: number
-
-  @ApiPropertyOptional({ description: '页码', default: 1 })
-  @IsOptional()
-  page?: number
-
-  @ApiPropertyOptional({ description: '每页条数', default: 20 })
-  @IsOptional()
-  pageSize?: number
 }
 
 /** 重置密码 DTO */
