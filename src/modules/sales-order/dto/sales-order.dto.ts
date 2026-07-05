@@ -25,6 +25,8 @@ export interface CreateSalesOrderDto {
   transportChannelId: string;
   /** 交易方式 */
   tradeType: string;
+  /** 预估汇率（USD→CNY），默认 7.0 */
+  exchangeRate?: string;
   /** 备注 */
   remark?: string;
   /** 商品明细（至少一项） */

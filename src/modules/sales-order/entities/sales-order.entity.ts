@@ -97,6 +97,16 @@ export class SalesOrder extends BaseEntity {
   })
   paymentStatus: number = 1;
 
+  @Column({
+    name: 'exchange_rate',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    default: 7.0,
+    comment: '预估汇率（USD→CNY），用于毛利估算',
+  })
+  exchangeRate: string = '7.0000';
+
   @Index('idx_status')
   @Column({
     type: 'tinyint',

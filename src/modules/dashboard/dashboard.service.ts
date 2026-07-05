@@ -130,7 +130,7 @@ export class DashboardService {
   ) {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
-      `SELECT DATE_FORMAT(so.order_date, ?) AS period,
+      `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
               COALESCE(SUM(so.total_amount_usd), 0) AS amount,
               COUNT(*) AS count
        FROM sales_order so WHERE so.status >= 1 {dateFilter}
@@ -138,7 +138,6 @@ export class DashboardService {
       'so.order_date',
       startDate,
       endDate,
-      [dateFormat],
     );
   }
 
@@ -152,7 +151,7 @@ export class DashboardService {
   ) {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
-      `SELECT DATE_FORMAT(so.order_date, ?) AS period,
+      `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
               COALESCE(SUM(si.gross_profit), 0) AS profit
        FROM shipment_item si
        INNER JOIN shipment s ON si.shipment_id = s.id
@@ -162,7 +161,6 @@ export class DashboardService {
       'so.order_date',
       startDate,
       endDate,
-      [dateFormat],
     );
   }
 
@@ -176,14 +174,13 @@ export class DashboardService {
   ) {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
-      `SELECT DATE_FORMAT(p.payment_date, ?) AS period,
+      `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
               COALESCE(SUM(p.usd_amount), 0) AS amount, COUNT(*) AS count
        FROM payment p WHERE 1=1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'p.payment_date',
       startDate,
       endDate,
-      [dateFormat],
     );
   }
 
@@ -197,14 +194,13 @@ export class DashboardService {
   ) {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
-      `SELECT DATE_FORMAT(po.purchase_date, ?) AS period,
+      `SELECT DATE_FORMAT(po.purchase_date, '${dateFormat}') AS period,
               COALESCE(SUM(po.total_amount), 0) AS amount, COUNT(*) AS count
        FROM purchase_order po WHERE po.status >= 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'po.purchase_date',
       startDate,
       endDate,
-      [dateFormat],
     );
   }
 

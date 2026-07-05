@@ -95,6 +95,7 @@ export class SalesOrderService {
         orderDate: new Date(dto.orderDate),
         transportChannelId: dto.transportChannelId,
         tradeType: dto.tradeType,
+        exchangeRate: dto.exchangeRate || '7.0000',
         totalAmountUsd: totalAmountUsd.toFixed(2),
         receivedAmountUsd: '0',
         receivedAmountCny: '0',

@@ -145,10 +145,12 @@ export class ShipmentService {
         await this.batchRepo.save(itemBatch);
       }
 
-      // 6. 汇总成本、计算毛利
+      // 6. 汇总成本、计算毛利(CNY)
+      // 毛利(CNY) = 销售额(USD) × 汇率 - 成本(CNY)
       const totalCost = parseFloat(fifoResult.totalCost);
+      const exchangeRate = parseFloat(order.exchangeRate || '7.0000');
       savedItem.totalCost = fifoResult.totalCost;
-      savedItem.grossProfit = (salesAmount - totalCost).toFixed(2);
+      savedItem.grossProfit = (salesAmount * exchangeRate - totalCost).toFixed(2);
       await this.itemRepo.save(savedItem);
     }
 
