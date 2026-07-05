@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { INestApplication, ValidationPipe } from '@nestjs/common'
-import * as request from 'supertest'
+import request from 'supertest'
 import { AppModule } from '../../src/app.module'
 
 /**
@@ -23,7 +23,6 @@ describe('Auth E2E', () => {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      enableImplicitConversion: true,
     }))
     await app.init()
   }, 30000)
