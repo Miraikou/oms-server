@@ -1,0 +1,73 @@
+config:
+  target: "http://localhost:3000/api/v1"
+  phases:
+    - duration: 60
+      arrivalRate: 20
+      name: "业务混合负载 - 20 用户并发"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+  variables:
+    username: "admin"
+    password: "admin123"
+
+scenarios:
+  - name: "登录 → 查订单 → 查库存"
+    weight: 40
+    flow:
+      - post:
+          url: "/auth/login"
+          json:
+            username: "{{ username }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.data.accessToken"
+              as: "token"
+      - get:
+          url: "/sales-orders?page=1&pageSize=20"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200
+      - get:
+          url: "/inventories?page=1&pageSize=20"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200
+
+  - name: "登录 → 查驾驶舱"
+    weight: 30
+    flow:
+      - post:
+          url: "/auth/login"
+          json:
+            username: "{{ username }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.data.accessToken"
+              as: "token"
+      - get:
+          url: "/dashboard/overview"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200
+
+  - name: "登录 → 查权限"
+    weight: 30
+    flow:
+      - post:
+          url: "/auth/login"
+          json:
+            username: "{{ username }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.data.accessToken"
+              as: "token"
+      - get:
+          url: "/auth/menus"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200

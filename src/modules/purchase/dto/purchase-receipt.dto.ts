@@ -1,6 +1,7 @@
 import { IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator'
 import { Type } from 'class-transformer'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
 
 /** 入库明细项 DTO */
 export class CreatePurchaseReceiptItemDto {
@@ -40,17 +41,9 @@ export class CreatePurchaseReceiptDto {
 }
 
 /** 查询入库单 DTO */
-export class QueryPurchaseReceiptDto {
+export class QueryPurchaseReceiptDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '采购单 ID' })
   @IsString()
   @IsOptional()
   purchaseOrderId?: string
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  page?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  pageSize?: number
 }

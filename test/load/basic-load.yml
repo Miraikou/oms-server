@@ -1,0 +1,34 @@
+config:
+  target: "http://localhost:3000/api/v1"
+  phases:
+    - duration: 60
+      arrivalRate: 50
+      name: "基础负载 - 50 QPS 持续 60 秒"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "GET 商品列表"
+    weight: 50
+    flow:
+      - get:
+          url: "/products?page=1&pageSize=20"
+          expect:
+            - statusCode: 200
+
+  - name: "GET 供应商列表"
+    weight: 30
+    flow:
+      - get:
+          url: "/suppliers?page=1&pageSize=20"
+          expect:
+            - statusCode: 200
+
+  - name: "GET 库存列表"
+    weight: 20
+    flow:
+      - get:
+          url: "/inventories?page=1&pageSize=20"
+          expect:
+            - statusCode: 200

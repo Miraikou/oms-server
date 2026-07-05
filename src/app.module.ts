@@ -3,6 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { TypeOrmModule } from '@nestjs/typeorm'
 import { WinstonModule } from 'nest-winston'
 import { RedisModule } from './common/redis/redis.module'
+import { RoleModule } from './modules/role/role.module'
+import { MenuModule } from './modules/menu/menu.module'
+import { OperationLogModule } from './modules/operation-log/operation-log.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { UserModule } from './modules/user/user.module'
 import { SupplierModule } from './modules/supplier/supplier.module'
@@ -23,6 +26,9 @@ import { PurchaseModule } from './modules/purchase/purchase.module'
 import { SalesOrderModule } from './modules/sales-order/sales-order.module'
 import { ShipmentModule } from './modules/shipment/shipment.module'
 import { PaymentModule } from './modules/payment/payment.module'
+import { SalesReturnModule } from './modules/sales-return/sales-return.module'
+import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.module'
+import { DashboardModule } from './modules/dashboard/dashboard.module'
 
 @Module({
   imports: [
@@ -60,6 +66,11 @@ import { PaymentModule } from './modules/payment/payment.module'
     // 编号生成全局模块
     SequenceModule,
 
+    // RBAC 权限模块（必须在 Auth/User 之前初始化种子数据）
+    RoleModule,
+    MenuModule,
+    OperationLogModule,
+
     // 认证 & 用户
     AuthModule,
     UserModule,
@@ -78,12 +89,17 @@ import { PaymentModule } from './modules/payment/payment.module'
     // 字典服务
     DictionaryModule,
 
-    // 库存 + 采购 + 订单 + 发货 + 收款
+    // 库存 + 采购 + 订单 + 发货 + 收款 + 退货
     InventoryModule,
     PurchaseModule,
     SalesOrderModule,
     ShipmentModule,
     PaymentModule,
+    SalesReturnModule,
+    PurchaseReturnModule,
+
+    // 驾驶舱
+    DashboardModule,
   ],
   controllers: [AppController],
 })

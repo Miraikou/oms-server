@@ -1,6 +1,7 @@
 import { IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator'
 import { Type } from 'class-transformer'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
 
 /** 调整明细 DTO */
 export class CreateAdjustmentItemDto {
@@ -40,18 +41,10 @@ export class CreateInventoryAdjustmentDto {
 }
 
 /** 查询库存调整 DTO */
-export class QueryInventoryAdjustmentDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  page?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  pageSize?: number
-}
+export class QueryInventoryAdjustmentDto extends PaginationParamsDto {}
 
 /** 查询库存列表 DTO */
-export class QueryInventoryDto {
+export class QueryInventoryDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '关键词（商品名）' })
   @IsString()
   @IsOptional()
@@ -61,18 +54,10 @@ export class QueryInventoryDto {
   @IsString()
   @IsOptional()
   supplierId?: string
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  page?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  pageSize?: number
 }
 
 /** 查询库存流水 DTO */
-export class QueryInventoryFlowDto {
+export class QueryInventoryFlowDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '商品 ID' })
   @IsString()
   @IsOptional()
@@ -81,12 +66,4 @@ export class QueryInventoryFlowDto {
   @ApiPropertyOptional({ description: '业务类型' })
   @IsOptional()
   businessType?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  page?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  pageSize?: number
 }

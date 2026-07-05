@@ -1,5 +1,6 @@
 import { IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
 
 export class CreateSupplierDto {
   @ApiProperty({ description: '供应商名称' })
@@ -60,7 +61,7 @@ export class UpdateSupplierDto {
   remark?: string
 }
 
-export class QuerySupplierDto {
+export class QuerySupplierDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '关键词' })
   @IsString()
   @IsOptional()
@@ -70,12 +71,4 @@ export class QuerySupplierDto {
   @IsIn([0, 1])
   @IsOptional()
   status?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  page?: number
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  pageSize?: number
 }

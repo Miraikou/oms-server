@@ -1,0 +1,37 @@
+config:
+  target: "http://localhost:3000/api/v1"
+  phases:
+    - duration: 20
+      arrivalRate: 10
+      name: "预热 - 10 QPS"
+    - duration: 20
+      arrivalRate: 20
+      name: "递增 - 20 QPS"
+    - duration: 20
+      arrivalRate: 50
+      name: "目标 - 50 QPS"
+    - duration: 20
+      arrivalRate: 100
+      name: "压力 - 100 QPS"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "GET 商品列表"
+    weight: 40
+    flow:
+      - get:
+          url: "/products?page=1&pageSize=20"
+
+  - name: "GET 供应商列表"
+    weight: 30
+    flow:
+      - get:
+          url: "/suppliers?page=1&pageSize=20"
+
+  - name: "GET 字典数据"
+    weight: 30
+    flow:
+      - get:
+          url: "/dictionary/fixed"

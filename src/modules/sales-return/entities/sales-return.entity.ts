@@ -1,0 +1,28 @@
+import { Entity, Column, Index } from 'typeorm'
+import { BaseEntity } from '@/common/entities/base.entity'
+
+/**
+ * 客户退货单实体
+ * 一个订单可产生多个退货单，退货单提交后不可修改
+ * restoreInventory 控制是否恢复库存到原发货批次
+ */
+@Entity('sales_return')
+export class SalesReturn extends BaseEntity {
+  @Index('uk_return_no', { unique: true })
+  @Column({ name: 'return_no', type: 'varchar', length: 50, comment: '退货单号' })
+  returnNo: string
+
+  @Index('idx_order_id')
+  @Column({ name: 'order_id', type: 'bigint', comment: '来源订单 ID' })
+  orderId: string
+
+  @Index('idx_return_date')
+  @Column({ name: 'return_date', type: 'datetime', comment: '退货时间' })
+  returnDate: Date
+
+  @Column({ name: 'restore_inventory', type: 'tinyint', default: 1, comment: '是否恢复库存：1=是 0=否' })
+  restoreInventory: number = 1
+
+  @Column({ type: 'varchar', length: 200, nullable: true, comment: '退货原因' })
+  reason: string | null = null
+}
