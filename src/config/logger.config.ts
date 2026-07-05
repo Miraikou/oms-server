@@ -1,5 +1,5 @@
-import { utilities as nestWinstonModuleUtilities } from 'nest-winston'
-import * as winston from 'winston'
+import { utilities as nestWinstonModuleUtilities } from 'nest-winston';
+import * as winston from 'winston';
 
 /**
  * Winston 日志配置
@@ -41,4 +41,4 @@ export const loggerConfig = {
       maxFiles: 5,
     }),
   ],
-}
+};

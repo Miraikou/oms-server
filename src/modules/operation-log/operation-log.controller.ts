@@ -1,13 +1,7 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
-import { OperationLogService } from './operation-log.service'
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { OperationLogService } from './operation-log.service';
 
 /**
  * 操作日志控制器
@@ -39,12 +33,12 @@ export class OperationLogController {
       endTime,
       page,
       pageSize,
-    })
+    });
   }
 
   @Get(':id')
   @ApiOperation({ summary: '日志详情' })
   findOne(@Param('id') id: string) {
-    return this.logService.findOne(id)
+    return this.logService.findOne(id);
   }
 }

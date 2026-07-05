@@ -1,5 +1,5 @@
-import { Entity, Column, Index } from 'typeorm'
-import { BaseEntity } from '@/common/entities/base.entity'
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 订单成本实体
@@ -11,12 +11,12 @@ import { BaseEntity } from '@/common/entities/base.entity'
 export class SalesOrderCost extends BaseEntity {
   @Index('idx_order_id')
   @Column({ name: 'order_id', type: 'bigint', comment: '订单 ID' })
-  orderId: string
+  orderId: string;
 
   @Index('idx_cost_type_id')
   @Column({ name: 'cost_type_id', type: 'bigint', comment: '成本类型 ID' })
-  costTypeId: string
+  costTypeId: string;
 
   @Column({ type: 'decimal', precision: 18, scale: 2, comment: '成本金额' })
-  amount: string
+  amount: string;
 }

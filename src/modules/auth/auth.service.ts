@@ -3,23 +3,23 @@ import {
   UnauthorizedException,
   BadRequestException,
   Logger,
-} from '@nestjs/common'
-import { JwtService } from '@nestjs/jwt'
-import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
-import * as bcrypt from 'bcryptjs'
-import { ConfigService } from '@nestjs/config'
-import { SysUser } from '../user/entities/sys-user.entity'
-import { SysLoginLog } from './entities/sys-login-log.entity'
-import { RoleService } from '../role/role.service'
-import { MenuService } from '../menu/menu.service'
-import type { LoginDto, ChangePasswordDto } from './dto/auth.dto'
-import { snowflake } from '../../common/utils/snowflake'
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
+import { ConfigService } from '@nestjs/config';
+import { SysUser } from '../user/entities/sys-user.entity';
+import { SysLoginLog } from './entities/sys-login-log.entity';
+import { RoleService } from '../role/role.service';
+import { MenuService } from '../menu/menu.service';
+import type { LoginDto, ChangePasswordDto } from './dto/auth.dto';
+import { snowflake } from '../../common/utils/snowflake';
 
 /** JWT Payload 结构 */
 interface JwtPayload {
-  sub: string
-  username: string
+  sub: string;
+  username: string;
 }
 
 /**
@@ -28,7 +28,7 @@ interface JwtPayload {
  */
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name)
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     @InjectRepository(SysUser)
@@ -49,38 +49,40 @@ export class AuthService {
    * @returns accessToken + refreshToken + 用户信息
    */
   async login(dto: LoginDto, ip: string, userAgent: string) {
-    const user = await this.userRepo.findOne({ where: { username: dto.username } })
+    const user = await this.userRepo.findOne({
+      where: { username: dto.username },
+    });
 
     // 用户不存在 或 已停用
     if (!user || user.status !== 1) {
-      await this.recordLoginLog(null, dto.username, ip, userAgent, 0)
-      throw new UnauthorizedException('用户名或密码错误')
+      await this.recordLoginLog(null, dto.username, ip, userAgent, 0);
+      throw new UnauthorizedException('用户名或密码错误');
     }
 
     // 验证密码
-    const isPasswordValid = await bcrypt.compare(dto.password, user.password)
+    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
-      await this.recordLoginLog(user.id, dto.username, ip, userAgent, 0)
-      throw new UnauthorizedException('用户名或密码错误')
+      await this.recordLoginLog(user.id, dto.username, ip, userAgent, 0);
+      throw new UnauthorizedException('用户名或密码错误');
     }
 
     // 更新最后登录信息
-    user.lastLoginTime = new Date()
-    user.lastLoginIp = ip
-    await this.userRepo.save(user)
+    user.lastLoginTime = new Date();
+    user.lastLoginIp = ip;
+    await this.userRepo.save(user);
 
     // 记录成功日志
-    await this.recordLoginLog(user.id, dto.username, ip, userAgent, 1)
+    await this.recordLoginLog(user.id, dto.username, ip, userAgent, 1);
 
     // 生成 Token
-    const payload: JwtPayload = { sub: user.id, username: user.username }
-    const accessToken = this.generateAccessToken(payload)
-    const refreshToken = this.generateRefreshToken(payload)
+    const payload: JwtPayload = { sub: user.id, username: user.username };
+    const accessToken = this.generateAccessToken(payload);
+    const refreshToken = this.generateRefreshToken(payload);
 
-    this.logger.log(`用户 ${user.username} 登录成功`)
+    this.logger.log(`用户 ${user.username} 登录成功`);
 
     // 查询用户角色
-    const roles = await this.roleService.findUserRoleCodes(user.id)
+    const roles = await this.roleService.findUserRoleCodes(user.id);
 
     return {
       accessToken,
@@ -91,7 +93,7 @@ export class AuthService {
         realName: user.realName,
         roles,
       },
-    }
+    };
   }
 
   /**
@@ -102,21 +104,24 @@ export class AuthService {
   async refreshToken(refreshToken: string) {
     try {
       const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'oms-dev-refresh-secret'),
-      })
+        secret: this.configService.get<string>(
+          'JWT_REFRESH_SECRET',
+          'oms-dev-refresh-secret',
+        ),
+      });
 
       // 验证用户是否仍然有效
-      const user = await this.userRepo.findOne({ where: { id: payload.sub } })
+      const user = await this.userRepo.findOne({ where: { id: payload.sub } });
       if (!user || user.status !== 1) {
-        throw new UnauthorizedException('用户已被禁用')
+        throw new UnauthorizedException('用户已被禁用');
       }
 
-      const newPayload: JwtPayload = { sub: user.id, username: user.username }
-      const accessToken = this.generateAccessToken(newPayload)
+      const newPayload: JwtPayload = { sub: user.id, username: user.username };
+      const accessToken = this.generateAccessToken(newPayload);
 
-      return { accessToken }
+      return { accessToken };
     } catch {
-      throw new UnauthorizedException('刷新令牌已过期或无效')
+      throw new UnauthorizedException('刷新令牌已过期或无效');
     }
   }
 
@@ -126,20 +131,23 @@ export class AuthService {
    * @param dto 修改密码参数
    */
   async changePassword(userId: string, dto: ChangePasswordDto) {
-    const user = await this.userRepo.findOne({ where: { id: userId } })
+    const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) {
-      throw new BadRequestException('用户不存在')
+      throw new BadRequestException('用户不存在');
     }
 
-    const isOldPasswordValid = await bcrypt.compare(dto.oldPassword, user.password)
+    const isOldPasswordValid = await bcrypt.compare(
+      dto.oldPassword,
+      user.password,
+    );
     if (!isOldPasswordValid) {
-      throw new BadRequestException('旧密码错误')
+      throw new BadRequestException('旧密码错误');
     }
 
-    user.password = await bcrypt.hash(dto.newPassword, 10)
-    await this.userRepo.save(user)
+    user.password = await bcrypt.hash(dto.newPassword, 10);
+    await this.userRepo.save(user);
 
-    this.logger.log(`用户 ${user.username} 修改密码成功`)
+    this.logger.log(`用户 ${user.username} 修改密码成功`);
   }
 
   /**
@@ -150,19 +158,19 @@ export class AuthService {
     const user = await this.userRepo.findOne({
       where: { id: userId },
       select: { id: true, username: true, realName: true },
-    })
+    });
     if (!user) {
-      throw new UnauthorizedException('用户不存在')
+      throw new UnauthorizedException('用户不存在');
     }
 
-    const roles = await this.roleService.findUserRoleCodes(userId)
+    const roles = await this.roleService.findUserRoleCodes(userId);
 
     return {
       id: user.id,
       username: user.username,
       realName: user.realName,
       roles,
-    }
+    };
   }
 
   /**
@@ -171,14 +179,14 @@ export class AuthService {
    */
   async getUserMenus(userId: string) {
     // 检查是否有 SUPER_ADMIN 角色，直接返回全部菜单
-    const roleCodes = await this.roleService.findUserRoleCodes(userId)
+    const roleCodes = await this.roleService.findUserRoleCodes(userId);
     if (roleCodes.includes('SUPER_ADMIN')) {
-      const menus = await this.menuService.findAll()
-      const permissions = await this.menuService.findAllPermissions()
-      return { menus, permissions }
+      const menus = await this.menuService.findAll();
+      const permissions = await this.menuService.findAllPermissions();
+      return { menus, permissions };
     }
 
-    return this.menuService.findUserPermissions(userId)
+    return this.menuService.findUserPermissions(userId);
   }
 
   /**
@@ -186,9 +194,10 @@ export class AuthService {
    */
   private generateAccessToken(payload: JwtPayload): string {
     const expiresIn = parseInt(
-      this.configService.get<string>('JWT_EXPIRES_IN_SECONDS', '7200'), 10,
-    )
-    return this.jwtService.sign(payload, { expiresIn })
+      this.configService.get<string>('JWT_EXPIRES_IN_SECONDS', '7200'),
+      10,
+    );
+    return this.jwtService.sign(payload, { expiresIn });
   }
 
   /**
@@ -196,12 +205,19 @@ export class AuthService {
    */
   private generateRefreshToken(payload: JwtPayload): string {
     const expiresIn = parseInt(
-      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN_SECONDS', '604800'), 10,
-    )
+      this.configService.get<string>(
+        'JWT_REFRESH_EXPIRES_IN_SECONDS',
+        '604800',
+      ),
+      10,
+    );
     return this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'oms-dev-refresh-secret'),
+      secret: this.configService.get<string>(
+        'JWT_REFRESH_SECRET',
+        'oms-dev-refresh-secret',
+      ),
       expiresIn,
-    })
+    });
   }
 
   /**
@@ -223,10 +239,13 @@ export class AuthService {
         userAgent: userAgent.substring(0, 500),
         loginResult: result,
         loginTime: new Date(),
-      })
-      await this.loginLogRepo.save(log)
+      });
+      await this.loginLogRepo.save(log);
     } catch (error) {
-      this.logger.error('记录登录日志失败', error instanceof Error ? error.stack : String(error))
+      this.logger.error(
+        '记录登录日志失败',
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 }

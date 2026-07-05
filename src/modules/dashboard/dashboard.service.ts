@@ -1,16 +1,24 @@
-import { Injectable, Logger } from '@nestjs/common'
-import { DataSource } from 'typeorm'
+import { Injectable, Logger } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 
 /** 查询结果行（TypeORM raw query 返回类型） */
-type Row = Record<string, unknown>
+type Row = Record<string, unknown>;
 
 /** 从 raw query 结果行安全提取数值 */
-const getNum = (row: Row | undefined, key: string, fallback = '0'): number =>
-  parseFloat(String(row?.[key] ?? fallback))
+const getNum = (row: Row | undefined, key: string, fallback = '0'): number => {
+  const val = row?.[key];
+  const str =
+    typeof val === 'string' || typeof val === 'number' ? String(val) : fallback;
+  return parseFloat(str);
+};
 
 /** 从 raw query 结果行安全提取整数 */
-const getInt = (row: Row | undefined, key: string, fallback = '0'): number =>
-  parseInt(String(row?.[key] ?? fallback))
+const getInt = (row: Row | undefined, key: string, fallback = '0'): number => {
+  const val = row?.[key];
+  const str =
+    typeof val === 'string' || typeof val === 'number' ? String(val) : fallback;
+  return parseInt(str);
+};
 
 /**
  * 驾驶舱服务
@@ -19,7 +27,7 @@ const getInt = (row: Row | undefined, key: string, fallback = '0'): number =>
  */
 @Injectable()
 export class DashboardService {
-  private readonly logger = new Logger(DashboardService.name)
+  private readonly logger = new Logger(DashboardService.name);
 
   constructor(private readonly dataSource: DataSource) {}
 
@@ -28,58 +36,77 @@ export class DashboardService {
    */
   async getOverview(startDate?: string, endDate?: string) {
     // 所有独立查询并行执行
-    const [orderStats, paymentStats, profitStats, costStats, shipmentStats, purchaseStats, inventoryStats] =
-      await Promise.all([
-        this.executeQuery(
-          `SELECT COALESCE(SUM(total_amount_usd), 0) AS totalSales, COUNT(*) AS orderCount
+    const [
+      orderStats,
+      paymentStats,
+      profitStats,
+      costStats,
+      shipmentStats,
+      purchaseStats,
+      inventoryStats,
+    ] = await Promise.all([
+      this.executeQuery(
+        `SELECT COALESCE(SUM(total_amount_usd), 0) AS totalSales, COUNT(*) AS orderCount
            FROM sales_order so WHERE so.status >= 1 {dateFilter}`,
-          'so.order_date', startDate, endDate,
-        ),
-        this.executeQuery(
-          `SELECT COALESCE(SUM(usd_amount), 0) AS totalPayment
+        'so.order_date',
+        startDate,
+        endDate,
+      ),
+      this.executeQuery(
+        `SELECT COALESCE(SUM(usd_amount), 0) AS totalPayment
            FROM payment p INNER JOIN sales_order so ON p.order_id = so.id
            WHERE 1=1 {dateFilter}`,
-          'p.payment_date', startDate, endDate,
-        ),
-        this.executeQuery(
-          `SELECT COALESCE(SUM(si.gross_profit), 0) AS shipmentProfit
+        'p.payment_date',
+        startDate,
+        endDate,
+      ),
+      this.executeQuery(
+        `SELECT COALESCE(SUM(si.gross_profit), 0) AS shipmentProfit
            FROM shipment_item si
            INNER JOIN shipment s ON si.shipment_id = s.id
            INNER JOIN sales_order so ON s.order_id = so.id
            WHERE 1=1 {dateFilter}`,
-          'so.order_date', startDate, endDate,
-        ),
-        this.executeQuery(
-          `SELECT COALESCE(SUM(soc.amount), 0) AS totalCost
+        'so.order_date',
+        startDate,
+        endDate,
+      ),
+      this.executeQuery(
+        `SELECT COALESCE(SUM(soc.amount), 0) AS totalCost
            FROM sales_order_cost soc
            INNER JOIN sales_order so ON soc.order_id = so.id
            WHERE 1=1 {dateFilter}`,
-          'so.order_date', startDate, endDate,
-        ),
-        this.executeQuery(
-          `SELECT COUNT(*) AS shipmentCount
+        'so.order_date',
+        startDate,
+        endDate,
+      ),
+      this.executeQuery(
+        `SELECT COUNT(*) AS shipmentCount
            FROM shipment s INNER JOIN sales_order so ON s.order_id = so.id
            WHERE 1=1 {dateFilter}`,
-          'so.order_date', startDate, endDate,
-        ),
-        this.executeQuery(
-          `SELECT COALESCE(SUM(total_amount), 0) AS totalPurchase
+        'so.order_date',
+        startDate,
+        endDate,
+      ),
+      this.executeQuery(
+        `SELECT COALESCE(SUM(total_amount), 0) AS totalPurchase
            FROM purchase_order po WHERE po.status >= 1 {dateFilter}`,
-          'po.purchase_date', startDate, endDate,
-        ),
-        this.executeQuery(
-          `SELECT COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost AS DECIMAL(18,2))), 0) AS inventoryValue
+        'po.purchase_date',
+        startDate,
+        endDate,
+      ),
+      this.executeQuery(
+        `SELECT COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost AS DECIMAL(18,2))), 0) AS inventoryValue
            FROM inventory_batch ib WHERE ib.status = 1`,
-        ),
-      ])
+      ),
+    ]);
 
-    const shipmentProfit = getNum(profitStats[0], 'shipmentProfit')
-    const orderCost = getNum(costStats[0], 'totalCost')
-    const totalProfit = shipmentProfit - orderCost
+    const shipmentProfit = getNum(profitStats[0], 'shipmentProfit');
+    const orderCost = getNum(costStats[0], 'totalCost');
+    const totalProfit = shipmentProfit - orderCost;
 
-    const totalSales = getNum(orderStats[0], 'totalSales')
-    const profit = totalProfit
-    const profitRate = totalSales > 0 ? (profit / totalSales * 100) : 0
+    const totalSales = getNum(orderStats[0], 'totalSales');
+    const profit = totalProfit;
+    const profitRate = totalSales > 0 ? (profit / totalSales) * 100 : 0;
 
     return {
       totalSales: totalSales.toFixed(2),
@@ -90,29 +117,40 @@ export class DashboardService {
       shipmentCount: getInt(shipmentStats[0], 'shipmentCount'),
       totalPurchase: getNum(purchaseStats[0], 'totalPurchase').toFixed(2),
       inventoryValue: getNum(inventoryStats[0], 'inventoryValue').toFixed(2),
-    }
+    };
   }
 
   /**
    * 销售趋势
    */
-  async getSalesTrend(startDate?: string, endDate?: string, granularity = 'day') {
-    const dateFormat = this.getDateFormat(granularity)
+  async getSalesTrend(
+    startDate?: string,
+    endDate?: string,
+    granularity = 'day',
+  ) {
+    const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, ?) AS period,
               COALESCE(SUM(so.total_amount_usd), 0) AS amount,
               COUNT(*) AS count
        FROM sales_order so WHERE so.status >= 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
-      'so.order_date', startDate, endDate, [dateFormat],
-    )
+      'so.order_date',
+      startDate,
+      endDate,
+      [dateFormat],
+    );
   }
 
   /**
    * 利润趋势
    */
-  async getProfitTrend(startDate?: string, endDate?: string, granularity = 'day') {
-    const dateFormat = this.getDateFormat(granularity)
+  async getProfitTrend(
+    startDate?: string,
+    endDate?: string,
+    granularity = 'day',
+  ) {
+    const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, ?) AS period,
               COALESCE(SUM(si.gross_profit), 0) AS profit
@@ -121,58 +159,82 @@ export class DashboardService {
        INNER JOIN sales_order so ON s.order_id = so.id
        WHERE 1=1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
-      'so.order_date', startDate, endDate, [dateFormat],
-    )
+      'so.order_date',
+      startDate,
+      endDate,
+      [dateFormat],
+    );
   }
 
   /**
    * 收款趋势
    */
-  async getPaymentTrend(startDate?: string, endDate?: string, granularity = 'day') {
-    const dateFormat = this.getDateFormat(granularity)
+  async getPaymentTrend(
+    startDate?: string,
+    endDate?: string,
+    granularity = 'day',
+  ) {
+    const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(p.payment_date, ?) AS period,
               COALESCE(SUM(p.usd_amount), 0) AS amount, COUNT(*) AS count
        FROM payment p WHERE 1=1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
-      'p.payment_date', startDate, endDate, [dateFormat],
-    )
+      'p.payment_date',
+      startDate,
+      endDate,
+      [dateFormat],
+    );
   }
 
   /**
    * 采购趋势
    */
-  async getPurchaseTrend(startDate?: string, endDate?: string, granularity = 'day') {
-    const dateFormat = this.getDateFormat(granularity)
+  async getPurchaseTrend(
+    startDate?: string,
+    endDate?: string,
+    granularity = 'day',
+  ) {
+    const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(po.purchase_date, ?) AS period,
               COALESCE(SUM(po.total_amount), 0) AS amount, COUNT(*) AS count
        FROM purchase_order po WHERE po.status >= 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
-      'po.purchase_date', startDate, endDate, [dateFormat],
-    )
+      'po.purchase_date',
+      startDate,
+      endDate,
+      [dateFormat],
+    );
   }
 
   /**
    * 销售员排行榜
    */
-  async getSalespersonRanking(startDate?: string, endDate?: string, limit = 10) {
-    const safeLimit = Math.max(1, Math.min(limit || 10, 100))
+  async getSalespersonRanking(
+    startDate?: string,
+    endDate?: string,
+    limit = 10,
+  ) {
+    const safeLimit = Math.max(1, Math.min(limit || 10, 100));
     return this.executeQuery(
       `SELECT sp.id AS salespersonId, sp.name AS salespersonName,
               COALESCE(SUM(so.total_amount_usd), 0) AS totalSales, COUNT(so.id) AS orderCount
        FROM salesperson sp
        LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status >= 1 {dateFilter}
        GROUP BY sp.id, sp.name ORDER BY totalSales DESC LIMIT ?`,
-      'so.order_date', startDate, endDate, [safeLimit],
-    )
+      'so.order_date',
+      startDate,
+      endDate,
+      [safeLimit],
+    );
   }
 
   /**
    * 商品排行榜
    */
   async getProductRanking(startDate?: string, endDate?: string, limit = 10) {
-    const safeLimit = Math.max(1, Math.min(limit || 10, 100))
+    const safeLimit = Math.max(1, Math.min(limit || 10, 100));
     return this.executeQuery(
       `SELECT oi.product_id AS productId,
               COALESCE(SUM(CAST(oi.quantity AS DECIMAL(18,4))), 0) AS totalQuantity,
@@ -181,15 +243,24 @@ export class DashboardService {
        INNER JOIN sales_order so ON oi.order_id = so.id
        WHERE so.status >= 1 {dateFilter}
        GROUP BY oi.product_id ORDER BY totalSales DESC LIMIT ?`,
-      'so.order_date', startDate, endDate, [safeLimit],
-    )
+      'so.order_date',
+      startDate,
+      endDate,
+      [safeLimit],
+    );
   }
 
   /**
    * 待处理事项（4 个独立 COUNT 并行执行）
    */
   async getPendingItems() {
-    const [pendingShipment, pendingPayment, pendingReceipt, inventoryWarnings] =
+    type CountResult = Array<{ count: string }>;
+    const [
+      pendingShipment,
+      pendingPayment,
+      pendingReceipt,
+      inventoryWarnings,
+    ]: [CountResult, CountResult, CountResult, CountResult] =
       await Promise.all([
         this.dataSource.query(
           `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND shipment_status IN (1, 2)`,
@@ -204,14 +275,14 @@ export class DashboardService {
           `SELECT COUNT(*) AS count FROM inventory
            WHERE CAST(available_quantity AS DECIMAL(18,4)) < CAST(minimum_stock AS DECIMAL(18,4))`,
         ),
-      ])
+      ]);
 
     return {
       pendingShipment: parseInt(pendingShipment[0]?.count || '0'),
       pendingPayment: parseInt(pendingPayment[0]?.count || '0'),
       pendingReceipt: parseInt(pendingReceipt[0]?.count || '0'),
       inventoryWarnings: parseInt(inventoryWarnings[0]?.count || '0'),
-    }
+    };
   }
 
   /**
@@ -229,32 +300,35 @@ export class DashboardService {
     endDate?: string,
     extraParams: unknown[] = [],
   ): Promise<Row[]> {
-    const params: unknown[] = []
-    let dateFilter = ''
+    const params: unknown[] = [];
+    let dateFilter = '';
 
     if (column) {
       if (startDate) {
-        dateFilter += ` AND ${column} >= ?`
-        params.push(startDate)
+        dateFilter += ` AND ${column} >= ?`;
+        params.push(startDate);
       }
       if (endDate) {
-        dateFilter += ` AND ${column} <= ?`
-        params.push(endDate)
+        dateFilter += ` AND ${column} <= ?`;
+        params.push(endDate);
       }
     }
 
-    const sql = template.replace('{dateFilter}', dateFilter)
-    const allParams = [...params, ...extraParams]
+    const sql = template.replace('{dateFilter}', dateFilter);
+    const allParams = [...params, ...extraParams];
 
-    return this.dataSource.query(sql, allParams)
+    return this.dataSource.query(sql, allParams);
   }
 
   /** 获取日期格式化字符串（仅允许白名单值，防注入） */
   private getDateFormat(granularity: string): string {
     switch (granularity) {
-      case 'month': return '%Y-%m'
-      case 'week': return '%x-W%v'
-      default: return '%Y-%m-%d'
+      case 'month':
+        return '%Y-%m';
+      case 'week':
+        return '%x-W%v';
+      default:
+        return '%Y-%m-%d';
     }
   }
 }

@@ -1,7 +1,7 @@
-import { Module, Global } from '@nestjs/common'
-import { TypeOrmModule } from '@nestjs/typeorm'
-import { SysSequence } from '@/common/entities/sys-sequence.entity'
-import { SequenceService } from './sequence.service'
+import { Module, Global } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { SysSequence } from '@/common/entities/sys-sequence.entity';
+import { SequenceService } from './sequence.service';
 
 /**
  * 编号生成全局模块

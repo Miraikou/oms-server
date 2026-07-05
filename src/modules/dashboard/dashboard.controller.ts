@@ -1,7 +1,7 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
-import { DashboardService } from './dashboard.service'
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { DashboardService } from './dashboard.service';
+import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
 @ApiTags('驾驶舱')
 @ApiBearerAuth()
@@ -16,7 +16,7 @@ export class DashboardController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.service.getOverview(startDate, endDate)
+    return this.service.getOverview(startDate, endDate);
   }
 
   @Get('sales-trend')
@@ -26,7 +26,7 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('granularity') granularity?: string,
   ) {
-    return this.service.getSalesTrend(startDate, endDate, granularity)
+    return this.service.getSalesTrend(startDate, endDate, granularity);
   }
 
   @Get('profit-trend')
@@ -36,7 +36,7 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('granularity') granularity?: string,
   ) {
-    return this.service.getProfitTrend(startDate, endDate, granularity)
+    return this.service.getProfitTrend(startDate, endDate, granularity);
   }
 
   @Get('payment-trend')
@@ -46,7 +46,7 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('granularity') granularity?: string,
   ) {
-    return this.service.getPaymentTrend(startDate, endDate, granularity)
+    return this.service.getPaymentTrend(startDate, endDate, granularity);
   }
 
   @Get('purchase-trend')
@@ -56,7 +56,7 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('granularity') granularity?: string,
   ) {
-    return this.service.getPurchaseTrend(startDate, endDate, granularity)
+    return this.service.getPurchaseTrend(startDate, endDate, granularity);
   }
 
   @Get('salesperson-ranking')
@@ -66,7 +66,11 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.service.getSalespersonRanking(startDate, endDate, parseInt(limit || '10'))
+    return this.service.getSalespersonRanking(
+      startDate,
+      endDate,
+      parseInt(limit || '10'),
+    );
   }
 
   @Get('product-ranking')
@@ -76,12 +80,16 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.service.getProductRanking(startDate, endDate, parseInt(limit || '10'))
+    return this.service.getProductRanking(
+      startDate,
+      endDate,
+      parseInt(limit || '10'),
+    );
   }
 
   @Get('pending-items')
   @ApiOperation({ summary: '待处理事项' })
   getPendingItems() {
-    return this.service.getPendingItems()
+    return this.service.getPendingItems();
   }
 }

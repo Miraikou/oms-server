@@ -1,34 +1,34 @@
-import { Module } from '@nestjs/common'
-import { ConfigModule, ConfigService } from '@nestjs/config'
-import { TypeOrmModule } from '@nestjs/typeorm'
-import { WinstonModule } from 'nest-winston'
-import { RedisModule } from './common/redis/redis.module'
-import { RoleModule } from './modules/role/role.module'
-import { MenuModule } from './modules/menu/menu.module'
-import { OperationLogModule } from './modules/operation-log/operation-log.module'
-import { AuthModule } from './modules/auth/auth.module'
-import { UserModule } from './modules/user/user.module'
-import { SupplierModule } from './modules/supplier/supplier.module'
-import { CategoryModule } from './modules/category/category.module'
-import { ProductModule } from './modules/product/product.module'
-import { SalespersonModule } from './modules/salesperson/salesperson.module'
-import { ExpressCompanyModule } from './modules/express-company/express-company.module'
-import { TransportChannelModule } from './modules/transport-channel/transport-channel.module'
-import { CostTypeModule } from './modules/cost-type/cost-type.module'
-import { SystemConfigModule } from './modules/system-config/system-config.module'
-import { CommonContactModule } from './modules/common-contact/common-contact.module'
-import { loggerConfig } from './config/logger.config'
-import { AppController } from './app.controller'
-import { SequenceModule } from './common/services/sequence.module'
-import { DictionaryModule } from './modules/dictionary/dictionary.module'
-import { InventoryModule } from './modules/inventory/inventory.module'
-import { PurchaseModule } from './modules/purchase/purchase.module'
-import { SalesOrderModule } from './modules/sales-order/sales-order.module'
-import { ShipmentModule } from './modules/shipment/shipment.module'
-import { PaymentModule } from './modules/payment/payment.module'
-import { SalesReturnModule } from './modules/sales-return/sales-return.module'
-import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.module'
-import { DashboardModule } from './modules/dashboard/dashboard.module'
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { WinstonModule } from 'nest-winston';
+import { RedisModule } from './common/redis/redis.module';
+import { RoleModule } from './modules/role/role.module';
+import { MenuModule } from './modules/menu/menu.module';
+import { OperationLogModule } from './modules/operation-log/operation-log.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UserModule } from './modules/user/user.module';
+import { SupplierModule } from './modules/supplier/supplier.module';
+import { CategoryModule } from './modules/category/category.module';
+import { ProductModule } from './modules/product/product.module';
+import { SalespersonModule } from './modules/salesperson/salesperson.module';
+import { ExpressCompanyModule } from './modules/express-company/express-company.module';
+import { TransportChannelModule } from './modules/transport-channel/transport-channel.module';
+import { CostTypeModule } from './modules/cost-type/cost-type.module';
+import { SystemConfigModule } from './modules/system-config/system-config.module';
+import { CommonContactModule } from './modules/common-contact/common-contact.module';
+import { loggerConfig } from './config/logger.config';
+import { AppController } from './app.controller';
+import { SequenceModule } from './common/services/sequence.module';
+import { DictionaryModule } from './modules/dictionary/dictionary.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { PurchaseModule } from './modules/purchase/purchase.module';
+import { SalesOrderModule } from './modules/sales-order/sales-order.module';
+import { ShipmentModule } from './modules/shipment/shipment.module';
+import { PaymentModule } from './modules/payment/payment.module';
+import { SalesReturnModule } from './modules/sales-return/sales-return.module';
+import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [

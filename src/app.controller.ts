@@ -1,5 +1,5 @@
-import { Controller, Get } from '@nestjs/common'
-import { ApiTags, ApiOperation } from '@nestjs/swagger'
+import { Controller, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 
 /**
  * 应用级控制器
@@ -15,6 +15,6 @@ export class AppController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-    }
+    };
   }
 }

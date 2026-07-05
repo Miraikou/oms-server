@@ -4,9 +4,9 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
-} from '@nestjs/common'
-import { Response } from 'express'
-import { QueryFailedError } from 'typeorm'
+} from '@nestjs/common';
+import { Response } from 'express';
+import { QueryFailedError } from 'typeorm';
 
 /**
  * 全局异常过滤器
@@ -21,36 +21,39 @@ import { QueryFailedError } from 'typeorm'
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
-    const ctx = host.switchToHttp()
-    const response = ctx.getResponse<Response>()
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
 
-    let status = HttpStatus.INTERNAL_SERVER_ERROR
-    let message = '服务器内部错误'
-    let code = 50000
+    let status = HttpStatus.INTERNAL_SERVER_ERROR;
+    let message = '服务器内部错误';
+    let code = 50000;
 
     if (exception instanceof HttpException) {
-      status = exception.getStatus()
-      const exceptionResponse = exception.getResponse()
+      status = exception.getStatus();
+      const exceptionResponse = exception.getResponse();
 
       if (typeof exceptionResponse === 'string') {
-        message = exceptionResponse
-      } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
-        const resp = exceptionResponse as Record<string, unknown>
-        message = (resp.message as string) || exception.message
-        code = (resp.code as number) || this.mapStatusToCode(status)
+        message = exceptionResponse;
+      } else if (
+        typeof exceptionResponse === 'object' &&
+        exceptionResponse !== null
+      ) {
+        const resp = exceptionResponse as Record<string, unknown>;
+        message = (resp.message as string) || exception.message;
+        code = (resp.code as number) || this.mapStatusToCode(status);
         // class-validator 返回的错误消息可能是数组
         if (Array.isArray(resp.message)) {
-          message = (resp.message as string[]).join('; ')
+          message = (resp.message as string[]).join('; ');
         }
       }
 
       if (code === 50000) {
-        code = this.mapStatusToCode(status)
+        code = this.mapStatusToCode(status);
       }
     } else if (exception instanceof QueryFailedError) {
-      status = HttpStatus.INTERNAL_SERVER_ERROR
-      message = '数据库操作失败'
-      code = 50000
+      status = HttpStatus.INTERNAL_SERVER_ERROR;
+      message = '数据库操作失败';
+      code = 50000;
     }
 
     response.status(status).json({
@@ -58,19 +61,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message,
       data: null,
       timestamp: Date.now(),
-    })
+    });
   }
 
   /**
    * 将 HTTP 状态码映射为业务错误码
    */
   private mapStatusToCode(status: number): number {
-    if (status === HttpStatus.BAD_REQUEST) return 40000
-    if (status === HttpStatus.UNAUTHORIZED) return 41000
-    if (status === HttpStatus.FORBIDDEN) return 41000
-    if (status === HttpStatus.NOT_FOUND) return 40000
-    if (status === HttpStatus.CONFLICT) return 42000
-    if (status >= 400 && status < 500) return 42000
-    return 50000
+    if (status === Number(HttpStatus.BAD_REQUEST)) return 40000;
+    if (status === Number(HttpStatus.UNAUTHORIZED)) return 41000;
+    if (status === Number(HttpStatus.FORBIDDEN)) return 41000;
+    if (status === Number(HttpStatus.NOT_FOUND)) return 40000;
+    if (status === Number(HttpStatus.CONFLICT)) return 42000;
+    if (status >= 400 && status < 500) return 42000;
+    return 50000;
   }
 }

@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common'
-import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
-import { Inventory } from './entities/inventory.entity'
-import { InventoryBatch } from './entities/inventory-batch.entity'
-import { InventoryFlow } from './entities/inventory-flow.entity'
-import { snowflake } from '@/common/utils/snowflake'
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Inventory } from './entities/inventory.entity';
+import { InventoryBatch } from './entities/inventory-batch.entity';
+import { InventoryFlow } from './entities/inventory-flow.entity';
+import { snowflake } from '@/common/utils/snowflake';
 
 /**
  * 库存基础服务
@@ -27,14 +27,14 @@ export class InventoryService {
    * @param data 批次数据
    */
   async createBatch(data: {
-    productId: string
-    receiptItemId: string | null
-    batchSource: number
-    batchNo: string
-    unitCost: string
-    quantity: string
-    inboundTime: Date
-    createdBy?: string | null
+    productId: string;
+    receiptItemId: string | null;
+    batchSource: number;
+    batchNo: string;
+    unitCost: string;
+    quantity: string;
+    inboundTime: Date;
+    createdBy?: string | null;
   }): Promise<InventoryBatch> {
     const batch = this.batchRepo.create({
       id: snowflake.nextId(),
@@ -51,8 +51,8 @@ export class InventoryService {
       freezeStatus: 1,
       status: 1,
       createdBy: data.createdBy || null,
-    })
-    return this.batchRepo.save(batch)
+    });
+    return this.batchRepo.save(batch);
   }
 
   /**
@@ -65,7 +65,7 @@ export class InventoryService {
     quantityDelta: number,
     createdBy?: string | null,
   ): Promise<Inventory> {
-    let inventory = await this.inventoryRepo.findOne({ where: { productId } })
+    let inventory = await this.inventoryRepo.findOne({ where: { productId } });
 
     if (!inventory) {
       // 首次入库，创建库存汇总记录
@@ -78,17 +78,17 @@ export class InventoryService {
         minimumStock: '0',
         createdBy: createdBy || null,
         version: 0,
-      })
+      });
     } else {
-      const available = parseFloat(inventory.availableQuantity) + quantityDelta
-      const stock = parseFloat(inventory.stockQuantity) + quantityDelta
-      inventory.availableQuantity = String(available)
-      inventory.stockQuantity = String(stock)
-      inventory.updatedBy = createdBy || null
-      inventory.version += 1
+      const available = parseFloat(inventory.availableQuantity) + quantityDelta;
+      const stock = parseFloat(inventory.stockQuantity) + quantityDelta;
+      inventory.availableQuantity = String(available);
+      inventory.stockQuantity = String(stock);
+      inventory.updatedBy = createdBy || null;
+      inventory.version += 1;
     }
 
-    return this.inventoryRepo.save(inventory)
+    return this.inventoryRepo.save(inventory);
   }
 
   /**
@@ -96,40 +96,40 @@ export class InventoryService {
    * @param data 流水数据
    */
   async writeFlow(data: {
-    batchId: string
-    productId: string
-    businessType: number
-    businessId: string
-    changeType: number
-    quantity: string
-    unitCost?: string | null
-    totalCost?: string | null
-    beforeAvailable: string
-    afterAvailable: string
-    beforeFrozen: string
-    afterFrozen: string
-    createdBy?: string | null
-    remark?: string | null
+    batchId: string;
+    productId: string;
+    businessType: number;
+    businessId: string;
+    changeType: number;
+    quantity: string;
+    unitCost?: string | null;
+    totalCost?: string | null;
+    beforeAvailable: string;
+    afterAvailable: string;
+    beforeFrozen: string;
+    afterFrozen: string;
+    createdBy?: string | null;
+    remark?: string | null;
   }): Promise<InventoryFlow> {
     const flow = this.flowRepo.create({
       id: snowflake.nextId(),
       ...data,
-    })
-    return this.flowRepo.save(flow)
+    });
+    return this.flowRepo.save(flow);
   }
 
   /** 获取库存汇总 Repository（供事务中使用） */
   getInventoryRepo(): Repository<Inventory> {
-    return this.inventoryRepo
+    return this.inventoryRepo;
   }
 
   /** 获取库存批次 Repository（供事务中使用） */
   getBatchRepo(): Repository<InventoryBatch> {
-    return this.batchRepo
+    return this.batchRepo;
   }
 
   /** 获取库存流水 Repository（供事务中使用） */
   getFlowRepo(): Repository<InventoryFlow> {
-    return this.flowRepo
+    return this.flowRepo;
   }
 }

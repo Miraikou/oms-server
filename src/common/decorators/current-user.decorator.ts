@@ -1,15 +1,15 @@
-import { createParamDecorator, ExecutionContext } from '@nestjs/common'
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 /**
  * 当前登录用户信息接口
  */
 export interface JwtPayload {
   /** 用户 ID */
-  sub: string
+  sub: string;
   /** 用户名 */
-  username: string
+  username: string;
   /** 角色 ID 列表 */
-  roles?: string[]
+  roles?: string[];
 }
 
 /**
@@ -25,9 +25,9 @@ export interface JwtPayload {
  */
 export const CurrentUser = createParamDecorator(
   (data: keyof JwtPayload | undefined, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest()
-    const user = request.user as JwtPayload | undefined
-    if (!user) return undefined
-    return data ? user[data] : user
+    const request = ctx.switchToHttp().getRequest<{ user?: JwtPayload }>();
+    const user = request.user;
+    if (!user) return undefined;
+    return data ? user[data] : user;
   },
-)
+);

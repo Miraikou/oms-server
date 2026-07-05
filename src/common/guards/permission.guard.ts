@@ -3,10 +3,10 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
-} from '@nestjs/common'
-import { Reflector } from '@nestjs/core'
-import { DataSource } from 'typeorm'
-import { PERMISSION_KEY } from '../decorators/require-permission.decorator'
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { DataSource } from 'typeorm';
+import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
 
 /**
  * 权限守卫
@@ -29,25 +29,27 @@ export class PermissionGuard implements CanActivate {
     const requiredPermission = this.reflector.getAllAndOverride<string>(
       PERMISSION_KEY,
       [context.getHandler(), context.getClass()],
-    )
+    );
 
     // 如果接口没有标记权限要求，直接放行
     if (!requiredPermission) {
-      return true
+      return true;
     }
 
-    const request = context.switchToHttp().getRequest()
-    const user = request.user
+    const request = context
+      .switchToHttp()
+      .getRequest<{ user?: { sub: string } }>();
+    const user = request.user;
     if (!user || !user.sub) {
-      throw new ForbiddenException('未登录')
+      throw new ForbiddenException('未登录');
     }
 
-    const userId = user.sub
+    const userId = user.sub;
 
     // 单次 JOIN 查询：用户 → 活跃角色 → 角色菜单 → 菜单权限
     const rows: Array<{
-      roleCode: string
-      permission: string | null
+      roleCode: string;
+      permission: string | null;
     }> = await this.dataSource.query(
       `SELECT r.role_code AS roleCode, m.permission
        FROM sys_user_role ur
@@ -56,27 +58,27 @@ export class PermissionGuard implements CanActivate {
        INNER JOIN sys_menu m ON rm.menu_id = m.id AND m.menu_type = 2 AND m.status = 1
        WHERE ur.user_id = ?`,
       [userId],
-    )
+    );
 
     if (rows.length === 0) {
-      throw new ForbiddenException('没有操作权限')
+      throw new ForbiddenException('没有操作权限');
     }
 
     // SUPER_ADMIN 直接放行
-    const isSuperAdmin = rows.some((r) => r.roleCode === 'SUPER_ADMIN')
+    const isSuperAdmin = rows.some((r) => r.roleCode === 'SUPER_ADMIN');
     if (isSuperAdmin) {
-      return true
+      return true;
     }
 
     // 收集活跃角色对应的权限（已过滤禁用角色，JOIN 条件 r.status = 1）
     const permissions = new Set(
       rows.map((r) => r.permission).filter((p): p is string => p !== null),
-    )
+    );
 
     if (permissions.has(requiredPermission)) {
-      return true
+      return true;
     }
 
-    throw new ForbiddenException('没有操作权限')
+    throw new ForbiddenException('没有操作权限');
   }
 }

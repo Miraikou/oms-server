@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger'
-import { Type } from 'class-transformer'
-import { IsInt, IsOptional, IsString, Min, Max } from 'class-validator'
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
 
 /**
  * 分页查询参数 DTO
@@ -12,23 +12,38 @@ export class PaginationParamsDto {
   @IsInt({ message: '页码必须为整数' })
   @Min(1, { message: '页码最小为 1' })
   @IsOptional()
-  page: number = 1
+  page: number = 1;
 
-  @ApiProperty({ description: '每页条数', default: 20, minimum: 1, maximum: 200, required: false })
+  @ApiProperty({
+    description: '每页条数',
+    default: 20,
+    minimum: 1,
+    maximum: 200,
+    required: false,
+  })
   @Type(() => Number)
   @IsInt({ message: '每页条数必须为整数' })
   @Min(1, { message: '每页条数最小为 1' })
   @Max(200, { message: '每页条数最大为 200' })
   @IsOptional()
-  pageSize: number = 20
+  pageSize: number = 20;
 
-  @ApiProperty({ description: '排序字段', default: 'createdTime', required: false })
+  @ApiProperty({
+    description: '排序字段',
+    default: 'createdTime',
+    required: false,
+  })
   @IsString()
   @IsOptional()
-  sortField: string = 'createdTime'
+  sortField: string = 'createdTime';
 
-  @ApiProperty({ description: '排序方向', enum: ['ASC', 'DESC'], default: 'DESC', required: false })
+  @ApiProperty({
+    description: '排序方向',
+    enum: ['ASC', 'DESC'],
+    default: 'DESC',
+    required: false,
+  })
   @IsString()
   @IsOptional()
-  sortOrder: 'ASC' | 'DESC' = 'DESC'
+  sortOrder: 'ASC' | 'DESC' = 'DESC';
 }

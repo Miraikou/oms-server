@@ -3,13 +3,13 @@ import {
   Logger,
   ConflictException,
   NotFoundException,
-} from '@nestjs/common'
-import { InjectRepository } from '@nestjs/typeorm'
-import { Repository, DataSource } from 'typeorm'
-import { SysRole } from './entities/sys-role.entity'
-import { SysUserRole } from './entities/sys-user-role.entity'
-import { SysRoleMenu } from '../menu/entities/sys-role-menu.entity'
-import { snowflake } from '@/common/utils/snowflake'
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
+import { SysRole } from './entities/sys-role.entity';
+import { SysUserRole } from './entities/sys-user-role.entity';
+import { SysRoleMenu } from '../menu/entities/sys-role-menu.entity';
+import { snowflake } from '@/common/utils/snowflake';
 
 /** 默认角色种子数据 */
 const DEFAULT_ROLES = [
@@ -19,7 +19,7 @@ const DEFAULT_ROLES = [
   { roleName: '采购', roleCode: 'PURCHASER' },
   { roleName: '仓库', roleCode: 'WAREHOUSE' },
   { roleName: '财务', roleCode: 'FINANCE' },
-]
+];
 
 /**
  * 角色管理服务
@@ -27,7 +27,7 @@ const DEFAULT_ROLES = [
  */
 @Injectable()
 export class RoleService {
-  private readonly logger = new Logger(RoleService.name)
+  private readonly logger = new Logger(RoleService.name);
 
   constructor(
     @InjectRepository(SysRole)
@@ -43,33 +43,32 @@ export class RoleService {
    * 分页查询角色列表
    */
   async findAll(query: {
-    keyword?: string
-    status?: number
-    page?: number
-    pageSize?: number
+    keyword?: string;
+    status?: number;
+    page?: number;
+    pageSize?: number;
   }) {
-    const page = query.page || 1
-    const pageSize = query.pageSize || 20
+    const page = query.page || 1;
+    const pageSize = query.pageSize || 20;
 
-    const qb = this.roleRepo.createQueryBuilder('role')
+    const qb = this.roleRepo.createQueryBuilder('role');
 
     if (query.keyword) {
-      qb.andWhere(
-        '(role.roleName LIKE :kw OR role.roleCode LIKE :kw)',
-        { kw: `%${query.keyword}%` },
-      )
+      qb.andWhere('(role.roleName LIKE :kw OR role.roleCode LIKE :kw)', {
+        kw: `%${query.keyword}%`,
+      });
     }
 
     if (query.status !== undefined) {
-      qb.andWhere('role.status = :status', { status: query.status })
+      qb.andWhere('role.status = :status', { status: query.status });
     }
 
     qb.orderBy('role.createdTime', 'DESC')
       .skip((page - 1) * pageSize)
-      .take(pageSize)
+      .take(pageSize);
 
-    const [list, total] = await qb.getManyAndCount()
-    return { list, total, page, pageSize }
+    const [list, total] = await qb.getManyAndCount();
+    return { list, total, page, pageSize };
   }
 
   /** 获取全部启用角色（下拉选项用） */
@@ -78,169 +77,174 @@ export class RoleService {
       .createQueryBuilder('role')
       .where('role.status = :status', { status: 1 })
       .orderBy('role.createdTime', 'ASC')
-      .getMany()
+      .getMany();
   }
 
   /**
    * 根据 ID 查询角色详情（含已关联菜单 ID 列表）
    */
   async findOne(id: string) {
-    const role = await this.roleRepo.findOne({ where: { id } })
+    const role = await this.roleRepo.findOne({ where: { id } });
     if (!role) {
-      throw new NotFoundException('角色不存在')
+      throw new NotFoundException('角色不存在');
     }
 
     // 查询已关联的菜单 ID
-    const roleMenus = await this.roleMenuRepo.find({ where: { roleId: id } })
-    const menuIds = roleMenus.map((rm) => rm.menuId)
+    const roleMenus = await this.roleMenuRepo.find({ where: { roleId: id } });
+    const menuIds = roleMenus.map((rm) => rm.menuId);
 
-    return { ...role, menuIds }
+    return { ...role, menuIds };
   }
 
   /**
    * 创建角色
    */
   async create(data: {
-    roleName: string
-    roleCode: string
-    status?: number
-    remark?: string
+    roleName: string;
+    roleCode: string;
+    status?: number;
+    remark?: string;
   }) {
     // 检查角色名称唯一性
     const existingName = await this.roleRepo.findOne({
       where: { roleName: data.roleName },
-    })
+    });
     if (existingName) {
-      throw new ConflictException('角色名称已存在')
+      throw new ConflictException('角色名称已存在');
     }
 
     // 检查角色编码唯一性
     const existingCode = await this.roleRepo.findOne({
       where: { roleCode: data.roleCode },
-    })
+    });
     if (existingCode) {
-      throw new ConflictException('角色编码已存在')
+      throw new ConflictException('角色编码已存在');
     }
 
     const role = this.roleRepo.create({
       id: snowflake.nextId(),
       ...data,
       status: data.status ?? 1,
-    })
+    });
 
-    return this.roleRepo.save(role)
+    return this.roleRepo.save(role);
   }
 
   /**
    * 更新角色
    */
-  async update(id: string, data: {
-    roleName?: string
-    roleCode?: string
-    status?: number
-    remark?: string
-  }) {
-    const role = await this.roleRepo.findOne({ where: { id } })
+  async update(
+    id: string,
+    data: {
+      roleName?: string;
+      roleCode?: string;
+      status?: number;
+      remark?: string;
+    },
+  ) {
+    const role = await this.roleRepo.findOne({ where: { id } });
     if (!role) {
-      throw new NotFoundException('角色不存在')
+      throw new NotFoundException('角色不存在');
     }
 
     // 检查角色名称唯一性
     if (data.roleName !== undefined && data.roleName !== role.roleName) {
       const existing = await this.roleRepo.findOne({
         where: { roleName: data.roleName },
-      })
+      });
       if (existing) {
-        throw new ConflictException('角色名称已存在')
+        throw new ConflictException('角色名称已存在');
       }
-      role.roleName = data.roleName
+      role.roleName = data.roleName;
     }
 
     // 检查角色编码唯一性
     if (data.roleCode !== undefined && data.roleCode !== role.roleCode) {
       const existing = await this.roleRepo.findOne({
         where: { roleCode: data.roleCode },
-      })
+      });
       if (existing) {
-        throw new ConflictException('角色编码已存在')
+        throw new ConflictException('角色编码已存在');
       }
-      role.roleCode = data.roleCode
+      role.roleCode = data.roleCode;
     }
 
-    if (data.status !== undefined) role.status = data.status
-    if (data.remark !== undefined) role.remark = data.remark
+    if (data.status !== undefined) role.status = data.status;
+    if (data.remark !== undefined) role.remark = data.remark;
 
-    return this.roleRepo.save(role)
+    return this.roleRepo.save(role);
   }
 
   /**
    * 删除角色（已被用户引用的角色禁止删除）
    */
   async delete(id: string) {
-    const role = await this.roleRepo.findOne({ where: { id } })
+    const role = await this.roleRepo.findOne({ where: { id } });
     if (!role) {
-      throw new NotFoundException('角色不存在')
+      throw new NotFoundException('角色不存在');
     }
 
     // 检查是否有用户关联
-    const userRoleCount = await this.userRoleRepo.count({ where: { roleId: id } })
+    const userRoleCount = await this.userRoleRepo.count({
+      where: { roleId: id },
+    });
     if (userRoleCount > 0) {
-      throw new ConflictException('该角色已被用户引用，无法删除')
+      throw new ConflictException('该角色已被用户引用，无法删除');
     }
 
     // 删除角色菜单关联
-    await this.roleMenuRepo.delete({ roleId: id })
+    await this.roleMenuRepo.delete({ roleId: id });
 
     // 删除角色
-    await this.roleRepo.remove(role)
+    await this.roleRepo.remove(role);
   }
 
   /**
    * 分配角色菜单权限（事务：先删后插）
    */
   async assignMenus(roleId: string, menuIds: string[]) {
-    const role = await this.roleRepo.findOne({ where: { id: roleId } })
+    const role = await this.roleRepo.findOne({ where: { id: roleId } });
     if (!role) {
-      throw new NotFoundException('角色不存在')
+      throw new NotFoundException('角色不存在');
     }
 
     await this.dataSource.transaction(async (manager) => {
       // 删除原有关联
-      await manager.delete(SysRoleMenu, { roleId })
+      await manager.delete(SysRoleMenu, { roleId });
 
       // 批量插入新关联
       if (menuIds.length > 0) {
         const roleMenus = menuIds.map((menuId) =>
           manager.create(SysRoleMenu, { roleId, menuId }),
-        )
-        await manager.save(roleMenus)
+        );
+        await manager.save(roleMenus);
       }
-    })
+    });
 
-    return { roleId, menuIds }
+    return { roleId, menuIds };
   }
 
   /**
    * 查询用户的角色列表
    */
   async findUserRoles(userId: string) {
-    const userRoles = await this.userRoleRepo.find({ where: { userId } })
-    if (userRoles.length === 0) return []
+    const userRoles = await this.userRoleRepo.find({ where: { userId } });
+    if (userRoles.length === 0) return [];
 
-    const roleIds = userRoles.map((ur) => ur.roleId)
+    const roleIds = userRoles.map((ur) => ur.roleId);
     return this.roleRepo
       .createQueryBuilder('role')
       .where('role.id IN (:...roleIds)', { roleIds })
       .andWhere('role.status = :status', { status: 1 })
-      .getMany()
+      .getMany();
   }
 
   /**
    * 查询用户角色编码列表（用于 JWT payload）
    */
   async findUserRoleCodes(userId: string): Promise<string[]> {
-    const roles = await this.findUserRoles(userId)
-    return roles.map((r) => r.roleCode)
+    const roles = await this.findUserRoles(userId);
+    return roles.map((r) => r.roleCode);
   }
 
   /**
@@ -248,15 +252,15 @@ export class RoleService {
    */
   async assignUserRoles(userId: string, roleIds: string[]) {
     await this.dataSource.transaction(async (manager) => {
-      await manager.delete(SysUserRole, { userId })
+      await manager.delete(SysUserRole, { userId });
 
       if (roleIds.length > 0) {
         const userRoles = roleIds.map((roleId) =>
           manager.create(SysUserRole, { userId, roleId }),
-        )
-        await manager.save(userRoles)
+        );
+        await manager.save(userRoles);
       }
-    })
+    });
   }
 
   /**
@@ -264,24 +268,26 @@ export class RoleService {
    * @returns 创建的角色列表（如果已有则返回空）
    */
   async seedRoles() {
-    const created: SysRole[] = []
+    const created: SysRole[] = [];
 
     for (const roleData of DEFAULT_ROLES) {
       const existing = await this.roleRepo.findOne({
         where: { roleCode: roleData.roleCode },
-      })
+      });
       if (!existing) {
         const role = this.roleRepo.create({
           id: snowflake.nextId(),
           ...roleData,
           status: 1,
-        })
-        const saved = await this.roleRepo.save(role)
-        created.push(saved)
-        this.logger.log(`已创建默认角色: ${roleData.roleName} (${roleData.roleCode})`)
+        });
+        const saved = await this.roleRepo.save(role);
+        created.push(saved);
+        this.logger.log(
+          `已创建默认角色: ${roleData.roleName} (${roleData.roleCode})`,
+        );
       }
     }
 
-    return created
+    return created;
   }
 }

@@ -7,14 +7,14 @@ import {
   Req,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
-import { Request } from 'express'
-import { AuthService } from './auth.service'
-import { LoginDto, RefreshTokenDto, ChangePasswordDto } from './dto/auth.dto'
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
-import { CurrentUser } from '../../common/decorators/current-user.decorator'
-import type { JwtPayload } from './strategies/jwt.strategy'
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Request } from 'express';
+import { AuthService } from './auth.service';
+import { LoginDto, RefreshTokenDto, ChangePasswordDto } from './dto/auth.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { JwtPayload } from './strategies/jwt.strategy';
 
 /**
  * 认证控制器
@@ -33,9 +33,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登录' })
   async login(@Body() dto: LoginDto, @Req() req: Request) {
-    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || ''
-    const userAgent = req.headers['user-agent'] || ''
-    return this.authService.login(dto, ip, userAgent)
+    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '';
+    const userAgent = req.headers['user-agent'] || '';
+    return this.authService.login(dto, ip, userAgent);
   }
 
   /**
@@ -46,7 +46,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '刷新访问令牌' })
   async refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshToken(dto.refreshToken)
+    return this.authService.refreshToken(dto.refreshToken);
   }
 
   /**
@@ -58,7 +58,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '获取当前用户信息' })
   async getProfile(@CurrentUser() user: JwtPayload) {
-    return this.authService.getProfile(user.sub)
+    return this.authService.getProfile(user.sub);
   }
 
   /**
@@ -70,7 +70,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '获取当前用户菜单和权限' })
   async getUserMenus(@CurrentUser() user: JwtPayload) {
-    return this.authService.getUserMenus(user.sub)
+    return this.authService.getUserMenus(user.sub);
   }
 
   /**
@@ -86,7 +86,7 @@ export class AuthController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: ChangePasswordDto,
   ) {
-    await this.authService.changePassword(user.sub, dto)
-    return null
+    await this.authService.changePassword(user.sub, dto);
+    return null;
   }
 }

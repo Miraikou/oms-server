@@ -1,5 +1,5 @@
-import { Entity, Column, Index } from 'typeorm'
-import { BaseEntity } from '@/common/entities/base.entity'
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 销售员实体
@@ -9,10 +9,10 @@ import { BaseEntity } from '@/common/entities/base.entity'
 export class Salesperson extends BaseEntity {
   @Index('idx_name')
   @Column({ type: 'varchar', length: 50, comment: '姓名' })
-  name: string
+  name: string;
 
   @Column({ type: 'varchar', length: 30, nullable: true, comment: '联系电话' })
-  phone: string | null = null
+  phone: string | null = null;
 
   @Column({
     name: 'commission_rate',
@@ -22,9 +22,9 @@ export class Salesperson extends BaseEntity {
     default: 40.0,
     comment: '提成比例（%），默认 40%',
   })
-  commissionRate: string = '40.0000'
+  commissionRate: string = '40.0000';
 
   @Index('idx_status')
   @Column({ type: 'tinyint', default: 1, comment: '状态：1=启用，0=停用' })
-  status: number = 1
+  status: number = 1;
 }

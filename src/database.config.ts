@@ -1,7 +1,7 @@
-import { DataSource } from 'typeorm'
-import * as dotenv from 'dotenv'
+import { DataSource } from 'typeorm';
+import * as dotenv from 'dotenv';
 
-dotenv.config()
+dotenv.config();
 
 /**
  * TypeORM CLI 数据源配置
@@ -25,4 +25,4 @@ export default new DataSource({
   synchronize: false,
   logging: true,
   bigNumberStrings: true,
-})
+});

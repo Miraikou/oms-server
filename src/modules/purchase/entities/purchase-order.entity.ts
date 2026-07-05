@@ -1,5 +1,5 @@
-import { Entity, Column, Index } from 'typeorm'
-import { BaseEntity } from '@/common/entities/base.entity'
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 采购单实体
@@ -9,27 +9,50 @@ import { BaseEntity } from '@/common/entities/base.entity'
 @Entity('purchase_order')
 export class PurchaseOrder extends BaseEntity {
   @Index('uk_purchase_no', { unique: true })
-  @Column({ name: 'purchase_no', type: 'varchar', length: 50, comment: '采购单号' })
-  purchaseNo: string
+  @Column({
+    name: 'purchase_no',
+    type: 'varchar',
+    length: 50,
+    comment: '采购单号',
+  })
+  purchaseNo: string;
 
   @Index('idx_supplier_id')
   @Column({ name: 'supplier_id', type: 'bigint', comment: '供应商 ID' })
-  supplierId: string
+  supplierId: string;
 
   @Column({ type: 'varchar', length: 10, default: 'CNY', comment: '币种' })
-  currency: string = 'CNY'
+  currency: string = 'CNY';
 
-  @Column({ name: 'exchange_rate', type: 'decimal', precision: 10, scale: 6, default: 1.0, comment: '汇率' })
-  exchangeRate: string = '1.000000'
+  @Column({
+    name: 'exchange_rate',
+    type: 'decimal',
+    precision: 10,
+    scale: 6,
+    default: 1.0,
+    comment: '汇率',
+  })
+  exchangeRate: string = '1.000000';
 
-  @Column({ name: 'total_amount', type: 'decimal', precision: 18, scale: 2, default: 0, comment: '采购总金额' })
-  totalAmount: string = '0'
+  @Column({
+    name: 'total_amount',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '采购总金额',
+  })
+  totalAmount: string = '0';
 
   @Index('idx_purchase_date')
   @Column({ name: 'purchase_date', type: 'date', comment: '采购日期' })
-  purchaseDate: Date
+  purchaseDate: Date;
 
   @Index('idx_status')
-  @Column({ type: 'tinyint', default: 1, comment: '状态：1=待入库 2=部分入库 3=全部入库 4=已关闭' })
-  status: number = 1
+  @Column({
+    type: 'tinyint',
+    default: 1,
+    comment: '状态：1=待入库 2=部分入库 3=全部入库 4=已关闭',
+  })
+  status: number = 1;
 }

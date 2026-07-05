@@ -1,12 +1,12 @@
-import { Module, Global } from '@nestjs/common'
-import { ConfigModule, ConfigService } from '@nestjs/config'
-import Redis from 'ioredis'
+import { Module, Global } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 
 /**
  * Redis 客户端 Provider Token
  * 在需要注入 Redis 客户端时使用 @Inject('REDIS_CLIENT')
  */
-export const REDIS_CLIENT = 'REDIS_CLIENT'
+export const REDIS_CLIENT = 'REDIS_CLIENT';
 
 /**
  * Redis 全局模块
@@ -24,7 +24,7 @@ export const REDIS_CLIENT = 'REDIS_CLIENT'
           port: configService.get<number>('REDIS_PORT', 6379),
           password: configService.get<string>('REDIS_PASSWORD') || undefined,
           lazyConnect: true,
-        })
+        });
       },
       inject: [ConfigService],
     },

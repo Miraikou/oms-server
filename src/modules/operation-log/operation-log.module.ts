@@ -1,8 +1,8 @@
-import { Module, Global } from '@nestjs/common'
-import { TypeOrmModule } from '@nestjs/typeorm'
-import { SysOperationLog } from './entities/sys-operation-log.entity'
-import { OperationLogController } from './operation-log.controller'
-import { OperationLogService } from './operation-log.service'
+import { Module, Global } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { SysOperationLog } from './entities/sys-operation-log.entity';
+import { OperationLogController } from './operation-log.controller';
+import { OperationLogService } from './operation-log.service';
 
 /**
  * 操作日志模块

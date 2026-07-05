@@ -1,19 +1,25 @@
-import { IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator'
-import { Type } from 'class-transformer'
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { PaginationParamsDto } from '@/common/dto/pagination-params.dto'
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 
 /** 入库明细项 DTO */
 export class CreatePurchaseReceiptItemDto {
   @ApiProperty({ description: '采购明细 ID' })
   @IsString()
   @IsNotEmpty({ message: '采购明细不能为空' })
-  purchaseOrderItemId: string
+  purchaseOrderItemId: string;
 
   @ApiProperty({ description: '入库数量' })
   @IsString()
   @IsNotEmpty({ message: '入库数量不能为空' })
-  quantity: string
+  quantity: string;
 }
 
 /** 创建入库单 DTO */
@@ -21,23 +27,26 @@ export class CreatePurchaseReceiptDto {
   @ApiProperty({ description: '采购单 ID' })
   @IsString()
   @IsNotEmpty({ message: '采购单不能为空' })
-  purchaseOrderId: string
+  purchaseOrderId: string;
 
   @ApiPropertyOptional({ description: '入库时间', default: '当前时间' })
   @IsString()
   @IsOptional()
-  receiptDate?: string
+  receiptDate?: string;
 
   @ApiPropertyOptional({ description: '备注' })
   @IsString()
   @IsOptional()
-  remark?: string
+  remark?: string;
 
-  @ApiProperty({ description: '入库明细', type: [CreatePurchaseReceiptItemDto] })
+  @ApiProperty({
+    description: '入库明细',
+    type: [CreatePurchaseReceiptItemDto],
+  })
   @IsArray({ message: '入库明细不能为空' })
   @ValidateNested({ each: true })
   @Type(() => CreatePurchaseReceiptItemDto)
-  items: CreatePurchaseReceiptItemDto[]
+  items: CreatePurchaseReceiptItemDto[];
 }
 
 /** 查询入库单 DTO */
@@ -45,5 +54,5 @@ export class QueryPurchaseReceiptDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '采购单 ID' })
   @IsString()
   @IsOptional()
-  purchaseOrderId?: string
+  purchaseOrderId?: string;
 }

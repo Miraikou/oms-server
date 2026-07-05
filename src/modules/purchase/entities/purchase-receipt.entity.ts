@@ -1,5 +1,5 @@
-import { Entity, Column, Index } from 'typeorm'
-import { BaseEntity } from '@/common/entities/base.entity'
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 采购入库单实体
@@ -9,14 +9,23 @@ import { BaseEntity } from '@/common/entities/base.entity'
 @Entity('purchase_receipt')
 export class PurchaseReceipt extends BaseEntity {
   @Index('uk_receipt_no', { unique: true })
-  @Column({ name: 'receipt_no', type: 'varchar', length: 50, comment: '入库单号' })
-  receiptNo: string
+  @Column({
+    name: 'receipt_no',
+    type: 'varchar',
+    length: 50,
+    comment: '入库单号',
+  })
+  receiptNo: string;
 
   @Index('idx_purchase_order_id')
-  @Column({ name: 'purchase_order_id', type: 'bigint', comment: '来源采购单 ID' })
-  purchaseOrderId: string
+  @Column({
+    name: 'purchase_order_id',
+    type: 'bigint',
+    comment: '来源采购单 ID',
+  })
+  purchaseOrderId: string;
 
   @Index('idx_receipt_date')
   @Column({ name: 'receipt_date', type: 'datetime', comment: '入库时间' })
-  receiptDate: Date
+  receiptDate: Date;
 }

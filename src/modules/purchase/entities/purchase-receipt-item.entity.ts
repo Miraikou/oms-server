@@ -1,5 +1,5 @@
-import { Entity, Column, Index } from 'typeorm'
-import { BaseEntity } from '@/common/entities/base.entity'
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 采购入库明细实体
@@ -10,22 +10,32 @@ import { BaseEntity } from '@/common/entities/base.entity'
 export class PurchaseReceiptItem extends BaseEntity {
   @Index('idx_receipt_id')
   @Column({ name: 'receipt_id', type: 'bigint', comment: '入库单 ID' })
-  receiptId: string
+  receiptId: string;
 
   @Index('idx_purchase_order_item_id')
-  @Column({ name: 'purchase_order_item_id', type: 'bigint', comment: '来源采购明细 ID' })
-  purchaseOrderItemId: string
+  @Column({
+    name: 'purchase_order_item_id',
+    type: 'bigint',
+    comment: '来源采购明细 ID',
+  })
+  purchaseOrderItemId: string;
 
   @Index('idx_product_id')
   @Column({ name: 'product_id', type: 'bigint', comment: '商品 ID' })
-  productId: string
+  productId: string;
 
   @Column({ type: 'decimal', precision: 18, scale: 4, comment: '入库数量' })
-  quantity: string
+  quantity: string;
 
-  @Column({ name: 'unit_price', type: 'decimal', precision: 18, scale: 2, comment: '入库单价' })
-  unitPrice: string
+  @Column({
+    name: 'unit_price',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    comment: '入库单价',
+  })
+  unitPrice: string;
 
   @Column({ type: 'decimal', precision: 18, scale: 2, comment: '入库金额' })
-  amount: string
+  amount: string;
 }

@@ -3,8 +3,8 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-} from 'typeorm'
-import { snowflake } from '../utils/snowflake'
+} from 'typeorm';
+import { snowflake } from '../utils/snowflake';
 
 /**
  * 所有实体的基类
@@ -12,20 +12,38 @@ import { snowflake } from '../utils/snowflake'
  */
 export abstract class BaseEntity {
   @PrimaryColumn('bigint')
-  id: string = snowflake.nextId()
+  id: string = snowflake.nextId();
 
-  @Column({ name: 'created_by', type: 'bigint', nullable: true, comment: '创建人ID' })
-  createdBy: string | null = null
+  @Column({
+    name: 'created_by',
+    type: 'bigint',
+    nullable: true,
+    comment: '创建人ID',
+  })
+  createdBy: string | null = null;
 
-  @CreateDateColumn({ name: 'created_time', type: 'datetime', comment: '创建时间' })
-  createdTime: Date = new Date()
+  @CreateDateColumn({
+    name: 'created_time',
+    type: 'datetime',
+    comment: '创建时间',
+  })
+  createdTime: Date = new Date();
 
-  @Column({ name: 'updated_by', type: 'bigint', nullable: true, comment: '修改人ID' })
-  updatedBy: string | null = null
+  @Column({
+    name: 'updated_by',
+    type: 'bigint',
+    nullable: true,
+    comment: '修改人ID',
+  })
+  updatedBy: string | null = null;
 
-  @UpdateDateColumn({ name: 'updated_time', type: 'datetime', comment: '修改时间' })
-  updatedTime: Date = new Date()
+  @UpdateDateColumn({
+    name: 'updated_time',
+    type: 'datetime',
+    comment: '修改时间',
+  })
+  updatedTime: Date = new Date();
 
   @Column({ type: 'varchar', length: 500, nullable: true, comment: '备注' })
-  remark: string | null = null
+  remark: string | null = null;
 }

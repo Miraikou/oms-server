@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryColumn, Index } from 'typeorm'
+import { Entity, PrimaryColumn, Index } from 'typeorm';
 
 /**
  * 用户角色关联实体
@@ -7,9 +7,9 @@ import { Entity, Column, PrimaryColumn, Index } from 'typeorm'
 @Entity('sys_user_role')
 export class SysUserRole {
   @PrimaryColumn({ name: 'user_id', type: 'bigint', comment: '用户 ID' })
-  userId: string
+  userId: string;
 
   @PrimaryColumn({ name: 'role_id', type: 'bigint', comment: '角色 ID' })
   @Index('idx_role_id')
-  roleId: string
+  roleId: string;
 }

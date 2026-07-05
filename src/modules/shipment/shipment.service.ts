@@ -1,20 +1,17 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common'
-import { InjectRepository } from '@nestjs/typeorm'
-import { Repository, DataSource } from 'typeorm'
-import { Shipment } from './entities/shipment.entity'
-import { ShipmentItem } from './entities/shipment-item.entity'
-import { ShipmentItemBatch } from './entities/shipment-item-batch.entity'
-import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity'
-import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity'
-import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity'
-import { SequenceService } from '@/common/services/sequence.service'
-import { FifoService } from '@/modules/inventory/services/fifo.service'
-import { SalesOrderService } from '@/modules/sales-order/sales-order.service'
-import { snowflake } from '@/common/utils/snowflake'
-import type {
-  CreateShipmentDto,
-  QueryShipmentDto,
-} from './dto/shipment.dto'
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Shipment } from './entities/shipment.entity';
+import { ShipmentItem } from './entities/shipment-item.entity';
+import { ShipmentItemBatch } from './entities/shipment-item-batch.entity';
+import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
+import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
+import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
+import { SequenceService } from '@/common/services/sequence.service';
+import { FifoService } from '@/modules/inventory/services/fifo.service';
+import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
+import { snowflake } from '@/common/utils/snowflake';
+import type { CreateShipmentDto, QueryShipmentDto } from './dto/shipment.dto';
 
 /**
  * 发货服务 ⭐
@@ -22,7 +19,7 @@ import type {
  */
 @Injectable()
 export class ShipmentService {
-  private readonly logger = new Logger(ShipmentService.name)
+  private readonly logger = new Logger(ShipmentService.name);
 
   constructor(
     @InjectRepository(Shipment)
@@ -55,44 +52,45 @@ export class ShipmentService {
    */
   async create(dto: CreateShipmentDto): Promise<Shipment> {
     if (!dto.items || dto.items.length === 0) {
-      throw new BadRequestException('发货明细不能为空')
+      throw new BadRequestException('发货明细不能为空');
     }
 
     // 1. 校验订单状态
     const order = await this.orderRepo.findOne({
       where: { id: dto.orderId },
-    })
-    if (!order) throw new BadRequestException('订单不存在')
-    if (order.status !== 1) throw new BadRequestException('订单已结束，无法发货')
+    });
+    if (!order) throw new BadRequestException('订单不存在');
+    if (order.status !== 1)
+      throw new BadRequestException('订单已结束，无法发货');
     if (order.shipmentStatus === 3) {
-      throw new BadRequestException('订单已全部发货，无法再次发货')
+      throw new BadRequestException('订单已全部发货，无法再次发货');
     }
 
     // 2. 校验每个明细的发货数量
     const orderItems = await this.orderItemRepo.find({
       where: { orderId: dto.orderId },
-    })
-    const orderItemMap = new Map(orderItems.map((oi) => [oi.id, oi]))
+    });
+    const orderItemMap = new Map(orderItems.map((oi) => [oi.id, oi]));
 
     for (const item of dto.items) {
-      const orderItem = orderItemMap.get(item.orderItemId)
+      const orderItem = orderItemMap.get(item.orderItemId);
       if (!orderItem) {
-        throw new BadRequestException(`订单明细 ${item.orderItemId} 不存在`)
+        throw new BadRequestException(`订单明细 ${item.orderItemId} 不存在`);
       }
-      const shipQty = parseFloat(item.quantity)
-      if (shipQty <= 0) throw new BadRequestException('发货数量必须大于零')
+      const shipQty = parseFloat(item.quantity);
+      if (shipQty <= 0) throw new BadRequestException('发货数量必须大于零');
 
       const remaining =
-        parseFloat(orderItem.quantity) - parseFloat(orderItem.shippedQuantity)
+        parseFloat(orderItem.quantity) - parseFloat(orderItem.shippedQuantity);
       if (shipQty > remaining) {
         throw new BadRequestException(
           `发货数量 ${shipQty} 超过可发数量 ${remaining}`,
-        )
+        );
       }
     }
 
     // 3. 生成发货单号并创建
-    const shipmentNo = await this.sequenceService.generate('FH')
+    const shipmentNo = await this.sequenceService.generate('FH');
 
     const shipment = this.shipmentRepo.create({
       id: snowflake.nextId(),
@@ -103,14 +101,14 @@ export class ShipmentService {
       shipmentDate: new Date(dto.shipmentDate),
       status: 1,
       remark: dto.remark || null,
-    })
-    const savedShipment = await this.shipmentRepo.save(shipment)
+    });
+    const savedShipment = await this.shipmentRepo.save(shipment);
 
     // 4-6. 遍历每个明细：创建明细 → FIFO 扣减 → 写批次 → 计算成本/利润
     for (const dtoItem of dto.items) {
-      const orderItem = orderItemMap.get(dtoItem.orderItemId)!
-      const shipQty = parseFloat(dtoItem.quantity)
-      const salesAmount = shipQty * parseFloat(orderItem.unitPriceUsd)
+      const orderItem = orderItemMap.get(dtoItem.orderItemId)!;
+      const shipQty = parseFloat(dtoItem.quantity);
+      const salesAmount = shipQty * parseFloat(orderItem.unitPriceUsd);
 
       // 创建发货明细
       const shipmentItem = this.itemRepo.create({
@@ -123,8 +121,8 @@ export class ShipmentService {
         salesAmount: salesAmount.toFixed(2),
         totalCost: '0',
         grossProfit: '0',
-      })
-      const savedItem = await this.itemRepo.save(shipmentItem)
+      });
+      const savedItem = await this.itemRepo.save(shipmentItem);
 
       // 4. FIFO 扣减冻结库存
       const fifoResult = await this.fifoService.deductFrozen(
@@ -132,7 +130,7 @@ export class ShipmentService {
         shipQty,
         savedShipment.id,
         2, // 销售发货
-      )
+      );
 
       // 5. 写入发货批次明细
       for (const batch of fifoResult.items) {
@@ -143,15 +141,15 @@ export class ShipmentService {
           quantity: String(batch.quantity),
           unitCost: batch.unitCost,
           totalCost: batch.totalCost,
-        })
-        await this.batchRepo.save(itemBatch)
+        });
+        await this.batchRepo.save(itemBatch);
       }
 
       // 6. 汇总成本、计算毛利
-      const totalCost = parseFloat(fifoResult.totalCost)
-      savedItem.totalCost = fifoResult.totalCost
-      savedItem.grossProfit = (salesAmount - totalCost).toFixed(2)
-      await this.itemRepo.save(savedItem)
+      const totalCost = parseFloat(fifoResult.totalCost);
+      savedItem.totalCost = fifoResult.totalCost;
+      savedItem.grossProfit = (salesAmount - totalCost).toFixed(2);
+      await this.itemRepo.save(savedItem);
     }
 
     // 7. 更新订单已发数量 + 重算三维状态
@@ -160,11 +158,11 @@ export class ShipmentService {
         dto.orderId,
         dtoItem.orderItemId,
         parseFloat(dtoItem.quantity),
-      )
+      );
     }
 
-    this.logger.log(`发货完成: ${shipmentNo}, 订单: ${order.orderNo}`)
-    return savedShipment
+    this.logger.log(`发货完成: ${shipmentNo}, 订单: ${order.orderNo}`);
+    return savedShipment;
   }
 
   /**
@@ -172,18 +170,18 @@ export class ShipmentService {
    * 返回订单的可发明细 + FIFO 预估批次消耗
    */
   async preview(orderId: string) {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } })
-    if (!order) throw new BadRequestException('订单不存在')
+    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new BadRequestException('订单不存在');
 
     const orderItems = await this.orderItemRepo.find({
       where: { orderId },
-    })
+    });
 
-    const previewItems = []
+    const previewItems = [];
     for (const item of orderItems) {
       const remaining =
-        parseFloat(item.quantity) - parseFloat(item.shippedQuantity)
-      if (remaining <= 0) continue
+        parseFloat(item.quantity) - parseFloat(item.shippedQuantity);
+      if (remaining <= 0) continue;
 
       // 查询预估 FIFO 批次
       const batches = await this.inventoryBatchRepo
@@ -191,22 +189,22 @@ export class ShipmentService {
         .where('b.productId = :productId', { productId: item.productId })
         .andWhere('b.frozenQuantity > 0')
         .orderBy('b.inboundTime', 'ASC')
-        .getMany()
+        .getMany();
 
-      const batchPreview = []
-      let need = remaining
+      const batchPreview = [];
+      let need = remaining;
       for (const batch of batches) {
-        if (need <= 0) break
-        const frozen = parseFloat(batch.frozenQuantity)
-        const qty = Math.min(frozen, need)
+        if (need <= 0) break;
+        const frozen = parseFloat(batch.frozenQuantity);
+        const qty = Math.min(frozen, need);
         batchPreview.push({
           batchId: batch.id,
           batchNo: batch.batchNo,
           quantity: qty,
           unitCost: batch.unitCost,
           totalCost: (qty * parseFloat(batch.unitCost)).toFixed(2),
-        })
-        need -= qty
+        });
+        need -= qty;
       }
 
       previewItems.push({
@@ -218,7 +216,7 @@ export class ShipmentService {
         estimatedCost: batchPreview
           .reduce((s, b) => s + parseFloat(b.totalCost), 0)
           .toFixed(2),
-      })
+      });
     }
 
     return {
@@ -226,70 +224,72 @@ export class ShipmentService {
       orderNo: order.orderNo,
       customerName: order.customerName,
       items: previewItems,
-    }
+    };
   }
 
   /**
    * 查询发货单详情（聚合：主表 + 明细 + 批次）
    */
   async findOne(id: string) {
-    const shipment = await this.shipmentRepo.findOne({ where: { id } })
-    if (!shipment) throw new BadRequestException('发货单不存在')
+    const shipment = await this.shipmentRepo.findOne({ where: { id } });
+    if (!shipment) throw new BadRequestException('发货单不存在');
 
-    const items = await this.itemRepo.find({ where: { shipmentId: id } })
+    const items = await this.itemRepo.find({ where: { shipmentId: id } });
 
     // 查询每个明细的批次
     const itemsWithBatches = await Promise.all(
       items.map(async (item) => {
         const batches = await this.batchRepo.find({
           where: { shipmentItemId: item.id },
-        })
-        return { ...item, batches }
+        });
+        return { ...item, batches };
       }),
-    )
+    );
 
-    return { ...shipment, items: itemsWithBatches }
+    return { ...shipment, items: itemsWithBatches };
   }
 
   /**
    * 分页查询发货单列表
    */
   async findAll(query: QueryShipmentDto) {
-    const page = query.page || 1
-    const pageSize = query.pageSize || 20
+    const page = query.page || 1;
+    const pageSize = query.pageSize || 20;
 
-    const qb = this.shipmentRepo.createQueryBuilder('s')
+    const qb = this.shipmentRepo.createQueryBuilder('s');
 
     if (query.shipmentNo) {
-      qb.andWhere('s.shipmentNo LIKE :no', { no: `%${query.shipmentNo}%` })
+      qb.andWhere('s.shipmentNo LIKE :no', { no: `%${query.shipmentNo}%` });
     }
     if (query.orderId) {
-      qb.andWhere('s.orderId = :orderId', { orderId: query.orderId })
+      qb.andWhere('s.orderId = :orderId', { orderId: query.orderId });
     }
     if (query.expressCompanyId) {
       qb.andWhere('s.expressCompanyId = :expressCompanyId', {
         expressCompanyId: query.expressCompanyId,
-      })
+      });
     }
     if (query.trackingNo) {
       qb.andWhere('s.trackingNo LIKE :trackingNo', {
         trackingNo: `%${query.trackingNo}%`,
-      })
+      });
     }
     if (query.startDate) {
-      qb.andWhere('s.shipmentDate >= :startDate', { startDate: query.startDate })
+      qb.andWhere('s.shipmentDate >= :startDate', {
+        startDate: query.startDate,
+      });
     }
     if (query.endDate) {
-      qb.andWhere('s.shipmentDate <= :endDate', { endDate: query.endDate })
+      qb.andWhere('s.shipmentDate <= :endDate', { endDate: query.endDate });
     }
 
-    const sortField = query.sortField || 'createdTime'
-    const sortOrder = query.sortOrder || 'DESC'
+    const sortField = query.sortField || 'createdTime';
+    const sortOrder = query.sortOrder || 'DESC';
     qb.orderBy(`s.${sortField}`, sortOrder)
       .skip((page - 1) * pageSize)
-      .take(pageSize)
+      .take(pageSize);
 
-    const [list, total] = await qb.getManyAndCount()
-    return { list, total, page, pageSize }
+    const [list, total] = await qb.getManyAndCount();
+    return { list, total, page, pageSize };
   }
 }

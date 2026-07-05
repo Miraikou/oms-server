@@ -1,15 +1,15 @@
-import { Module } from '@nestjs/common'
-import { TypeOrmModule } from '@nestjs/typeorm'
-import { Shipment } from './entities/shipment.entity'
-import { ShipmentItem } from './entities/shipment-item.entity'
-import { ShipmentItemBatch } from './entities/shipment-item-batch.entity'
-import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity'
-import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity'
-import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity'
-import { ShipmentService } from './shipment.service'
-import { ShipmentController } from './shipment.controller'
-import { InventoryModule } from '@/modules/inventory/inventory.module'
-import { SalesOrderModule } from '@/modules/sales-order/sales-order.module'
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Shipment } from './entities/shipment.entity';
+import { ShipmentItem } from './entities/shipment-item.entity';
+import { ShipmentItemBatch } from './entities/shipment-item-batch.entity';
+import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
+import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
+import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
+import { ShipmentService } from './shipment.service';
+import { ShipmentController } from './shipment.controller';
+import { InventoryModule } from '@/modules/inventory/inventory.module';
+import { SalesOrderModule } from '@/modules/sales-order/sales-order.module';
 
 /**
  * 发货模块

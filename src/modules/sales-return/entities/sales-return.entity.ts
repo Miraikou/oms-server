@@ -1,5 +1,5 @@
-import { Entity, Column, Index } from 'typeorm'
-import { BaseEntity } from '@/common/entities/base.entity'
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 客户退货单实体
@@ -9,20 +9,30 @@ import { BaseEntity } from '@/common/entities/base.entity'
 @Entity('sales_return')
 export class SalesReturn extends BaseEntity {
   @Index('uk_return_no', { unique: true })
-  @Column({ name: 'return_no', type: 'varchar', length: 50, comment: '退货单号' })
-  returnNo: string
+  @Column({
+    name: 'return_no',
+    type: 'varchar',
+    length: 50,
+    comment: '退货单号',
+  })
+  returnNo: string;
 
   @Index('idx_order_id')
   @Column({ name: 'order_id', type: 'bigint', comment: '来源订单 ID' })
-  orderId: string
+  orderId: string;
 
   @Index('idx_return_date')
   @Column({ name: 'return_date', type: 'datetime', comment: '退货时间' })
-  returnDate: Date
+  returnDate: Date;
 
-  @Column({ name: 'restore_inventory', type: 'tinyint', default: 1, comment: '是否恢复库存：1=是 0=否' })
-  restoreInventory: number = 1
+  @Column({
+    name: 'restore_inventory',
+    type: 'tinyint',
+    default: 1,
+    comment: '是否恢复库存：1=是 0=否',
+  })
+  restoreInventory: number = 1;
 
   @Column({ type: 'varchar', length: 200, nullable: true, comment: '退货原因' })
-  reason: string | null = null
+  reason: string | null = null;
 }
