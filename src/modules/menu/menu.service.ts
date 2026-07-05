@@ -391,7 +391,7 @@ export class MenuService {
     }
 
     const menus = await qb
-      .orderBy('menu.sort', 'ASC')
+      .orderBy('menu.sortNo', 'ASC')
       .addOrderBy('menu.createdTime', 'ASC')
       .getMany();
 
