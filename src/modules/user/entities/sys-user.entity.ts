@@ -1,5 +1,6 @@
-import { Entity, Column, Index } from 'typeorm';
+import { Entity, Column, Index, ManyToMany, JoinTable } from 'typeorm';
 import { BaseEntity } from '@/common/entities/base.entity';
+import { SysRole } from '../../role/entities/sys-role.entity';
 
 /**
  * 系统用户实体
@@ -44,4 +45,12 @@ export class SysUser extends BaseEntity {
     comment: '最后登录 IP',
   })
   lastLoginIp: string | null = null;
+
+  @ManyToMany(() => SysRole)
+  @JoinTable({
+    name: 'sys_user_role',
+    joinColumn: { name: 'user_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'role_id', referencedColumnName: 'id' },
+  })
+  roles: SysRole[];
 }

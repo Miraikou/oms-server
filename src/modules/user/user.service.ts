@@ -37,6 +37,7 @@ export class UserService {
 
     const qb = this.userRepo
       .createQueryBuilder('user')
+      .leftJoinAndSelect('user.roles', 'role')
       .select([
         'user.id',
         'user.username',
@@ -49,6 +50,8 @@ export class UserService {
         'user.createdTime',
         'user.updatedTime',
         'user.remark',
+        'role.id',
+        'role.roleName',
       ]);
 
     if (query.keyword) {
