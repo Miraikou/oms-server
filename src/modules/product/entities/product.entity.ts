@@ -34,9 +34,10 @@ export class Product extends BaseEntity {
     name: 'product_model',
     type: 'varchar',
     length: 100,
+    nullable: true,
     comment: '产品型号',
   })
-  productModel: string;
+  productModel: string | null = null;
 
   @Column({
     name: 'image_url',

@@ -18,10 +18,10 @@ export class CreateProductDto {
   @IsNotEmpty({ message: '商品名称不能为空' })
   productName: string;
 
-  @ApiProperty({ description: '产品型号' })
+  @ApiPropertyOptional({ description: '产品型号' })
   @IsString()
-  @IsNotEmpty({ message: '产品型号不能为空' })
-  productModel: string;
+  @IsOptional()
+  productModel?: string;
 
   @ApiPropertyOptional({ description: '商品图片 URL' })
   @IsString()
@@ -44,6 +44,11 @@ export class UpdateProductDto {
   @IsString()
   @IsOptional()
   productName?: string;
+
+  @ApiPropertyOptional({ description: '产品型号' })
+  @IsString()
+  @IsOptional()
+  productModel?: string;
 
   @ApiPropertyOptional({ description: '商品图片 URL' })
   @IsString()

@@ -36,6 +36,7 @@ const MODULE_MAP: Record<string, string> = {
   '/dashboard': '驾驶舱',
   '/operation-logs': '操作日志',
   '/dictionaries': '字典管理',
+  '/upload': '文件上传',
 };
 
 /** 业务类型映射（HTTP 方法 → 业务类型） */

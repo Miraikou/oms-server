@@ -4,6 +4,7 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { QueryFailedError } from 'typeorm';
@@ -20,9 +21,16 @@ import { QueryFailedError } from 'typeorm';
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AllExceptionsFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+
+    // 非 HttpException 打印完整错误堆栈，避免静默吞错
+    if (!(exception instanceof HttpException)) {
+      this.logger.error('未捕获异常', exception instanceof Error ? exception.stack : exception);
+    }
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = '服务器内部错误';

@@ -4,6 +4,7 @@ import {
   Post,
   Put,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -62,5 +63,11 @@ export class ProductController {
   @ApiOperation({ summary: '切换商品状态' })
   toggleStatus(@Param('id') id: string) {
     return this.service.toggleStatus(id);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '删除商品（同步删除 OSS 图片）' })
+  async delete(@Param('id') id: string) {
+    return this.service.delete(id);
   }
 }

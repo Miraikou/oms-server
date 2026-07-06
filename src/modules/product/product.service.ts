@@ -3,11 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { BaseCrudService } from '@/common/services/base-crud.service';
+import { OssService } from '@/common/oss/oss.service';
 import type { QueryProductDto } from './dto/product.dto';
 
 @Injectable()
 export class ProductService extends BaseCrudService<Product> {
-  constructor(@InjectRepository(Product) repo: Repository<Product>) {
+  constructor(
+    @InjectRepository(Product) repo: Repository<Product>,
+    private readonly ossService: OssService,
+  ) {
     super(repo, 'product');
   }
 
@@ -52,5 +56,20 @@ export class ProductService extends BaseCrudService<Product> {
 
     const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
+  }
+
+  /** 删除商品，同步删除 OSS 上的商品图片 */
+  async delete(id: string): Promise<void> {
+    const product = await this.findOne(id);
+
+    // 删除 OSS 图片
+    if (product.imageUrl) {
+      const objectName = this.ossService.extractObjectName(product.imageUrl);
+      if (objectName) {
+        await this.ossService.delete(objectName);
+      }
+    }
+
+    await this.repo.remove(product);
   }
 }

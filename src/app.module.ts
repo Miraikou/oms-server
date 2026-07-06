@@ -3,10 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
 import { RedisModule } from './common/redis/redis.module';
+import { OssModule } from './common/oss/oss.module';
 import { RoleModule } from './modules/role/role.module';
 import { MenuModule } from './modules/menu/menu.module';
 import { OperationLogModule } from './modules/operation-log/operation-log.module';
 import { LoginLogModule } from './modules/login-log/login-log.module';
+import { UploadModule } from './modules/upload/upload.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { SupplierModule } from './modules/supplier/supplier.module';
@@ -64,6 +66,9 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     // Redis 全局模块
     RedisModule,
 
+    // OSS 全局模块
+    OssModule,
+
     // 编号生成全局模块
     SequenceModule,
 
@@ -87,6 +92,9 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     CostTypeModule,
     SystemConfigModule,
     CommonContactModule,
+
+    // 通用上传
+    UploadModule,
 
     // 字典服务
     DictionaryModule,
