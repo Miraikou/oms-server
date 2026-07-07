@@ -11,6 +11,7 @@ import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseReceiptService } from './purchase-receipt.service';
 import { PurchaseOrderController } from './purchase-order.controller';
 import { PurchaseReceiptController } from './purchase-receipt.controller';
+import { RateModule as CommonRateModule } from '@/common/rate/rate.module';
 
 /**
  * 采购模块
@@ -27,6 +28,7 @@ import { PurchaseReceiptController } from './purchase-receipt.controller';
       InventoryBatch,
       InventoryFlow,
     ]),
+    CommonRateModule,
   ],
   controllers: [PurchaseOrderController, PurchaseReceiptController],
   providers: [PurchaseOrderService, PurchaseReceiptService],
