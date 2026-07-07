@@ -32,6 +32,7 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { SalesReturnModule } from './modules/sales-return/sales-return.module';
 import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { RateModule } from './modules/rate/rate.module';
 
 @Module({
   imports: [
@@ -110,6 +111,8 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 
     // 驾驶舱
     DashboardModule,
+
+    RateModule,
   ],
   controllers: [AppController],
 })
