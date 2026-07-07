@@ -34,8 +34,8 @@ export class UploadController {
     if (!file) {
       throw new Error('未收到文件，请检查表单字段名为 file')
     }
-    const ext = file.originalname.split('.').pop() || 'jpg'
-    const objectName = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const filename = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const objectName = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_filename_${filename}`
     const url = await this.ossService.upload(file.buffer, objectName)
     return { url }
   }

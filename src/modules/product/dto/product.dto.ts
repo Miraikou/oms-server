@@ -35,6 +35,11 @@ export class CreateProductDto {
 }
 
 export class UpdateProductDto {
+  @ApiProperty({ description: '供应商 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '供应商不能为空' })
+  supplierId: string;
+
   @ApiPropertyOptional({ description: '商品分类 ID' })
   @IsString()
   @IsOptional()
