@@ -59,12 +59,7 @@ export class CostTypeController {
   @Put(':id')
   @ApiOperation({ summary: '更新成本类型' })
   update(@Param('id') id: string, @Body() dto: UpdateCostTypeDto) {
-    const data: Record<string, unknown> = {};
-    if (dto.costName !== undefined) data.costName = dto.costName;
-    if (dto.sortNo !== undefined) data.sortNo = dto.sortNo;
-    if (dto.status !== undefined) data.status = dto.status;
-    if (dto.remark !== undefined) data.remark = dto.remark;
-    return this.service.update(id, data);
+    return this.service.update(id, dto)
   }
 
   @Patch(':id/status')

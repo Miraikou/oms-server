@@ -55,11 +55,7 @@ export class TransportChannelController {
   @Put(':id')
   @ApiOperation({ summary: '更新运输渠道' })
   update(@Param('id') id: string, @Body() dto: UpdateTransportChannelDto) {
-    const data: Record<string, unknown> = {};
-    if (dto.channelName !== undefined) data.channelName = dto.channelName;
-    if (dto.status !== undefined) data.status = dto.status;
-    if (dto.remark !== undefined) data.remark = dto.remark;
-    return this.service.update(id, data);
+    return this.service.update(id, dto)
   }
 
   @Patch(':id/status')

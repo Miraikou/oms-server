@@ -55,11 +55,7 @@ export class ExpressCompanyController {
   @Put(':id')
   @ApiOperation({ summary: '更新快递公司' })
   update(@Param('id') id: string, @Body() dto: UpdateExpressCompanyDto) {
-    const data: Record<string, unknown> = {};
-    if (dto.companyName !== undefined) data.companyName = dto.companyName;
-    if (dto.status !== undefined) data.status = dto.status;
-    if (dto.remark !== undefined) data.remark = dto.remark;
-    return this.service.update(id, data);
+    return this.service.update(id, dto)
   }
 
   @Patch(':id/status')
