@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
@@ -13,6 +13,54 @@ export class ProductService extends BaseCrudService<Product> {
     private readonly ossService: OssService,
   ) {
     super(repo, 'product');
+  }
+
+  /** 创建商品前查重 */
+  async create(data: object): Promise<Product> {
+    await this.checkDuplicate(data)
+    return super.create(data)
+  }
+
+  /** 更新商品前查重 */
+  async update(id: string, data: object): Promise<Product> {
+    await this.checkDuplicate(data, id)
+    return super.update(id, data)
+  }
+
+  /**
+   * 检查商品是否重复
+   * 重复条件：(supplierId, categoryId, productName, productModel) 完全一致
+   * categoryId 和 productModel 为 NULL 时视为空字符串比较
+   */
+  private async checkDuplicate(
+    data: object,
+    excludeId?: string,
+  ): Promise<void> {
+    const d = data as Record<string, unknown>
+    const categoryId = (d.categoryId as string) || ''
+    const productModel = (d.productModel as string) || ''
+
+    const qb = this.repo
+      .createQueryBuilder('p')
+      .where('p.supplierId = :sid', { sid: d.supplierId })
+      .andWhere('p.productName = :name', { name: d.productName })
+      .andWhere(
+        '(p.categoryId = :cid OR (p.categoryId IS NULL AND :cid = :empty))',
+        { cid: categoryId, empty: '' },
+      )
+      .andWhere(
+        '(p.productModel = :model OR (p.productModel IS NULL AND :model = :empty2))',
+        { model: productModel, empty2: '' },
+      )
+
+    if (excludeId) {
+      qb.andWhere('p.id != :id', { id: excludeId })
+    }
+
+    const exists = await qb.getOne()
+    if (exists) {
+      throw new ConflictException('该供应商下已存在相同分类、名称、型号的商品')
+    }
   }
 
   protected getSearchFields(): string[] {

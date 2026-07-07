@@ -1,5 +1,5 @@
-import { NotFoundException } from '@nestjs/common';
-import { Repository, FindOptionsWhere, DeepPartial } from 'typeorm';
+import { NotFoundException, ConflictException } from '@nestjs/common';
+import { Repository, FindOptionsWhere, DeepPartial, QueryFailedError } from 'typeorm';
 import { snowflake } from '@/common/utils/snowflake';
 
 /**
@@ -70,18 +70,44 @@ export abstract class BaseCrudService<T extends { id: string }> {
 
   /** 创建记录 */
   async create(data: object): Promise<T> {
-    const entity = this.repo.create({
-      id: snowflake.nextId(),
-      ...data,
-    } as DeepPartial<T>);
-    return this.repo.save(entity);
+    try {
+      const entity = this.repo.create({
+        id: snowflake.nextId(),
+        ...data,
+      } as DeepPartial<T>);
+      return await this.repo.save(entity);
+    } catch (error) {
+      this.handleDuplicateError(error);
+      throw error
+    }
   }
 
   /** 更新记录 */
   async update(id: string, data: object): Promise<T> {
-    const entity = await this.findOne(id);
-    Object.assign(entity, data);
-    return this.repo.save(entity);
+    try {
+      const entity = await this.findOne(id);
+      Object.assign(entity, data);
+      return await this.repo.save(entity);
+    } catch (error) {
+      this.handleDuplicateError(error);
+      throw error
+    }
+  }
+
+  /**
+   * 处理唯一约束冲突（MySQL ER_DUP_ENTRY / errno 1062）
+   * 抛出 ConflictException (HTTP 409)，返回友好的中文提示
+   */
+  private handleDuplicateError(error: unknown): void {
+    if (!(error instanceof QueryFailedError)) return
+
+    const driverErr = (error as unknown as { driverError?: { errno?: number; code?: string } }).driverError
+    if (driverErr?.errno !== 1062 && driverErr?.code !== 'ER_DUP_ENTRY') return
+
+    const msg = error.message || ''
+    const match = msg.match(/Duplicate entry '(.+?)' for key '(.+?)'/)
+    const value = match?.[1] ?? ''
+    throw new ConflictException(`数据已存在，请勿重复添加（${this.alias}）：${value}`)
   }
 
   /** 切换启用/停用状态 */

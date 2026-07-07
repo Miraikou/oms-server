@@ -3,10 +3,8 @@ import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 商品实体
- * 同一供应商下型号唯一，不同供应商允许相同型号
  */
 @Entity('product')
-@Index('uk_supplier_model', ['supplierId', 'productModel'], { unique: true })
 export class Product extends BaseEntity {
   @Index('idx_supplier_id')
   @Column({ name: 'supplier_id', type: 'bigint', comment: '供应商 ID' })
