@@ -19,6 +19,7 @@ function normalizeDecimal(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(normalizeDecimal)
   }
+  if (value instanceof Date) return value
   if (value !== null && typeof value === 'object') {
     const result: Record<string, unknown> = {}
     for (const key of Object.keys(value as Record<string, unknown>)) {
