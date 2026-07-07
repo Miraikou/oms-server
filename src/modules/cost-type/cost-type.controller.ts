@@ -14,10 +14,10 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CostTypeService } from './cost-type.service';
 import {
-  CreateNameDto,
-  UpdateNameDto,
-  QueryNameDto,
-} from '@/common/dto/name.dto';
+  CreateCostTypeDto,
+  UpdateCostTypeDto,
+  QueryCostTypeDto,
+} from './dto/cost-type.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
 @ApiTags('成本类型')
@@ -29,7 +29,7 @@ export class CostTypeController {
 
   @Get()
   @ApiOperation({ summary: '分页查询成本类型' })
-  findAll(@Query() query: QueryNameDto) {
+  findAll(@Query() query: QueryCostTypeDto) {
     return this.service.findAll(query);
   }
 
@@ -48,9 +48,9 @@ export class CostTypeController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '创建成本类型' })
-  create(@Body() dto: CreateNameDto) {
+  create(@Body() dto: CreateCostTypeDto) {
     return this.service.create({
-      costName: dto.companyName,
+      costName: dto.costName,
       sortNo: dto.sortNo || 0,
       remark: dto.remark,
     });
@@ -58,9 +58,9 @@ export class CostTypeController {
 
   @Put(':id')
   @ApiOperation({ summary: '更新成本类型' })
-  update(@Param('id') id: string, @Body() dto: UpdateNameDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateCostTypeDto) {
     const data: Record<string, unknown> = {};
-    if (dto.companyName !== undefined) data.costName = dto.companyName;
+    if (dto.costName !== undefined) data.costName = dto.costName;
     if (dto.sortNo !== undefined) data.sortNo = dto.sortNo;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.remark !== undefined) data.remark = dto.remark;

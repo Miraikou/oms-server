@@ -14,10 +14,10 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ExpressCompanyService } from './express-company.service';
 import {
-  CreateNameDto,
-  UpdateNameDto,
-  QueryNameDto,
-} from '@/common/dto/name.dto';
+  CreateExpressCompanyDto,
+  UpdateExpressCompanyDto,
+  QueryExpressCompanyDto,
+} from './dto/express-company.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
 @ApiTags('快递公司')
@@ -29,7 +29,7 @@ export class ExpressCompanyController {
 
   @Get()
   @ApiOperation({ summary: '分页查询快递公司' })
-  findAll(@Query() query: QueryNameDto) {
+  findAll(@Query() query: QueryExpressCompanyDto) {
     return this.service.findAll(query);
   }
 
@@ -48,13 +48,13 @@ export class ExpressCompanyController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '创建快递公司' })
-  create(@Body() dto: CreateNameDto) {
+  create(@Body() dto: CreateExpressCompanyDto) {
     return this.service.create({ companyName: dto.companyName, remark: dto.remark });
   }
 
   @Put(':id')
   @ApiOperation({ summary: '更新快递公司' })
-  update(@Param('id') id: string, @Body() dto: UpdateNameDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateExpressCompanyDto) {
     const data: Record<string, unknown> = {};
     if (dto.companyName !== undefined) data.companyName = dto.companyName;
     if (dto.status !== undefined) data.status = dto.status;
