@@ -30,6 +30,7 @@ export class RateService {
 			return {
 				...params,
 				rate: this.defaultRates[params.base] ?? 1,
+        isDefault: true,
 			};
 		}
 	}
