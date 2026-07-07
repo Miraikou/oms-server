@@ -50,7 +50,7 @@ export class CostTypeController {
   @ApiOperation({ summary: '创建成本类型' })
   create(@Body() dto: CreateNameDto) {
     return this.service.create({
-      costName: dto.name,
+      costName: dto.companyName,
       sortNo: dto.sortNo || 0,
       remark: dto.remark,
     });
@@ -60,7 +60,7 @@ export class CostTypeController {
   @ApiOperation({ summary: '更新成本类型' })
   update(@Param('id') id: string, @Body() dto: UpdateNameDto) {
     const data: Record<string, unknown> = {};
-    if (dto.name !== undefined) data.costName = dto.name;
+    if (dto.companyName !== undefined) data.costName = dto.companyName;
     if (dto.sortNo !== undefined) data.sortNo = dto.sortNo;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.remark !== undefined) data.remark = dto.remark;

@@ -49,14 +49,14 @@ export class TransportChannelController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '创建运输渠道' })
   create(@Body() dto: CreateNameDto) {
-    return this.service.create({ channelName: dto.name, remark: dto.remark });
+    return this.service.create({ channelName: dto.companyName, remark: dto.remark });
   }
 
   @Put(':id')
   @ApiOperation({ summary: '更新运输渠道' })
   update(@Param('id') id: string, @Body() dto: UpdateNameDto) {
     const data: Record<string, unknown> = {};
-    if (dto.name !== undefined) data.channelName = dto.name;
+    if (dto.companyName !== undefined) data.channelName = dto.companyName;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.remark !== undefined) data.remark = dto.remark;
     return this.service.update(id, data);

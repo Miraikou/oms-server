@@ -7,7 +7,7 @@ export class CreateNameDto {
   @ApiProperty({ description: '名称' })
   @IsString()
   @IsNotEmpty({ message: '名称不能为空' })
-  name: string;
+  companyName: string;
 
   @ApiPropertyOptional({ description: '排序号', default: 0 })
   @IsOptional()
@@ -23,7 +23,7 @@ export class UpdateNameDto {
   @ApiPropertyOptional({ description: '名称' })
   @IsString()
   @IsOptional()
-  name?: string;
+  companyName?: string;
 
   @ApiPropertyOptional({ description: '排序号' })
   @IsOptional()
