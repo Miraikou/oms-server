@@ -22,6 +22,7 @@ export class InventoryFlowController {
     query: {
       productId?: string;
       businessType?: number;
+      batchId?: string;
       page?: number;
       pageSize?: number;
     },
@@ -33,9 +34,14 @@ export class InventoryFlowController {
     if (query.productId) {
       qb.andWhere('f.productId = :productId', { productId: query.productId });
     }
-    if (query.businessType !== undefined) {
+    if (typeof query.businessType === 'number') {
       qb.andWhere('f.businessType = :businessType', {
         businessType: query.businessType,
+      });
+    }
+    if (query.batchId) {
+      qb.andWhere('f.batchId = :batchId', {
+        batchId: query.batchId,
       });
     }
 
@@ -44,7 +50,32 @@ export class InventoryFlowController {
       .take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
-    return { list, total, page, pageSize };
+
+    // 查询关联的采购单币种
+    const batchIds = [...new Set(list.map((f) => f.batchId))];
+    const currencies: Record<string, string> = {};
+    if (batchIds.length > 0) {
+      const rows = await this.flowRepo.manager
+        .createQueryBuilder()
+        .select('ib.id', 'batchId')
+        .addSelect('po.currency', 'currency')
+        .from('inventory_batch', 'ib')
+        .leftJoin('purchase_receipt_item', 'pri', 'pri.id = ib.receipt_item_id')
+        .leftJoin('purchase_receipt', 'pr', 'pr.id = pri.receipt_id')
+        .leftJoin('purchase_order', 'po', 'po.id = pr.purchase_order_id')
+        .where('ib.id IN (:...ids)', { ids: batchIds })
+        .getRawMany<{ batchId: string; currency: string }>();
+      for (const row of rows) {
+        currencies[row.batchId] = row.currency;
+      }
+    }
+
+    const enrichedList = list.map((f) => ({
+      ...f,
+      currency: currencies[f.batchId] || undefined,
+    }));
+
+    return { list: enrichedList, total, page, pageSize };
   }
 
   @Get(':id')
