@@ -67,10 +67,35 @@ export class InventoryController {
   @Get('product/:productId/batches')
   @ApiOperation({ summary: '商品批次列表' })
   async getBatches(@Param('productId') productId: string) {
-    return this.batchRepo.find({
+    const batches = await this.batchRepo.find({
       where: { productId },
       order: { inboundTime: 'ASC' },
     });
+
+    // 查询关联的采购单币种
+    const receiptItemIds = batches
+      .map((b) => b.receiptItemId)
+      .filter((id): id is string => id !== null);
+    const currencies: Record<string, string> = {};
+    if (receiptItemIds.length > 0) {
+      const rows = await this.batchRepo.manager
+        .createQueryBuilder()
+        .select('pri.id', 'id')
+        .addSelect('po.currency', 'currency')
+        .from('purchase_receipt_item', 'pri')
+        .leftJoin('purchase_receipt', 'pr', 'pr.id = pri.receipt_id')
+        .leftJoin('purchase_order', 'po', 'po.id = pr.purchase_order_id')
+        .where('pri.id IN (:...ids)', { ids: receiptItemIds })
+        .getRawMany<{ id: string; currency: string }>();
+      for (const row of rows) {
+        currencies[row.id] = row.currency;
+      }
+    }
+
+    return batches.map((b) => ({
+      ...b,
+      currency: (b.receiptItemId && currencies[b.receiptItemId]) || undefined,
+    }));
   }
 
   @Get('product/:productId/flows')
