@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SysOperationLog } from './entities/sys-operation-log.entity';
 import { snowflake } from '@/common/utils/snowflake';
+import { requestContext } from '@/common/context/request-context';
 
 /**
  * 操作日志服务
@@ -94,8 +95,8 @@ export class OperationLogService {
         module: data.module,
         businessType: data.businessType,
         businessId: data.businessId || null,
-        createdBy: data.createdBy || null,
-        operatorName: data.operatorName || null,
+        createdBy: data.createdBy || requestContext.userId || null,
+        operatorName: data.operatorName || requestContext.username || null,
         requestMethod: data.requestMethod,
         requestUri: data.requestUri,
         requestIp: data.requestIp || null,

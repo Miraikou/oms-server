@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WinstonModule } from 'nest-winston';
@@ -33,6 +33,8 @@ import { SalesReturnModule } from './modules/sales-return/sales-return.module';
 import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { RateModule } from './modules/rate/rate.module';
+import { AuditSubscriber } from './common/subscribers/audit.subscriber';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 
 @Module({
   imports: [
@@ -61,6 +63,7 @@ import { RateModule } from './modules/rate/rate.module';
         synchronize: configService.get<string>('APP_ENV') === 'development',
         logging: configService.get<string>('APP_ENV') === 'development',
         bigNumberStrings: true,
+        subscribers: [AuditSubscriber],
       }),
     }),
 
@@ -116,4 +119,8 @@ import { RateModule } from './modules/rate/rate.module';
   ],
   controllers: [AppController],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*')
+  }
+}

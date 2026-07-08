@@ -84,6 +84,8 @@ const DEFAULT_MENUS = [
           { name: '删除', permission: 'purchase-order:delete' },
           { name: '导入', permission: 'purchase-order:import' },
           { name: '导出', permission: 'purchase-order:export' },
+          { name: '入库', permission: 'purchase-order:receipt' },
+          { name: '关闭', permission: 'purchase-order:close' },
         ],
       },
       {
@@ -777,6 +779,8 @@ export class MenuService {
         'purchase-order:query',
         'purchase-order:create',
         'purchase-order:edit',
+        'purchase-order:receipt',
+        'purchase-order:close',
         'purchase-order:import',
         'purchase-order:export',
         'purchase-receipt:query',

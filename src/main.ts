@@ -5,6 +5,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { UserContextInterceptor } from './common/interceptors/user-context.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
@@ -34,6 +35,9 @@ async function bootstrap() {
 
   // 全局异常过滤器
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // 用户上下文拦截器（必须在 TransformInterceptor 之前，确保 Subscriber 能取到 userId）
+  app.useGlobalInterceptors(new UserContextInterceptor());
 
   // 全局响应转换拦截器
   app.useGlobalInterceptors(new TransformInterceptor());

@@ -47,6 +47,25 @@ const METHOD_MAP: Record<string, string> = {
   DELETE: '删除',
 };
 
+/** 清理请求 body，过滤二进制/large 字段，截断过长内容 */
+function sanitizeBody(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return body
+  if (Array.isArray(body)) return body.map(sanitizeBody)
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+    if (key === 'image' || key === 'file' || key === 'password') {
+      result[key] = '[FILTERED]'
+    } else if (typeof value === 'string' && value.length > 500) {
+      result[key] = value.substring(0, 500) + '...'
+    } else if (typeof value === 'object' && value !== null) {
+      result[key] = sanitizeBody(value)
+    } else {
+      result[key] = value
+    }
+  }
+  return result
+}
+
 /**
  * 操作日志拦截器
  * 自动记录所有非 GET 请求的操作日志
@@ -59,17 +78,29 @@ export class OperationLogInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest<Request>();
     const method = req.method.toUpperCase();
 
-    // 只记录写操作
+    // 只记录写操作，排除无需记录的路由
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       return next.handle();
     }
 
-    const startTime = Date.now();
     const uri = req.originalUrl || req.url;
+
+    // 排除列表：Token 刷新等无需记录的接口
+    const SKIP_URIS = ['/api/v1/auth/refresh', '/api/v1/auth/login'];
+    if (SKIP_URIS.some((skip) => uri.startsWith(skip))) {
+      return next.handle();
+    }
     const moduleKey =
       Object.keys(MODULE_MAP).find((k) => uri.startsWith(`/api/v1${k}`)) || '';
     const module = MODULE_MAP[moduleKey] || '其他';
     const businessType = `${METHOD_MAP[method] || method}${module}`;
+
+    // 序列化请求参数（过滤掉文件和超大 body）
+    const params = {
+      query: (req as unknown as Record<string, unknown>).query,
+      body: sanitizeBody(req.body),
+    }
+    const operationContent = JSON.stringify(params, null, 2)
 
     return next.handle().pipe(
       tap({
@@ -81,7 +112,7 @@ export class OperationLogInterceptor implements NestInterceptor {
             requestUri: uri,
             requestIp: (req.ip || req.socket.remoteAddress) ?? undefined,
             operationResult: 1,
-            operationContent: `${method} ${uri}`,
+            operationContent,
           });
         },
         error: () => {
@@ -92,7 +123,7 @@ export class OperationLogInterceptor implements NestInterceptor {
             requestUri: uri,
             requestIp: (req.ip || req.socket.remoteAddress) ?? undefined,
             operationResult: 0,
-            operationContent: `${method} ${uri}`,
+            operationContent,
           });
         },
       }),
