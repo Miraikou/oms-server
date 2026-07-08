@@ -273,13 +273,17 @@ export class PurchaseReceiptService {
     return { list, total, page, pageSize };
   }
 
-  /** 查询入库单详情（含明细） */
+  /** 查询入库单详情（含明细和采购单币种） */
   async findOne(
     id: string,
-  ): Promise<PurchaseReceipt & { items?: PurchaseReceiptItem[] }> {
+  ): Promise<PurchaseReceipt & { items?: PurchaseReceiptItem[]; currency?: string }> {
     const receipt = await this.receiptRepo.findOne({ where: { id } });
     if (!receipt) throw new BadRequestException('入库单不存在');
     const items = await this.receiptItemRepo.find({ where: { receiptId: id } });
-    return { ...receipt, items };
+    const order = await this.orderRepo.findOne({
+      where: { id: receipt.purchaseOrderId },
+      select: { currency: true } as Record<string, boolean>,
+    });
+    return { ...receipt, items, currency: order?.currency };
   }
 }
