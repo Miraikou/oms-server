@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { InventoryBatch } from '../entities/inventory-batch.entity';
 import { Inventory } from '../entities/inventory.entity';
 import { InventoryFlow } from '../entities/inventory-flow.entity';
@@ -59,6 +59,8 @@ export class FifoService {
    * @param quantity 扣减数量
    * @param businessId 业务单据 ID（如发货单 ID）
    * @param businessType 业务类型（2=销售发货）
+   * @param externalManager 外部事务 manager（传入时加入外部事务，不另开事务）
+   * @param changeType 流水变化类型（默认 2=出库，库存调整传 5）
    * @returns 扣减明细和总成本
    */
   async consume(
@@ -66,122 +68,131 @@ export class FifoService {
     quantity: number,
     businessId: string,
     businessType: number = 2,
+    externalManager?: EntityManager,
+    changeType: number = 2,
   ): Promise<FifoConsumeResult> {
     if (quantity <= 0) throw new BadRequestException('扣减数量必须大于零');
 
-    return this.withRetry(async () => {
-      return this.dataSource.transaction(async (manager) => {
-        // 1. 按 FIFO 顺序获取可用批次
-        const batches = await manager
-          .createQueryBuilder(InventoryBatch, 'b')
-          .setLock('pessimistic_write')
-          .where('b.productId = :productId', { productId })
-          .andWhere('b.status = :status', { status: 1 })
-          .andWhere('b.availableQuantity > 0')
-          .orderBy('b.inboundTime', 'ASC')
-          .getMany();
+    const doConsume = async (manager: EntityManager): Promise<FifoConsumeResult> => {
+      // 1. 按 FIFO 顺序获取可用批次
+      const batches = await manager
+        .createQueryBuilder(InventoryBatch, 'b')
+        .setLock('pessimistic_write')
+        .where('b.productId = :productId', { productId })
+        .andWhere('b.status = :status', { status: 1 })
+        .andWhere('b.availableQuantity > 0')
+        .orderBy('b.inboundTime', 'ASC')
+        .getMany();
 
-        // 2. 检查总可用库存
-        const totalAvailable = batches.reduce(
-          (sum, b) => sum + parseFloat(b.availableQuantity),
-          0,
+      // 2. 检查总可用库存
+      const totalAvailable = batches.reduce(
+        (sum, b) => sum + parseFloat(b.availableQuantity),
+        0,
+      );
+      if (totalAvailable < quantity) {
+        throw new BadRequestException(
+          `库存不足：需要 ${quantity}，可用 ${totalAvailable}`,
         );
-        if (totalAvailable < quantity) {
-          throw new BadRequestException(
-            `库存不足：需要 ${quantity}，可用 ${totalAvailable.toFixed(4)}`,
-          );
-        }
+      }
 
-        // 3. 获取当前库存汇总
-        const inventory = await manager.findOne(Inventory, {
-          where: { productId },
-        });
-        if (!inventory) throw new BadRequestException('库存记录不存在');
-        const beforeAvailable = parseFloat(inventory.availableQuantity);
-        const beforeFrozen = parseFloat(inventory.frozenQuantity);
-
-        // 4. 逐批次扣减
-        let remaining = quantity;
-        const consumeItems: FifoConsumeItem[] = [];
-        let totalCostValue = 0;
-
-        for (const batch of batches) {
-          if (remaining <= 0) break;
-
-          const batchAvailable = parseFloat(batch.availableQuantity);
-          const deduct = Math.min(batchAvailable, remaining);
-
-          batch.availableQuantity = (batchAvailable - deduct).toFixed(4);
-          batch.stockQuantity = (
-            parseFloat(batch.stockQuantity) - deduct
-          ).toFixed(4);
-
-          // 批次耗尽则标记
-          if (
-            parseFloat(batch.availableQuantity) <= 0 &&
-            parseFloat(batch.frozenQuantity) <= 0
-          ) {
-            batch.status = 2; // 耗尽
-          }
-
-          batch.version += 1;
-          await manager.save(batch);
-
-          const unitCost = parseFloat(batch.unitCost);
-          const cost = deduct * unitCost;
-          totalCostValue += cost;
-
-          consumeItems.push({
-            batchId: batch.id,
-            batchNo: batch.batchNo,
-            quantity: deduct,
-            unitCost: batch.unitCost,
-            totalCost: cost.toFixed(2),
-          });
-
-          remaining -= deduct;
-        }
-
-        // 5. 更新库存汇总
-        inventory.availableQuantity = (beforeAvailable - quantity).toFixed(4);
-        inventory.stockQuantity = (
-          parseFloat(inventory.stockQuantity) - quantity
-        ).toFixed(4);
-        inventory.version += 1;
-        await manager.save(inventory);
-
-        // 6. 写入库存流水（每个批次一条）
-        let cumulativeAvailable = beforeAvailable;
-        for (const item of consumeItems) {
-          const afterAvailable = cumulativeAvailable - item.quantity;
-          const flow = manager.create(InventoryFlow, {
-            id: snowflake.nextId(),
-            batchId: item.batchId,
-            productId,
-            businessType,
-            businessId,
-            changeType: 2, // 出库
-            quantity: String(item.quantity),
-            unitCost: item.unitCost,
-            totalCost: item.totalCost,
-            beforeAvailable: cumulativeAvailable.toFixed(4),
-            afterAvailable: afterAvailable.toFixed(4),
-            beforeFrozen: beforeFrozen.toFixed(4),
-            afterFrozen: beforeFrozen.toFixed(4),
-          });
-          await manager.save(flow);
-          cumulativeAvailable = afterAvailable;
-        }
-
-        this.logger.log(
-          `FIFO 扣减完成: 商品=${productId}, 数量=${quantity}, 成本=${totalCostValue.toFixed(2)}`,
-        );
-
-        return {
-          items: consumeItems,
-          totalCost: totalCostValue.toFixed(2),
-        };
+      // 3. 获取当前库存汇总
+      const inventory = await manager.findOne(Inventory, {
+        where: { productId },
       });
+      if (!inventory) throw new BadRequestException('库存记录不存在');
+      const beforeAvailable = parseFloat(inventory.availableQuantity);
+      const beforeFrozen = parseFloat(inventory.frozenQuantity);
+
+      // 4. 逐批次扣减
+      let remaining = quantity;
+      const consumeItems: FifoConsumeItem[] = [];
+      let totalCostValue = 0;
+
+      for (const batch of batches) {
+        if (remaining <= 0) break;
+
+        const batchAvailable = parseFloat(batch.availableQuantity);
+        const deduct = Math.min(batchAvailable, remaining);
+
+        batch.availableQuantity = (batchAvailable - deduct).toFixed(4);
+        batch.stockQuantity = (
+          parseFloat(batch.stockQuantity) - deduct
+        ).toFixed(4);
+
+        // 批次耗尽则标记
+        if (
+          parseFloat(batch.availableQuantity) <= 0 &&
+          parseFloat(batch.frozenQuantity) <= 0
+        ) {
+          batch.status = 2; // 耗尽
+        }
+
+        batch.version += 1;
+        await manager.save(batch);
+
+        const unitCost = parseFloat(batch.unitCost);
+        const cost = deduct * unitCost;
+        totalCostValue += cost;
+
+        consumeItems.push({
+          batchId: batch.id,
+          batchNo: batch.batchNo,
+          quantity: deduct,
+          unitCost: batch.unitCost,
+          totalCost: cost.toFixed(2),
+        });
+
+        remaining -= deduct;
+      }
+
+      // 5. 更新库存汇总
+      inventory.availableQuantity = (beforeAvailable - quantity).toFixed(4);
+      inventory.stockQuantity = (
+        parseFloat(inventory.stockQuantity) - quantity
+      ).toFixed(4);
+      inventory.version += 1;
+      await manager.save(inventory);
+
+      // 6. 写入库存流水（每个批次一条）
+      let cumulativeAvailable = beforeAvailable;
+      for (const item of consumeItems) {
+        const afterAvailable = cumulativeAvailable - item.quantity;
+        const flow = manager.create(InventoryFlow, {
+          id: snowflake.nextId(),
+          batchId: item.batchId,
+          productId,
+          businessType,
+          businessId,
+          changeType,
+          quantity: String(item.quantity),
+          unitCost: item.unitCost,
+          totalCost: item.totalCost,
+          beforeAvailable: cumulativeAvailable.toFixed(4),
+          afterAvailable: afterAvailable.toFixed(4),
+          beforeFrozen: beforeFrozen.toFixed(4),
+          afterFrozen: beforeFrozen.toFixed(4),
+        });
+        await manager.save(flow);
+        cumulativeAvailable = afterAvailable;
+      }
+
+      this.logger.log(
+        `FIFO 扣减完成: 商品=${productId}, 数量=${quantity}, 成本=${totalCostValue.toFixed(2)}`,
+      );
+
+      return {
+        items: consumeItems,
+        totalCost: totalCostValue.toFixed(2),
+      };
+    };
+
+    // 有外部事务 manager 时直接执行，不开新事务也不重试
+    if (externalManager) {
+      return doConsume(externalManager);
+    }
+
+    return this.withRetry(async () => {
+      return this.dataSource.transaction(doConsume);
     });
   }
 
@@ -213,7 +224,7 @@ export class FifoService {
         );
         if (totalAvailable < quantity) {
           throw new BadRequestException(
-            `可销售库存不足：需要 ${quantity}，可用 ${totalAvailable.toFixed(4)}`,
+            `可销售库存不足：需要 ${quantity}，可用 ${totalAvailable}`,
           );
         }
 
@@ -322,7 +333,7 @@ export class FifoService {
         );
         if (totalFrozen < quantity) {
           throw new BadRequestException(
-            `冻结库存不足：需要解冻 ${quantity}，当前冻结 ${totalFrozen.toFixed(4)}`,
+            `冻结库存不足：需要解冻 ${quantity}，当前冻结 ${totalFrozen}`,
           );
         }
 
@@ -416,6 +427,7 @@ export class FifoService {
     quantity: number,
     businessId: string,
     businessType: number = 2,
+    changeType: number = 2,
   ): Promise<FifoConsumeResult> {
     if (quantity <= 0) throw new BadRequestException('扣减数量必须大于零');
 
@@ -436,7 +448,7 @@ export class FifoService {
         );
         if (totalFrozen < quantity) {
           throw new BadRequestException(
-            `冻结库存不足：需要扣减 ${quantity}，冻结 ${totalFrozen.toFixed(4)}`,
+            `冻结库存不足：需要扣减 ${quantity}，冻结 ${totalFrozen}`,
           );
         }
 
@@ -505,7 +517,7 @@ export class FifoService {
             productId,
             businessType,
             businessId,
-            changeType: 2, // 出库
+            changeType,
             quantity: String(toDeduct),
             unitCost: batch.unitCost,
             totalCost: cost.toFixed(2),

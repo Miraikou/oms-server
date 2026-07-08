@@ -47,7 +47,17 @@ export class CreateInventoryAdjustmentDto {
 }
 
 /** 查询库存调整 DTO */
-export class QueryInventoryAdjustmentDto extends PaginationParamsDto {}
+export class QueryInventoryAdjustmentDto extends PaginationParamsDto {
+  @ApiPropertyOptional({ description: '调整单号' })
+  @IsString()
+  @IsOptional()
+  adjustmentNo?: string;
+
+  @ApiPropertyOptional({ description: '调整原因' })
+  @IsString()
+  @IsOptional()
+  reason?: string;
+}
 
 /** 查询库存列表 DTO */
 export class QueryInventoryDto extends PaginationParamsDto {

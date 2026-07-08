@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { InventoryAdjustment } from './entities/inventory-adjustment.entity';
 import { InventoryAdjustmentItem } from './entities/inventory-adjustment-item.entity';
 import { Inventory } from './entities/inventory.entity';
@@ -33,6 +33,7 @@ export class InventoryAdjustmentService {
     private readonly batchRepo: Repository<InventoryBatch>,
     @InjectRepository(InventoryFlow)
     private readonly flowRepo: Repository<InventoryFlow>,
+    private readonly dataSource: DataSource,
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
   ) {}
@@ -45,108 +46,164 @@ export class InventoryAdjustmentService {
       throw new BadRequestException('调整明细不能为空');
     }
 
-    const adjustmentNo = await this.sequenceService.generate('KC');
+    return this.dataSource.transaction(async (manager) => {
+      const adjustmentNo = await this.sequenceService.generate('KC');
 
-    const adjustment = this.adjustmentRepo.create({
-      id: snowflake.nextId(),
-      adjustmentNo,
-      adjustmentDate: new Date(),
-      reason: dto.reason,
-      remark: dto.remark || null,
-    });
-    const saved = await this.adjustmentRepo.save(adjustment);
-
-    for (const item of dto.items) {
-      const changeQty = parseFloat(item.changeQuantity);
-      if (changeQty === 0) throw new BadRequestException('调整数量不能为零');
-
-      // 保存调整明细
-      const adjItem = this.adjustmentItemRepo.create({
+      const adjustment = manager.create(InventoryAdjustment, {
         id: snowflake.nextId(),
-        adjustmentId: saved.id,
-        productId: item.productId,
-        batchId: item.batchId || null,
-        changeQuantity: item.changeQuantity,
+        adjustmentNo,
+        adjustmentDate: new Date(),
+        reason: dto.reason,
+        remark: dto.remark || null,
       });
-      await this.adjustmentItemRepo.save(adjItem);
+      const saved = await manager.save(InventoryAdjustment, adjustment);
 
-      if (changeQty > 0) {
-        // 增加库存
-        if (item.batchId) {
-          // 指定批次：直接增加该批次
-          const batch = await this.batchRepo.findOne({
-            where: { id: item.batchId },
-          });
-          if (!batch) throw new BadRequestException('指定批次不存在');
+      for (const item of dto.items) {
+        const changeQty = parseFloat(item.changeQuantity);
+        if (changeQty === 0) throw new BadRequestException('调整数量不能为零');
 
-          const beforeAvailable = batch.availableQuantity;
-          batch.availableQuantity = (
-            parseFloat(batch.availableQuantity) + changeQty
-          ).toFixed(4);
-          batch.stockQuantity = (
-            parseFloat(batch.stockQuantity) + changeQty
-          ).toFixed(4);
-          batch.originalQuantity = (
-            parseFloat(batch.originalQuantity) + changeQty
-          ).toFixed(4);
-          if (batch.status === 2) batch.status = 1;
-          batch.version += 1;
-          await this.batchRepo.save(batch);
+        // 保存调整明细
+        const adjItem = manager.create(InventoryAdjustmentItem, {
+          id: snowflake.nextId(),
+          adjustmentId: saved.id,
+          productId: item.productId,
+          batchId: item.batchId || null,
+          changeQuantity: item.changeQuantity,
+        });
+        await manager.save(InventoryAdjustmentItem, adjItem);
 
-          // 更新库存汇总
-          await this.addToInventory(item.productId, changeQty);
+        if (changeQty > 0) {
+          // 增加库存
+          if (item.batchId) {
+            // 指定批次：直接增加该批次
+            const batch = await manager.findOne(InventoryBatch, {
+              where: { id: item.batchId },
+            });
+            if (!batch) throw new BadRequestException(`指定批次(${item.batchId})不存在`);
+            if (batch.productId !== item.productId)
+              throw new BadRequestException(
+                `指定批次(${item.batchId})的商品与调整商品(${item.productId})不匹配`,
+              );
 
-          // 写流水
-          await this.writeAdjustmentFlow(
-            batch.id,
-            item.productId,
-            saved.id,
-            item.changeQuantity,
-            batch.unitCost,
-            beforeAvailable,
-            batch.availableQuantity,
-          );
+            const beforeAvailable = batch.availableQuantity;
+            batch.availableQuantity = (
+              parseFloat(batch.availableQuantity) + changeQty
+            ).toFixed(4);
+            batch.stockQuantity = (
+              parseFloat(batch.stockQuantity) + changeQty
+            ).toFixed(4);
+            batch.originalQuantity = (
+              parseFloat(batch.originalQuantity) + changeQty
+            ).toFixed(4);
+            if (batch.status === 2) batch.status = 1;
+            batch.version += 1;
+            await manager.save(InventoryBatch, batch);
+
+            // 更新库存汇总
+            await this.addToInventory(item.productId, changeQty, manager);
+
+            // 写流水
+            await this.writeAdjustmentFlow(
+              batch.id,
+              item.productId,
+              saved.id,
+              item.changeQuantity,
+              batch.unitCost,
+              beforeAvailable,
+              batch.availableQuantity,
+              manager,
+            );
+          } else {
+            // 未指定批次：生成新调整批次
+            const batchNo = await this.sequenceService.generate('BT');
+            const batch = manager.create(InventoryBatch, {
+              id: snowflake.nextId(),
+              productId: item.productId,
+              receiptItemId: null,
+              batchSource: 3, // 库存调整
+              batchNo,
+              unitCost: '0',
+              originalQuantity: item.changeQuantity,
+              availableQuantity: item.changeQuantity,
+              frozenQuantity: '0',
+              stockQuantity: item.changeQuantity,
+              inboundTime: new Date(),
+              freezeStatus: 1,
+              status: 1,
+            });
+            const savedBatch = await manager.save(InventoryBatch, batch);
+
+            await this.addToInventory(item.productId, changeQty, manager);
+
+            await this.writeAdjustmentFlow(
+              savedBatch.id,
+              item.productId,
+              saved.id,
+              item.changeQuantity,
+              '0',
+              '0',
+              item.changeQuantity,
+              manager,
+            );
+          }
         } else {
-          // 未指定批次：生成新调整批次
-          const batchNo = await this.sequenceService.generate('BT');
-          const batch = this.batchRepo.create({
-            id: snowflake.nextId(),
-            productId: item.productId,
-            receiptItemId: null,
-            batchSource: 3, // 库存调整
-            batchNo,
-            unitCost: '0',
-            originalQuantity: item.changeQuantity,
-            availableQuantity: item.changeQuantity,
-            frozenQuantity: '0',
-            stockQuantity: item.changeQuantity,
-            inboundTime: new Date(),
-            freezeStatus: 1,
-            status: 1,
-          });
-          const savedBatch = await this.batchRepo.save(batch);
+          // 减少库存
+          const absQty = Math.abs(changeQty);
+          if (item.batchId) {
+            // 指定批次：只从该批次扣减
+            const batch = await manager.findOne(InventoryBatch, {
+              where: { id: item.batchId },
+            });
+            if (!batch) throw new BadRequestException(`指定批次(${item.batchId})不存在`);
+            if (batch.productId !== item.productId)
+              throw new BadRequestException(
+                `指定批次(${item.batchId})的商品与调整商品(${item.productId})不匹配`,
+              );
 
-          await this.addToInventory(item.productId, changeQty);
+            const batchAvail = parseFloat(batch.availableQuantity);
+            if (batchAvail < absQty)
+              throw new BadRequestException(
+                `批次(${item.batchId})可用库存不足：需要 ${absQty}，可用 ${batchAvail}`,
+              );
 
-          await this.writeAdjustmentFlow(
-            savedBatch.id,
-            item.productId,
-            saved.id,
-            item.changeQuantity,
-            '0',
-            '0',
-            item.changeQuantity,
-          );
+            const beforeAvailable = batch.availableQuantity;
+            batch.availableQuantity = (batchAvail - absQty).toFixed(4);
+            batch.stockQuantity = (
+              parseFloat(batch.stockQuantity) - absQty
+            ).toFixed(4);
+            if (
+              parseFloat(batch.availableQuantity) <= 0 &&
+              parseFloat(batch.frozenQuantity) <= 0
+            ) {
+              batch.status = 2; // 耗尽
+            }
+            batch.version += 1;
+            await manager.save(InventoryBatch, batch);
+
+            // 更新库存汇总
+            await this.addToInventory(item.productId, -absQty, manager);
+
+            // 写流水
+            await this.writeAdjustmentFlow(
+              batch.id,
+              item.productId,
+              saved.id,
+              item.changeQuantity,
+              batch.unitCost,
+              beforeAvailable,
+              batch.availableQuantity,
+              manager,
+            );
+          } else {
+            // 未指定批次：调用 FIFO 引擎扣减（传入事务 manager，changeType=5 调整）
+            await this.fifoService.consume(item.productId, absQty, saved.id, 5, manager, 5);
+          }
         }
-      } else {
-        // 减少库存：调用 FIFO 引擎扣减
-        const absQty = Math.abs(changeQty);
-        await this.fifoService.consume(item.productId, absQty, saved.id, 5); // businessType=5 库存调整
       }
-    }
 
-    this.logger.log(`库存调整完成: ${adjustmentNo}`);
-    return saved;
+      this.logger.log(`库存调整完成: ${adjustmentNo}`);
+      return saved;
+    });
   }
 
   /** 查询列表 */
@@ -154,11 +211,18 @@ export class InventoryAdjustmentService {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
 
-    const [list, total] = await this.adjustmentRepo.findAndCount({
-      order: { createdTime: 'DESC' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
+    const qb = this.adjustmentRepo.createQueryBuilder('a')
+    if (query.adjustmentNo) {
+      qb.andWhere('a.adjustmentNo = :adjustmentNo', { adjustmentNo: query.adjustmentNo });
+    }
+    if (query.reason) {
+      qb.andWhere('a.reason = :reason', { reason: query.reason });
+    }
+    qb.orderBy('a.createdTime', 'DESC')
+      .skip((page - 1) * pageSize) 
+      .take(pageSize);
+
+    const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
   }
 
@@ -176,10 +240,11 @@ export class InventoryAdjustmentService {
   private async addToInventory(
     productId: string,
     delta: number,
+    manager: EntityManager,
   ): Promise<void> {
-    let inv = await this.inventoryRepo.findOne({ where: { productId } });
+    let inv = await manager.findOne(Inventory, { where: { productId } });
     if (!inv) {
-      inv = this.inventoryRepo.create({
+      inv = manager.create(Inventory, {
         id: snowflake.nextId(),
         productId,
         availableQuantity: String(delta),
@@ -195,7 +260,7 @@ export class InventoryAdjustmentService {
       inv.stockQuantity = (parseFloat(inv.stockQuantity) + delta).toFixed(4);
       inv.version += 1;
     }
-    await this.inventoryRepo.save(inv);
+    await manager.save(Inventory, inv);
   }
 
   /** 辅助：写调整流水 */
@@ -207,18 +272,20 @@ export class InventoryAdjustmentService {
     unitCost: string,
     beforeAvailable: string,
     afterAvailable: string,
+    manager: EntityManager,
   ): Promise<void> {
-    const inv = await this.inventoryRepo.findOne({ where: { productId } });
-    const totalCost = (parseFloat(quantity) * parseFloat(unitCost)).toFixed(2);
+    const inv = await manager.findOne(Inventory, { where: { productId } });
+    const totalCost = (Math.abs(parseFloat(quantity)) * parseFloat(unitCost)).toFixed(2);
 
-    await this.flowRepo.save(
-      this.flowRepo.create({
+    await manager.save(
+      InventoryFlow,
+      manager.create(InventoryFlow, {
         id: snowflake.nextId(),
         batchId,
         productId,
         businessType: 5, // 库存调整
         businessId,
-        changeType: parseFloat(quantity) > 0 ? 5 : 2,
+        changeType: 5, // 库存调整
         quantity: String(Math.abs(parseFloat(quantity))),
         unitCost,
         totalCost,

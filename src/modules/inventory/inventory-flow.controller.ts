@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InventoryFlow } from './entities/inventory-flow.entity';
+import { InventoryAdjustment } from './entities/inventory-adjustment.entity';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
 @ApiTags('库存流水')
@@ -13,6 +14,8 @@ export class InventoryFlowController {
   constructor(
     @InjectRepository(InventoryFlow)
     private readonly flowRepo: Repository<InventoryFlow>,
+    @InjectRepository(InventoryAdjustment)
+    private readonly adjustmentRepo: Repository<InventoryAdjustment>,
   ) {}
 
   @Get()
@@ -70,9 +73,31 @@ export class InventoryFlowController {
       }
     }
 
+    // 查询关联的调整单号（businessType=5 时为库存调整）
+    const adjustmentIds = [
+      ...new Set(
+        list.filter((f) => f.businessType === 5).map((f) => f.businessId),
+      ),
+    ];
+    const adjustmentNos: Record<string, string> = {};
+    if (adjustmentIds.length > 0) {
+      const adjustments = await this.adjustmentRepo
+        .createQueryBuilder('a')
+        .select(['a.id', 'a.adjustmentNo'])
+        .where('a.id IN (:...ids)', { ids: adjustmentIds })
+        .getMany();
+      for (const a of adjustments) {
+        adjustmentNos[a.id] = a.adjustmentNo;
+      }
+    }
+
     const enrichedList = list.map((f) => ({
       ...f,
       currency: currencies[f.batchId] || undefined,
+      adjustmentNo:
+        f.businessType === 5
+          ? adjustmentNos[f.businessId] || undefined
+          : undefined,
     }));
 
     return { list: enrichedList, total, page, pageSize };
