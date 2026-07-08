@@ -24,6 +24,7 @@ import { loggerConfig } from './config/logger.config';
 import { AppController } from './app.controller';
 import { SequenceModule } from './common/services/sequence.module';
 import { DictionaryModule } from './modules/dictionary/dictionary.module';
+import { DictManageModule } from './modules/dict-manage/dict-manage.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PurchaseModule } from './modules/purchase/purchase.module';
 import { SalesOrderModule } from './modules/sales-order/sales-order.module';
@@ -102,6 +103,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 
     // 字典服务
     DictionaryModule,
+    DictManageModule,
 
     // 库存 + 采购 + 订单 + 发货 + 收款 + 退货
     InventoryModule,

@@ -344,6 +344,17 @@ const DEFAULT_MENUS = [
         sortNo: 5,
         buttons: [{ name: '查询', permission: 'login-log:query' }],
       },
+      {
+        menuName: '字典管理',
+        menuType: 1,
+        path: '/system/dict-manage',
+        sortNo: 6,
+        buttons: [
+          { name: '查询', permission: 'dict-manage:query' },
+          { name: '新增', permission: 'dict-manage:create' },
+          { name: '编辑', permission: 'dict-manage:edit' },
+        ],
+      },
     ],
   },
 ];
@@ -753,6 +764,9 @@ export class MenuService {
         'system-config:edit',
         'operation-log:query',
         'login-log:query',
+        'dict-manage:query',
+        'dict-manage:create',
+        'dict-manage:edit',
         'user:query',
       ],
       SALES: [
