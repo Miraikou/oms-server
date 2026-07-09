@@ -31,7 +31,7 @@ export class InventoryController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: '库存列表（分页）' })
+  @ApiOperation({ summary: '库存列表（分页，从批次实时汇总）' })
   async findAll(@Query() query: QueryInventoryDto) {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
@@ -43,6 +43,49 @@ export class InventoryController {
       .take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
+
+    // 从批次表实时汇总，覆盖汇总表的缓存值
+    if (list.length > 0) {
+      const productIds = list.map((inv) => inv.productId);
+      const batchSums = await this.batchRepo
+        .createQueryBuilder('b')
+        .select('b.productId', 'productId')
+        .addSelect('COALESCE(SUM(b.availableQuantity), 0)', 'availableQuantity')
+        .addSelect('COALESCE(SUM(b.frozenQuantity), 0)', 'frozenQuantity')
+        .addSelect('COALESCE(SUM(b.stockQuantity), 0)', 'stockQuantity')
+        .where('b.productId IN (:...productIds)', { productIds })
+        .andWhere('b.status = 1')
+        .groupBy('b.productId')
+        .getRawMany<{
+          productId: string;
+          availableQuantity: string;
+          frozenQuantity: string;
+          stockQuantity: string;
+        }>();
+
+      const sumMap = new Map<string, { availableQuantity: string; frozenQuantity: string; stockQuantity: string }>();
+      for (const row of batchSums) {
+        sumMap.set(row.productId, {
+          availableQuantity: row.availableQuantity,
+          frozenQuantity: row.frozenQuantity,
+          stockQuantity: row.stockQuantity,
+        });
+      }
+
+      for (const inv of list) {
+        const sum = sumMap.get(inv.productId);
+        if (sum) {
+          inv.availableQuantity = sum.availableQuantity;
+          inv.frozenQuantity = sum.frozenQuantity;
+          inv.stockQuantity = sum.stockQuantity;
+        } else {
+          inv.availableQuantity = '0';
+          inv.frozenQuantity = '0';
+          inv.stockQuantity = '0';
+        }
+      }
+    }
+
     return { list, total, page, pageSize };
   }
 
@@ -152,6 +195,85 @@ export class InventoryController {
       total: results.length,
       matched: results.filter((r) => r.match).length,
       mismatched: results.filter((r) => !r.match),
+    };
+  }
+
+  @Post('reconcile')
+  @ApiOperation({ summary: '库存校准（从批次重算汇总）' })
+  async reconcile(@Body() body: { productId?: string }) {
+    const results: Array<{
+      productId: string;
+      beforeAvailable: string;
+      afterAvailable: string;
+      beforeFrozen: string;
+      afterFrozen: string;
+      beforeStock: string;
+      afterStock: string;
+      adjusted: boolean;
+    }> = [];
+
+    const where = body?.productId ? { productId: body.productId } : {};
+    const inventories = await this.inventoryRepo.find({ where });
+
+    for (const inv of inventories) {
+      // 从批次表汇总有效批次的数量（与 consistency-check 一致）
+      const batchSum = await this.batchRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.availableQuantity), 0)', 'available')
+        .addSelect('COALESCE(SUM(b.frozenQuantity), 0)', 'frozen')
+        .addSelect('COALESCE(SUM(b.stockQuantity), 0)', 'stock')
+        .where('b.productId = :productId', { productId: inv.productId })
+        .andWhere('b.status = 1')
+        .getRawOne<{ available: string; frozen: string; stock: string }>();
+
+      const sumAvailable = batchSum?.available || '0';
+      const sumFrozen = batchSum?.frozen || '0';
+      const sumStock = batchSum?.stock || '0';
+
+      const beforeAvailable = inv.availableQuantity;
+      const beforeFrozen = inv.frozenQuantity;
+      const beforeStock = inv.stockQuantity;
+
+      const diff =
+        Math.abs(parseFloat(beforeAvailable) - parseFloat(sumAvailable)) +
+        Math.abs(parseFloat(beforeFrozen) - parseFloat(sumFrozen)) +
+        Math.abs(parseFloat(beforeStock) - parseFloat(sumStock));
+
+      if (diff > 0.0001) {
+        inv.availableQuantity = parseFloat(sumAvailable).toFixed(4);
+        inv.frozenQuantity = parseFloat(sumFrozen).toFixed(4);
+        inv.stockQuantity = parseFloat(sumStock).toFixed(4);
+        inv.version += 1;
+        await this.inventoryRepo.save(inv);
+
+        results.push({
+          productId: inv.productId,
+          beforeAvailable,
+          afterAvailable: inv.availableQuantity,
+          beforeFrozen,
+          afterFrozen: inv.frozenQuantity,
+          beforeStock,
+          afterStock: inv.stockQuantity,
+          adjusted: true,
+        });
+      } else {
+        results.push({
+          productId: inv.productId,
+          beforeAvailable,
+          afterAvailable: beforeAvailable,
+          beforeFrozen,
+          afterFrozen: beforeFrozen,
+          beforeStock,
+          afterStock: beforeStock,
+          adjusted: false,
+        });
+      }
+    }
+
+    return {
+      total: results.length,
+      adjusted: results.filter((r) => r.adjusted).length,
+      details: results,
     };
   }
 }
