@@ -59,6 +59,7 @@ const mockManager = {
   find: jest.fn(),
   save: jest.fn((entity: any) => Promise.resolve(entity)),
   create: jest.fn((_entity: any, data: any) => data),
+  getRepository: jest.fn((): any => mockItemRepo),
 }
 
 const mockDataSource = {
@@ -326,6 +327,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         remark: '普通订单',
+        receivedAmountUsd: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
@@ -333,9 +335,10 @@ describe('SalesOrderService', () => {
 
       const result = await service.cancel('O001')
 
-      expect(mockFifoService.unfreeze).toHaveBeenCalledWith('P001', 10, 'O001')
-      expect(result.status).toBe(2)
-      expect(result.remark).toContain('[已取消]')
+      expect(mockFifoService.unfreeze).toHaveBeenCalledWith('P001', 10, 'O001', mockManager)
+      expect(result.order.status).toBe(3)
+      expect(result.order.remark).toContain('[已取消]')
+      expect(result.needsRefund).toBe(false)
     })
 
     it('部分发货订单取消成功并解冻剩余库存', async () => {
@@ -344,6 +347,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 2,
         remark: '部分发货',
+        receivedAmountUsd: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '4' },
@@ -352,7 +356,7 @@ describe('SalesOrderService', () => {
       await service.cancel('O001')
 
       // 应解冻 10 - 4 = 6
-      expect(mockFifoService.unfreeze).toHaveBeenCalledWith('P001', 6, 'O001')
+      expect(mockFifoService.unfreeze).toHaveBeenCalledWith('P001', 6, 'O001', mockManager)
     })
 
     it('已完成订单无法取消应抛出 BadRequestException', async () => {
@@ -373,6 +377,33 @@ describe('SalesOrderService', () => {
       })
 
       await expect(service.cancel('O001')).rejects.toThrow(BadRequestException)
+    })
+
+    it('已取消订单不可重复取消应抛出 BadRequestException', async () => {
+      mockOrderRepo.findOne.mockResolvedValue({
+        id: 'O001',
+        status: 3,
+      })
+
+      await expect(service.cancel('O001')).rejects.toThrow(BadRequestException)
+    })
+
+    it('有已收金额的订单取消后应标记需要退款', async () => {
+      mockOrderRepo.findOne.mockResolvedValue({
+        id: 'O001',
+        status: 1,
+        shipmentStatus: 1,
+        remark: '已收款订单',
+        receivedAmountUsd: '500',
+      })
+      mockItemRepo.find.mockResolvedValue([
+        { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
+      ])
+
+      const result = await service.cancel('O001')
+
+      expect(result.needsRefund).toBe(true)
+      expect(result.refundableAmount).toBe('500')
     })
   })
 

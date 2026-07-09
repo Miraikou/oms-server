@@ -15,6 +15,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SalesOrderService } from './sales-order.service';
 import { SalesOrderCostService } from './sales-order-cost.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { PermissionGuard } from '@/common/guards/permission.guard';
+import { RequirePermission } from '@/common/decorators/require-permission.decorator';
 import type {
   CreateSalesOrderDto,
   UpdateSalesOrderDto,
@@ -61,6 +63,8 @@ export class SalesOrderController {
   }
 
   @Post(':id/cancel')
+  @RequirePermission('order:cancel')
+  @UseGuards(PermissionGuard)
   @ApiOperation({ summary: '取消订单（含库存解冻）' })
   cancel(@Param('id') id: string) {
     return this.orderService.cancel(id);

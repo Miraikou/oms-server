@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentService } from './payment.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
-import { CreatePaymentDto, QueryPaymentDto } from './dto/payment.dto';
+import { CreatePaymentDto, CreateRefundDto, QueryPaymentDto } from './dto/payment.dto';
 
 @ApiTags('收款管理')
 @ApiBearerAuth()
@@ -38,5 +38,12 @@ export class PaymentController {
   @ApiOperation({ summary: '新建收款' })
   create(@Body() dto: CreatePaymentDto) {
     return this.service.create(dto);
+  }
+
+  @Post('refund')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: '新建退款' })
+  createRefund(@Body() dto: CreateRefundDto) {
+    return this.service.createRefund(dto);
   }
 }

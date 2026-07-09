@@ -57,6 +57,10 @@ export class QueryPaymentDto extends PaginationParamsDto {
   @IsOptional()
   orderId?: string;
 
+  @ApiPropertyOptional({ description: '类型：1=收款 2=退款' })
+  @IsOptional()
+  type?: number;
+
   @ApiPropertyOptional({ description: '开始日期' })
   @IsString()
   @IsOptional()
@@ -66,4 +70,47 @@ export class QueryPaymentDto extends PaginationParamsDto {
   @IsString()
   @IsOptional()
   endDate?: string;
+}
+
+/** 创建退款 DTO */
+export class CreateRefundDto {
+  @ApiProperty({ description: '订单 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '订单不能为空' })
+  orderId: string;
+
+  @ApiProperty({ description: '退款金额（USD）' })
+  @IsString()
+  @IsNotEmpty({ message: '退款金额不能为空' })
+  usdAmount: string;
+
+  @ApiProperty({ description: '实际汇率' })
+  @IsString()
+  @IsNotEmpty({ message: '汇率不能为空' })
+  exchangeRate: string;
+
+  @ApiProperty({ description: '实际退人民币' })
+  @IsString()
+  @IsNotEmpty({ message: '退款金额不能为空' })
+  cnyAmount: string;
+
+  @ApiProperty({ description: '退款日期' })
+  @IsString()
+  @IsNotEmpty({ message: '退款日期不能为空' })
+  paymentDate: string;
+
+  @ApiPropertyOptional({ description: '退款方式' })
+  @IsString()
+  @IsOptional()
+  paymentMethod?: string;
+
+  @ApiPropertyOptional({ description: '收款方（退给谁）' })
+  @IsString()
+  @IsOptional()
+  payer?: string;
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
+  remark?: string;
 }

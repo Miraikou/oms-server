@@ -2,9 +2,9 @@ import { Entity, Column, Index } from 'typeorm';
 import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
- * 收款记录实体
- * 一个订单可产生多条收款记录，每条保存独立汇率
- * 收款记录提交后禁止修改删除
+ * 收/退款记录实体
+ * 一个订单可产生多条收款/退款记录，每条保存独立汇率
+ * 记录提交后禁止修改删除
  */
 @Entity('payment')
 export class Payment extends BaseEntity {
@@ -13,9 +13,16 @@ export class Payment extends BaseEntity {
     name: 'payment_no',
     type: 'varchar',
     length: 50,
-    comment: '收款单号',
+    comment: '收/退款单号',
   })
   paymentNo: string;
+
+  @Column({
+    type: 'tinyint',
+    default: 1,
+    comment: '类型：1=收款 2=退款',
+  })
+  type: number = 1;
 
   @Index('idx_order_id')
   @Column({ name: 'order_id', type: 'bigint', comment: '所属订单 ID' })
@@ -30,7 +37,7 @@ export class Payment extends BaseEntity {
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '本次收款（USD）',
+    comment: '本次收/退款（USD）',
   })
   usdAmount: string;
 
@@ -57,7 +64,7 @@ export class Payment extends BaseEntity {
     type: 'varchar',
     length: 50,
     nullable: true,
-    comment: '收款方式',
+    comment: '收/付款方式',
   })
   paymentMethod: string | null = null;
 

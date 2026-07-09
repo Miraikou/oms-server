@@ -20,6 +20,7 @@ export const ENABLE_STATUS: DictItem[] = [
 export const ORDER_STATUS: DictItem[] = [
   { code: 1, label: '进行中' },
   { code: 2, label: '已完成' },
+  { code: 3, label: '已取消' },
 ];
 
 /** 发货状态 */

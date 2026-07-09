@@ -6,7 +6,7 @@ import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { snowflake } from '@/common/utils/snowflake';
-import type { CreatePaymentDto, QueryPaymentDto } from './dto/payment.dto';
+import type { CreatePaymentDto, CreateRefundDto, QueryPaymentDto } from './dto/payment.dto';
 
 /** 金额转为微元整数避免浮点精度问题（USD 精度 6 位 → ×1,000,000） */
 const toMicroUnits = (s: string): number =>
@@ -69,6 +69,7 @@ export class PaymentService {
       const payment = paymentRepo.create({
         id: snowflake.nextId(),
         paymentNo,
+        type: 1,
         orderId: dto.orderId,
         paymentDate: new Date(dto.paymentDate),
         usdAmount: dto.usdAmount,
@@ -89,6 +90,69 @@ export class PaymentService {
 
       this.logger.log(
         `收款成功: ${paymentNo}, 订单: ${order.orderNo}, $${dto.usdAmount}`,
+      );
+      return savedPayment;
+    });
+  }
+
+  /**
+   * 创建退款记录
+   * 事务：校验订单 → 校验可退金额 → 生成退款单号 → 创建 Payment(type=2) → 扣减订单已收金额
+   */
+  async createRefund(dto: CreateRefundDto): Promise<Payment> {
+    const usdMicro = toMicroUnits(dto.usdAmount);
+    if (usdMicro <= 0) throw new BadRequestException('退款金额必须大于零');
+
+    const exchangeRate = parseFloat(dto.exchangeRate);
+    if (exchangeRate <= 0) throw new BadRequestException('汇率必须大于零');
+
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const orderRepo = manager.getRepository(SalesOrder);
+      const paymentRepo = manager.getRepository(Payment);
+
+      // 1. 校验订单
+      const order = await orderRepo.findOne({ where: { id: dto.orderId } });
+      if (!order) throw new BadRequestException('订单不存在');
+
+      // 2. 校验可退金额（已收金额 > 0）
+      const receivedMicro = toMicroUnits(order.receivedAmountUsd);
+      if (receivedMicro <= 0) {
+        throw new BadRequestException('该订单无已收款，无法退款');
+      }
+      if (usdMicro > receivedMicro) {
+        throw new BadRequestException(
+          `退款金额超出已收金额：已收 $${order.receivedAmountUsd}，本次退 $${dto.usdAmount}`,
+        );
+      }
+
+      // 3. 生成退款单号（复用 SK 前缀）
+      const paymentNo = await this.sequenceService.generate('SK');
+
+      // 4. 创建退款记录
+      const payment = paymentRepo.create({
+        id: snowflake.nextId(),
+        paymentNo,
+        type: 2,
+        orderId: dto.orderId,
+        paymentDate: new Date(dto.paymentDate),
+        usdAmount: dto.usdAmount,
+        exchangeRate: dto.exchangeRate,
+        cnyAmount: dto.cnyAmount,
+        paymentMethod: dto.paymentMethod || null,
+        payer: dto.payer || null,
+        remark: dto.remark || null,
+      });
+      const savedPayment = await paymentRepo.save(payment);
+
+      // 5. 扣减订单已收金额 + 重算三维状态
+      await this.salesOrderService.decreaseReceivedAmount(
+        dto.orderId,
+        dto.usdAmount,
+        dto.cnyAmount,
+      );
+
+      this.logger.log(
+        `退款成功: ${paymentNo}, 订单: ${order.orderNo}, $${dto.usdAmount}`,
       );
       return savedPayment;
     });
@@ -119,6 +183,9 @@ export class PaymentService {
     }
     if (query.orderId) {
       qb.andWhere('p.orderId = :orderId', { orderId: query.orderId });
+    }
+    if (query.type !== undefined) {
+      qb.andWhere('p.type = :type', { type: query.type });
     }
     if (query.startDate) {
       qb.andWhere('p.paymentDate >= :startDate', {

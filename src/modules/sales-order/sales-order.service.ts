@@ -280,34 +280,68 @@ export class SalesOrderService {
    * - 待发货：释放全部冻结库存 → 取消订单
    * - 部分发货：释放未发货部分 → 取消
    * - 全部发货：拒绝取消，引导退货
+   * - 已收款/部分收款：提示需先退款
+   * 整个操作在事务中完成，保证原子性
    */
-  async cancel(id: string): Promise<SalesOrder> {
+  async cancel(id: string): Promise<{
+    order: SalesOrder;
+    unfrozenItems: Array<{ productId: string; quantity: number }>;
+    needsRefund: boolean;
+    refundableAmount: string;
+  }> {
     const order = await this.orderRepo.findOne({ where: { id } });
     if (!order) throw new BadRequestException('订单不存在');
     if (order.status === 2)
       throw new BadRequestException('订单已完成，无法取消');
-
+    if (order.status === 3)
+      throw new BadRequestException('订单已取消，请勿重复操作');
     if (order.shipmentStatus === 3) {
       throw new BadRequestException('订单已全部发货，无法取消，请走退货流程');
     }
 
-    const items = await this.itemRepo.find({ where: { orderId: id } });
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const items = await manager
+        .getRepository(SalesOrderItem)
+        .find({ where: { orderId: id } });
 
-    // 计算需要解冻的数量：订单数量 - 已发货数量
-    for (const item of items) {
-      const orderQty = parseFloat(item.quantity);
-      const shippedQty = parseFloat(item.shippedQuantity);
-      const toUnfreeze = orderQty - shippedQty;
+      // 计算需要解冻的数量：订单数量 - 已发货数量
+      const unfrozenItems: Array<{ productId: string; quantity: number }> = [];
+      for (const item of items) {
+        const orderQty = parseFloat(item.quantity);
+        const shippedQty = parseFloat(item.shippedQuantity);
+        const toUnfreeze = orderQty - shippedQty;
 
-      if (toUnfreeze > 0) {
-        await this.fifoService.unfreeze(item.productId, toUnfreeze, id);
+        if (toUnfreeze > 0) {
+          await this.fifoService.unfreeze(
+            item.productId,
+            toUnfreeze,
+            id,
+            manager,
+          );
+          unfrozenItems.push({ productId: item.productId, quantity: toUnfreeze });
+        }
       }
-    }
 
-    // 标记订单为已完成（取消）
-    order.status = 2;
-    order.remark = `[已取消] ${order.remark || ''}`;
-    return this.orderRepo.save(order);
+      // 标记订单为已取消
+      order.status = 3;
+      order.remark = `[已取消] ${order.remark || ''}`;
+      await manager.save(order);
+
+      // 判断是否需要退款
+      const receivedUsd = parseFloat(order.receivedAmountUsd);
+      const needsRefund = receivedUsd > 0;
+
+      this.logger.log(
+        `订单取消成功: ${order.orderNo}, 解冻 ${unfrozenItems.length} 项, 需退款: ${needsRefund}`,
+      );
+
+      return {
+        order,
+        unfrozenItems,
+        needsRefund,
+        refundableAmount: order.receivedAmountUsd,
+      };
+    });
   }
 
   /**
@@ -319,7 +353,7 @@ export class SalesOrderService {
    */
   async recalculateStatus(orderId: string): Promise<void> {
     const order = await this.orderRepo.findOne({ where: { id: orderId } });
-    if (!order || order.status === 2) return;
+    if (!order || order.status === 2 || order.status === 3) return;
 
     const items = await this.itemRepo.find({ where: { orderId } });
     if (items.length === 0) return;
@@ -379,6 +413,31 @@ export class SalesOrderService {
     order.receivedAmountCny = (
       parseFloat(order.receivedAmountCny) + parseFloat(cnyAmount)
     ).toFixed(2);
+
+    await this.orderRepo.save(order);
+    await this.recalculateStatus(orderId);
+  }
+
+  /**
+   * 扣减已收金额（退款模块调用）
+   */
+  async decreaseReceivedAmount(
+    orderId: string,
+    usdAmount: string,
+    cnyAmount: string,
+  ): Promise<void> {
+    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new BadRequestException('订单不存在');
+
+    const newUsd = parseFloat(order.receivedAmountUsd) - parseFloat(usdAmount);
+    const newCny = parseFloat(order.receivedAmountCny) - parseFloat(cnyAmount);
+
+    if (newUsd < 0 || newCny < 0) {
+      throw new BadRequestException('退款金额超出已收金额');
+    }
+
+    order.receivedAmountUsd = newUsd.toFixed(2);
+    order.receivedAmountCny = newCny.toFixed(2);
 
     await this.orderRepo.save(order);
     await this.recalculateStatus(orderId);

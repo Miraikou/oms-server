@@ -111,7 +111,7 @@ export class SalesOrder extends BaseEntity {
   @Column({
     type: 'tinyint',
     default: 1,
-    comment: '订单状态：1=进行中 2=已完成',
+    comment: '订单状态：1=进行中 2=已完成 3=已取消',
   })
   status: number = 1;
 }

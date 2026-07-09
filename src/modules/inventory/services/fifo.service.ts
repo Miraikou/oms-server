@@ -308,113 +308,123 @@ export class FifoService {
   /**
    * 解冻库存（订单取消时调用）
    * 将 frozenQuantity 恢复到 availableQuantity
+   *
+   * @param externalManager 外部事务 manager（传入时加入外部事务，不另开事务）
    */
   async unfreeze(
     productId: string,
     quantity: number,
     orderId: string,
+    externalManager?: EntityManager,
   ): Promise<FreezeResult> {
     if (quantity <= 0) throw new BadRequestException('解冻数量必须大于零');
 
-    return this.withRetry(async () => {
-      return this.dataSource.transaction(async (manager) => {
-        // 获取有冻结的批次
-        const batches = await manager
-          .createQueryBuilder(InventoryBatch, 'b')
-          .setLock('pessimistic_write')
-          .where('b.productId = :productId', { productId })
-          .andWhere('b.frozenQuantity > 0')
-          .orderBy('b.inboundTime', 'ASC')
-          .getMany();
+    const doUnfreeze = async (manager: EntityManager): Promise<FreezeResult> => {
+      // 获取有冻结的批次
+      const batches = await manager
+        .createQueryBuilder(InventoryBatch, 'b')
+        .setLock('pessimistic_write')
+        .where('b.productId = :productId', { productId })
+        .andWhere('b.frozenQuantity > 0')
+        .orderBy('b.inboundTime', 'ASC')
+        .getMany();
 
-        const totalFrozen = batches.reduce(
-          (sum, b) => sum + parseFloat(b.frozenQuantity),
-          0,
+      const totalFrozen = batches.reduce(
+        (sum, b) => sum + parseFloat(b.frozenQuantity),
+        0,
+      );
+      if (totalFrozen < quantity) {
+        throw new BadRequestException(
+          `冻结库存不足：需要解冻 ${quantity}，当前冻结 ${totalFrozen}`,
         );
-        if (totalFrozen < quantity) {
-          throw new BadRequestException(
-            `冻结库存不足：需要解冻 ${quantity}，当前冻结 ${totalFrozen}`,
-          );
-        }
+      }
 
-        const inventory = await manager.findOne(Inventory, {
-          where: { productId },
-        });
-        if (!inventory) throw new BadRequestException('库存记录不存在');
-
-        const beforeAvailable = parseFloat(inventory.availableQuantity);
-        const beforeFrozen = parseFloat(inventory.frozenQuantity);
-
-        let remaining = quantity;
-        const unfreezeItems: FreezeResult['items'] = [];
-        let cumulativeAvailable = beforeAvailable;
-        let cumulativeFrozen = beforeFrozen;
-
-        for (const batch of batches) {
-          if (remaining <= 0) break;
-
-          const batchFrozen = parseFloat(batch.frozenQuantity);
-          const toUnfreeze = Math.min(batchFrozen, remaining);
-
-          batch.frozenQuantity = (batchFrozen - toUnfreeze).toFixed(4);
-          batch.availableQuantity = (
-            parseFloat(batch.availableQuantity) + toUnfreeze
-          ).toFixed(4);
-
-          // 更新冻结状态
-          const batchFrozenAfter = parseFloat(batch.frozenQuantity);
-          if (batchFrozenAfter <= 0) {
-            batch.freezeStatus = 1; // 正常
-          } else {
-            batch.freezeStatus = 2; // 部分冻结
-          }
-
-          // 如果批次已耗尽且可用>0，确保 status 为有效
-          if (batch.status === 2 && parseFloat(batch.availableQuantity) > 0) {
-            batch.status = 1;
-          }
-
-          batch.version += 1;
-          await manager.save(batch);
-
-          unfreezeItems.push({
-            batchId: batch.id,
-            batchNo: batch.batchNo,
-            quantity: toUnfreeze,
-          });
-
-          // 写流水
-          const afterAvailable = cumulativeAvailable + toUnfreeze;
-          const afterFrozen = cumulativeFrozen - toUnfreeze;
-          const flow = manager.create(InventoryFlow, {
-            id: snowflake.nextId(),
-            batchId: batch.id,
-            productId,
-            businessType: 7, // 解冻库存
-            businessId: orderId,
-            changeType: 4, // 解冻
-            quantity: String(toUnfreeze),
-            beforeAvailable: cumulativeAvailable.toFixed(4),
-            afterAvailable: afterAvailable.toFixed(4),
-            beforeFrozen: cumulativeFrozen.toFixed(4),
-            afterFrozen: afterFrozen.toFixed(4),
-          });
-          await manager.save(flow);
-
-          cumulativeAvailable = afterAvailable;
-          cumulativeFrozen = afterFrozen;
-          remaining -= toUnfreeze;
-        }
-
-        // 更新库存汇总
-        inventory.availableQuantity = cumulativeAvailable.toFixed(4);
-        inventory.frozenQuantity = cumulativeFrozen.toFixed(4);
-        inventory.version += 1;
-        await manager.save(inventory);
-
-        this.logger.log(`库存解冻完成: 商品=${productId}, 数量=${quantity}`);
-        return { items: unfreezeItems };
+      const inventory = await manager.findOne(Inventory, {
+        where: { productId },
       });
+      if (!inventory) throw new BadRequestException('库存记录不存在');
+
+      const beforeAvailable = parseFloat(inventory.availableQuantity);
+      const beforeFrozen = parseFloat(inventory.frozenQuantity);
+
+      let remaining = quantity;
+      const unfreezeItems: FreezeResult['items'] = [];
+      let cumulativeAvailable = beforeAvailable;
+      let cumulativeFrozen = beforeFrozen;
+
+      for (const batch of batches) {
+        if (remaining <= 0) break;
+
+        const batchFrozen = parseFloat(batch.frozenQuantity);
+        const toUnfreeze = Math.min(batchFrozen, remaining);
+
+        batch.frozenQuantity = (batchFrozen - toUnfreeze).toFixed(4);
+        batch.availableQuantity = (
+          parseFloat(batch.availableQuantity) + toUnfreeze
+        ).toFixed(4);
+
+        // 更新冻结状态
+        const batchFrozenAfter = parseFloat(batch.frozenQuantity);
+        if (batchFrozenAfter <= 0) {
+          batch.freezeStatus = 1; // 正常
+        } else {
+          batch.freezeStatus = 2; // 部分冻结
+        }
+
+        // 如果批次已耗尽且可用>0，确保 status 为有效
+        if (batch.status === 2 && parseFloat(batch.availableQuantity) > 0) {
+          batch.status = 1;
+        }
+
+        batch.version += 1;
+        await manager.save(batch);
+
+        unfreezeItems.push({
+          batchId: batch.id,
+          batchNo: batch.batchNo,
+          quantity: toUnfreeze,
+        });
+
+        // 写流水
+        const afterAvailable = cumulativeAvailable + toUnfreeze;
+        const afterFrozen = cumulativeFrozen - toUnfreeze;
+        const flow = manager.create(InventoryFlow, {
+          id: snowflake.nextId(),
+          batchId: batch.id,
+          productId,
+          businessType: 7, // 解冻库存
+          businessId: orderId,
+          changeType: 4, // 解冻
+          quantity: String(toUnfreeze),
+          beforeAvailable: cumulativeAvailable.toFixed(4),
+          afterAvailable: afterAvailable.toFixed(4),
+          beforeFrozen: cumulativeFrozen.toFixed(4),
+          afterFrozen: afterFrozen.toFixed(4),
+        });
+        await manager.save(flow);
+
+        cumulativeAvailable = afterAvailable;
+        cumulativeFrozen = afterFrozen;
+        remaining -= toUnfreeze;
+      }
+
+      // 更新库存汇总
+      inventory.availableQuantity = cumulativeAvailable.toFixed(4);
+      inventory.frozenQuantity = cumulativeFrozen.toFixed(4);
+      inventory.version += 1;
+      await manager.save(inventory);
+
+      this.logger.log(`库存解冻完成: 商品=${productId}, 数量=${quantity}`);
+      return { items: unfreezeItems };
+    };
+
+    // 有外部事务 manager 时直接执行，不开新事务也不重试
+    if (externalManager) {
+      return doUnfreeze(externalManager);
+    }
+
+    return this.withRetry(async () => {
+      return this.dataSource.transaction(doUnfreeze);
     });
   }
 
