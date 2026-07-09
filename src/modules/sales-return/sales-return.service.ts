@@ -159,10 +159,12 @@ export class SalesReturnService {
               batch.version += 1;
               await manager.save(batch);
 
-              // 更新库存汇总
-              const inventory = await manager.findOne(Inventory, {
-                where: { productId: shipItem!.productId },
-              });
+              // 更新库存汇总（加悲观锁防止并发覆盖）
+              const inventory = await manager
+                .createQueryBuilder(Inventory, 'i')
+                .setLock('pessimistic_write')
+                .where('i.productId = :productId', { productId: shipItem!.productId })
+                .getOne();
               if (inventory) {
                 inventory.availableQuantity = (
                   parseFloat(inventory.availableQuantity) + toRestore

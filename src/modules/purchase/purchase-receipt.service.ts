@@ -124,22 +124,6 @@ export class PurchaseReceiptService {
       // 步骤 3：为每个入库明细生成库存批次
       for (const ri of receiptItems) {
         const batchNo = await this.sequenceService.generate('BT');
-        manager.create(InventoryBatch, {
-          id: snowflake.nextId(),
-          productId: ri.productId,
-          receiptItemId: ri.id,
-          batchSource: 1, // 采购入库
-          batchNo,
-          unitCost: ri.unitPrice,
-          originalQuantity: ri.quantity,
-          availableQuantity: ri.quantity,
-          frozenQuantity: '0',
-          stockQuantity: ri.quantity,
-          inboundTime: savedReceipt.receiptDate,
-          freezeStatus: 1,
-          status: 1,
-        });
-        // 使用 save 保存（在事务中）
         const batch = manager.create(InventoryBatch, {
           id: snowflake.nextId(),
           productId: ri.productId,
@@ -164,10 +148,12 @@ export class PurchaseReceiptService {
         orderItem.receivedQuantity = newReceived.toFixed(4);
         await manager.save(orderItem);
 
-        // 步骤 5：更新库存汇总
-        let inventory = await manager.findOne(Inventory, {
-          where: { productId: ri.productId },
-        });
+        // 步骤 5：更新库存汇总（加悲观锁防止并发覆盖）
+        let inventory = await manager
+          .createQueryBuilder(Inventory, 'i')
+          .setLock('pessimistic_write')
+          .where('i.productId = :productId', { productId: ri.productId })
+          .getOne();
         const qtyDelta = parseFloat(ri.quantity);
         if (!inventory) {
           inventory = manager.create(Inventory, {
@@ -192,21 +178,6 @@ export class PurchaseReceiptService {
         const beforeAvailable = (
           parseFloat(savedInventory.availableQuantity) - qtyDelta
         ).toFixed(4);
-        manager.create(InventoryFlow, {
-          id: snowflake.nextId(),
-          batchId: savedBatch.id,
-          productId: ri.productId,
-          businessType: 1, // 采购入库
-          businessId: savedReceipt.id,
-          changeType: 1, // 入库
-          quantity: ri.quantity,
-          unitCost: ri.unitPrice,
-          totalCost: ri.amount,
-          beforeAvailable,
-          afterAvailable: savedInventory.availableQuantity,
-          beforeFrozen: savedInventory.frozenQuantity,
-          afterFrozen: savedInventory.frozenQuantity,
-        });
         await manager.save(
           manager.create(InventoryFlow, {
             id: snowflake.nextId(),

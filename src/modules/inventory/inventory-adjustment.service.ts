@@ -76,9 +76,11 @@ export class InventoryAdjustmentService {
           // 增加库存
           if (item.batchId) {
             // 指定批次：直接增加该批次
-            const batch = await manager.findOne(InventoryBatch, {
-              where: { id: item.batchId },
-            });
+            const batch = await manager
+              .createQueryBuilder(InventoryBatch, 'b')
+              .setLock('pessimistic_write')
+              .where('b.id = :id', { id: item.batchId })
+              .getOne();
             if (!batch) throw new BadRequestException(`指定批次(${item.batchId})不存在`);
             if (batch.productId !== item.productId)
               throw new BadRequestException(
@@ -151,9 +153,11 @@ export class InventoryAdjustmentService {
           const absQty = Math.abs(changeQty);
           if (item.batchId) {
             // 指定批次：只从该批次扣减
-            const batch = await manager.findOne(InventoryBatch, {
-              where: { id: item.batchId },
-            });
+            const batch = await manager
+              .createQueryBuilder(InventoryBatch, 'b')
+              .setLock('pessimistic_write')
+              .where('b.id = :id', { id: item.batchId })
+              .getOne();
             if (!batch) throw new BadRequestException(`指定批次(${item.batchId})不存在`);
             if (batch.productId !== item.productId)
               throw new BadRequestException(
@@ -242,7 +246,11 @@ export class InventoryAdjustmentService {
     delta: number,
     manager: EntityManager,
   ): Promise<void> {
-    let inv = await manager.findOne(Inventory, { where: { productId } });
+    let inv = await manager
+      .createQueryBuilder(Inventory, 'i')
+      .setLock('pessimistic_write')
+      .where('i.productId = :productId', { productId })
+      .getOne();
     if (!inv) {
       inv = manager.create(Inventory, {
         id: snowflake.nextId(),
