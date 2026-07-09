@@ -121,7 +121,7 @@ export class SalesOrderService {
         transportChannelId: dto.transportChannelId,
         tradeType: dto.tradeType,
         currency: dto.currency || 'USD',
-        exchangeRate: rate || dto.exchangeRate || dto.exchangeRate || '6.8',
+        exchangeRate: rate || dto.exchangeRate || '6.8',
         bloggerCommissionRate: dto.bloggerCommissionRate || '5.0000',
         totalAmount: totalAmount.toFixed(2),
         receivedAmount: '0',
@@ -164,17 +164,31 @@ export class SalesOrderService {
    */
   async update(id: string, dto: UpdateSalesOrderDto): Promise<SalesOrder> {
     return this.dataSource.transaction(async (manager) => {
-      const order = await manager.findOne(SalesOrder, { where: { id } });
+      let order = await manager.findOne(SalesOrder, { where: { id } });
       if (!order) throw new BadRequestException('订单不存在');
       if (order.shipmentStatus !== 1) {
         throw new BadRequestException('仅待发货状态的订单可以修改');
       }
 
-      if (dto.customerName !== undefined) {
-        order.customerName = dto.customerName;
+      let rate;
+      try {
+        const res = await this.rateService.getRate({
+          date: dto.orderDate || '',
+          base: dto.currency || 'USD',
+        });
+
+        if (!res?.isDefault && res?.rate) {
+          rate = res?.rate;
+        }
+      } catch (error) {
+        // ignore
       }
-      if (dto.remark !== undefined) {
-        order.remark = dto.remark;
+
+      order = {
+        ...order,
+        ...dto,
+        orderDate: new Date(dto.orderDate || order.orderDate),
+        exchangeRate: rate || dto.exchangeRate || '6.8',
       }
 
       // 如果提供了新的明细，整体替换
@@ -244,6 +258,11 @@ export class SalesOrderService {
         }
 
         order.totalAmount = totalAmount.toFixed(2);
+      }
+
+      // 客户名称变更时同步常用联系人
+      if (dto.customerName !== undefined) {
+        await this.upsertContact(dto.customerName, manager);
       }
 
       return manager.save(order);
@@ -528,12 +547,12 @@ export class SalesOrderService {
 
     // 博主佣金 & 实收
     const receivedAmount = parseFloat(order.receivedAmount);
-    const commissionRate = parseFloat(order.bloggerCommissionRate);
+    const commissionRate = parseFloat(order.bloggerCommissionRate || '0');
     const bloggerCommission = receivedAmount * commissionRate / 100;
     const netReceived = receivedAmount - bloggerCommission;
 
     // 实时 CNY
-    const exchangeRate = parseFloat(order.exchangeRate);
+    const exchangeRate = parseFloat(order.exchangeRate || '0');
     const realTimeCny = order.currency === 'CNY'
       ? netReceived
       : netReceived * exchangeRate;

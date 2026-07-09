@@ -39,8 +39,22 @@ export interface CreateSalesOrderDto {
 
 /** 修改订单 DTO（仅待发货状态可修改） */
 export interface UpdateSalesOrderDto {
+  /** 销售员 ID */
+  salespersonId?: string;
   /** 客户名称 */
   customerName?: string;
+  /** 下单日期 */
+  orderDate?: string;
+  /** 运输渠道 ID */
+  transportChannelId?: string;
+  /** 交易方式 */
+  tradeType?: string;
+  /** 订单币种（CNY/USD） */
+  currency?: string;
+  /** 汇率（订单币种→CNY） */
+  exchangeRate?: string;
+  /** 博主佣金比例(%) */
+  bloggerCommissionRate?: string;
   /** 备注 */
   remark?: string;
   /** 商品明细（整体替换） */
