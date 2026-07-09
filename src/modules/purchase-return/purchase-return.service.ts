@@ -5,6 +5,7 @@ import { PurchaseReturn } from './entities/purchase-return.entity';
 import { PurchaseReturnItem } from './entities/purchase-return-item.entity';
 import { PurchaseOrder } from '@/modules/purchase/entities/purchase-order.entity';
 import { PurchaseOrderItem } from '@/modules/purchase/entities/purchase-order-item.entity';
+import { PurchaseOrderService } from '@/modules/purchase/purchase-order.service';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { snowflake } from '@/common/utils/snowflake';
@@ -15,7 +16,7 @@ import type {
 
 /**
  * 采购退货服务
- * 事务：校验采购单 → 校验可退数量 → 创建退货单 → FIFO 扣减库存（可选）→ 更新退货数量
+ * 事务：校验采购单 → 校验可退数量 → 创建退货单 → FIFO 扣减库存 → 更新退货数量 → 更新退货状态
  */
 @Injectable()
 export class PurchaseReturnService {
@@ -32,6 +33,7 @@ export class PurchaseReturnService {
     private readonly orderItemRepo: Repository<PurchaseOrderItem>,
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
+    private readonly purchaseOrderService: PurchaseOrderService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -83,7 +85,6 @@ export class PurchaseReturnService {
         returnNo,
         purchaseOrderId: dto.purchaseOrderId,
         returnDate: new Date(dto.returnDate),
-        deductInventory: dto.deductInventory,
         reason: dto.reason || null,
         remark: dto.remark || null,
       });
@@ -99,19 +100,17 @@ export class PurchaseReturnService {
           purchaseOrderItemId: dtoItem.purchaseOrderItemId,
           productId: orderItem!.productId,
           quantity: dtoItem.quantity,
-          deductInventory: dto.deductInventory,
         });
         await manager.save(returnItem);
 
-        // 4. 扣减库存（可选）
-        if (dto.deductInventory === 1) {
-          await this.fifoService.consume(
-            orderItem!.productId,
-            parseFloat(dtoItem.quantity),
-            savedReturn.id,
-            4, // 采购退货
-          );
-        }
+        // 4. 扣减库存（传入 manager 保证事务原子性）
+        await this.fifoService.consume(
+          orderItem!.productId,
+          parseFloat(dtoItem.quantity),
+          savedReturn.id,
+          4, // 采购退货
+          manager,
+        );
 
         // 5. 更新采购明细退货数量
         orderItem!.returnedQuantity = (
@@ -119,6 +118,11 @@ export class PurchaseReturnService {
         ).toFixed(4);
         await manager.save(orderItem!);
       }
+
+      // 6. 更新采购单退货状态
+      await this.purchaseOrderService.recalculateReturnStatus(
+        dto.purchaseOrderId,
+      );
 
       this.logger.log(`采购退货完成: ${returnNo}, 采购单: ${order.purchaseNo}`);
       return savedReturn;

@@ -55,4 +55,12 @@ export class PurchaseOrder extends BaseEntity {
     comment: '状态：1=待入库 2=部分入库 3=全部入库 4=已关闭',
   })
   status: number = 1;
+
+  @Column({
+    name: 'return_status',
+    type: 'tinyint',
+    default: 1,
+    comment: '退货状态：1=未退货 2=部分退货 3=全部退货',
+  })
+  returnStatus: number = 1;
 }

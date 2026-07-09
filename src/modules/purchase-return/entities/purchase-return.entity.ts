@@ -3,7 +3,6 @@ import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 采购退货单实体
- * deductInventory 控制是否扣减库存
  */
 @Entity('purchase_return')
 export class PurchaseReturn extends BaseEntity {
@@ -27,14 +26,6 @@ export class PurchaseReturn extends BaseEntity {
   @Index('idx_return_date')
   @Column({ name: 'return_date', type: 'datetime', comment: '退货时间' })
   returnDate: Date;
-
-  @Column({
-    name: 'deduct_inventory',
-    type: 'tinyint',
-    default: 1,
-    comment: '是否扣减库存：1=是 0=否',
-  })
-  deductInventory: number = 1;
 
   @Column({ type: 'varchar', length: 200, nullable: true, comment: '退货原因' })
   reason: string | null = null;

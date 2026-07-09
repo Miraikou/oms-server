@@ -7,6 +7,7 @@ import { PurchaseOrderItem } from '@/modules/purchase/entities/purchase-order-it
 import { PurchaseReturnService } from './purchase-return.service';
 import { PurchaseReturnController } from './purchase-return.controller';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
+import { PurchaseModule } from '@/modules/purchase/purchase.module';
 
 /**
  * 采购退货模块
@@ -20,6 +21,7 @@ import { InventoryModule } from '@/modules/inventory/inventory.module';
       PurchaseOrderItem,
     ]),
     InventoryModule,
+    PurchaseModule,
   ],
   controllers: [PurchaseReturnController],
   providers: [PurchaseReturnService],

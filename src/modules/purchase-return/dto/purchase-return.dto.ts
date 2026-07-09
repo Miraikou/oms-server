@@ -4,7 +4,6 @@ import {
   IsString,
   IsArray,
   ValidateNested,
-  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -34,10 +33,6 @@ export class CreatePurchaseReturnDto {
   @IsString()
   @IsNotEmpty({ message: '退货日期不能为空' })
   returnDate: string;
-
-  @ApiProperty({ description: '是否扣减库存', default: 1 })
-  @IsIn([0, 1])
-  deductInventory: number;
 
   @ApiPropertyOptional({ description: '退货原因' })
   @IsString()

@@ -3,7 +3,7 @@ import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
  * 采购退货明细实体
- * 关联采购单明细，控制是否扣减库存
+ * 关联采购单明细
  */
 @Entity('purchase_return_item')
 export class PurchaseReturnItem extends BaseEntity {
@@ -29,12 +29,4 @@ export class PurchaseReturnItem extends BaseEntity {
 
   @Column({ type: 'decimal', precision: 18, scale: 4, comment: '退货数量' })
   quantity: string;
-
-  @Column({
-    name: 'deduct_inventory',
-    type: 'tinyint',
-    default: 1,
-    comment: '是否扣减库存',
-  })
-  deductInventory: number = 1;
 }

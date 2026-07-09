@@ -264,6 +264,52 @@ export class PurchaseOrderService {
 		await this.orderRepo.save(order);
 	}
 
+	/**
+	 * 重新计算采购单退货状态（退货后调用）
+	 * 1=未退货 → 2=部分退货 → 3=全部退货
+	 */
+	async recalculateReturnStatus(orderId: string): Promise<void> {
+		const items = await this.itemRepo.find({
+			where: { purchaseOrderId: orderId },
+		});
+		if (items.length === 0) return;
+
+		let anyReturned = false;
+		let allReturned = true;
+
+		for (const item of items) {
+			const received = parseFloat(item.receivedQuantity);
+			const returned = parseFloat(item.returnedQuantity);
+			if (returned > 0) anyReturned = true;
+			if (received > 0 && returned < received) allReturned = false;
+			// 未入库的明细不参与"全部退货"判断
+			if (received === 0) {
+				// 没入库就不可能退货，忽略此项
+			}
+		}
+
+		// 如果没有入库过任何商品，视为未退货
+		const hasAnyReceived = items.some(
+			(item) => parseFloat(item.receivedQuantity) > 0,
+		);
+		if (!hasAnyReceived) {
+			allReturned = false;
+		}
+
+		const order = await this.orderRepo.findOne({ where: { id: orderId } });
+		if (!order) return;
+
+		if (!anyReturned) {
+			order.returnStatus = 1; // 未退货
+		} else if (allReturned) {
+			order.returnStatus = 3; // 全部退货
+		} else {
+			order.returnStatus = 2; // 部分退货
+		}
+
+		await this.orderRepo.save(order);
+	}
+
 	/** 获取采购单 Repository */
 	getOrderRepo(): Repository<PurchaseOrder> {
 		return this.orderRepo;
