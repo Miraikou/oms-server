@@ -16,6 +16,7 @@ import type {
   UpdateSalesOrderDto,
   QuerySalesOrderDto,
 } from './dto/sales-order.dto';
+import { RateService } from '@/common/rate/rate.service';
 
 /**
  * 订单服务 ⭐
@@ -43,6 +44,7 @@ export class SalesOrderService {
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
+    private readonly rateService: RateService,
   ) {}
 
   /**
@@ -95,6 +97,20 @@ export class SalesOrderService {
         }
       }
 
+      let rate;
+      try {
+        const res = await this.rateService.getRate({
+          date: dto.orderDate || '',
+          base: dto.currency || 'USD',
+        });
+
+        if (!res?.isDefault && res?.rate) {
+          rate = res?.rate;
+        }
+      } catch (error) {
+        // ignore
+      }
+
       // 4. 创建主表
       const order = this.orderRepo.create({
         id: snowflake.nextId(),
@@ -105,7 +121,7 @@ export class SalesOrderService {
         transportChannelId: dto.transportChannelId,
         tradeType: dto.tradeType,
         currency: dto.currency || 'USD',
-        exchangeRate: dto.exchangeRate || '7.0000',
+        exchangeRate: rate || dto.exchangeRate || dto.exchangeRate || '6.8',
         bloggerCommissionRate: dto.bloggerCommissionRate || '5.0000',
         totalAmount: totalAmount.toFixed(2),
         receivedAmount: '0',
@@ -123,12 +139,13 @@ export class SalesOrderService {
       );
       await manager.save(savedItems);
 
-      // 6. 冻结库存（逐个商品）
+      // 6. 冻结库存（逐个商品，在同一事务中）
       for (const item of items) {
         await this.fifoService.freeze(
           item.productId,
           parseFloat(item.quantity),
           savedOrder.id,
+          manager,
         );
       }
 
@@ -143,90 +160,94 @@ export class SalesOrderService {
   /**
    * 修改订单（仅待发货状态可修改）
    * 修改明细需先解冻旧商品→重新冻结新商品
+   * 整个操作在事务中完成，保证原子性
    */
   async update(id: string, dto: UpdateSalesOrderDto): Promise<SalesOrder> {
-    const order = await this.orderRepo.findOne({ where: { id } });
-    if (!order) throw new BadRequestException('订单不存在');
-    if (order.shipmentStatus !== 1) {
-      throw new BadRequestException('仅待发货状态的订单可以修改');
-    }
-
-    if (dto.customerName !== undefined) {
-      order.customerName = dto.customerName;
-    }
-    if (dto.remark !== undefined) {
-      order.remark = dto.remark;
-    }
-
-    // 如果提供了新的明细，整体替换
-    if (dto.items && dto.items.length > 0) {
-      // 获取旧明细用于解冻
-      const oldItems = await this.itemRepo.find({ where: { orderId: id } });
-
-      // 解冻旧商品
-      for (const oldItem of oldItems) {
-        const qty = parseFloat(oldItem.quantity);
-        if (qty > 0) {
-          await this.fifoService.unfreeze(oldItem.productId, qty, id);
-        }
+    return this.dataSource.transaction(async (manager) => {
+      const order = await manager.findOne(SalesOrder, { where: { id } });
+      if (!order) throw new BadRequestException('订单不存在');
+      if (order.shipmentStatus !== 1) {
+        throw new BadRequestException('仅待发货状态的订单可以修改');
       }
 
-      // 删除旧明细
-      await this.itemRepo.delete({ orderId: id });
+      if (dto.customerName !== undefined) {
+        order.customerName = dto.customerName;
+      }
+      if (dto.remark !== undefined) {
+        order.remark = dto.remark;
+      }
 
-      // 校验并创建新明细
-      let totalAmount = 0;
-      const newItems = dto.items.map((item) => {
-        const qty = parseFloat(item.quantity);
-        const price = parseFloat(item.unitPrice);
-        if (qty <= 0) throw new BadRequestException('订单数量必须大于零');
-        if (price <= 0) throw new BadRequestException('销售单价必须大于零');
-        const amount = qty * price;
-        totalAmount += amount;
-        return this.itemRepo.create({
-          id: snowflake.nextId(),
-          orderId: id,
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          amount: amount.toFixed(2),
-          shippedQuantity: '0',
-          returnedQuantity: '0',
-        });
-      });
+      // 如果提供了新的明细，整体替换
+      if (dto.items && dto.items.length > 0) {
+        // 获取旧明细用于解冻
+        const oldItems = await manager.find(SalesOrderItem, { where: { orderId: id } });
 
-      // 检查库存并冻结新商品
-      for (const item of newItems) {
-        const inventory = await this.inventoryRepo.findOne({
-          where: { productId: item.productId },
-        });
-        if (!inventory) {
-          throw new BadRequestException(`商品 ${item.productId} 无库存记录`);
+        // 解冻旧商品（在同一事务中）
+        for (const oldItem of oldItems) {
+          const qty = parseFloat(oldItem.quantity);
+          if (qty > 0) {
+            await this.fifoService.unfreeze(oldItem.productId, qty, id, manager);
+          }
         }
-        const available = parseFloat(inventory.availableQuantity);
-        const needed = parseFloat(item.quantity);
-        if (available < needed) {
-          throw new BadRequestException(
-            `商品 ${item.productId} 库存不足：需要 ${needed}，可用 ${available}`,
+
+        // 删除旧明细
+        await manager.getRepository(SalesOrderItem).delete({ orderId: id });
+
+        // 校验并创建新明细
+        let totalAmount = 0;
+        const newItems = dto.items.map((item) => {
+          const qty = parseFloat(item.quantity);
+          const price = parseFloat(item.unitPrice);
+          if (qty <= 0) throw new BadRequestException('订单数量必须大于零');
+          if (price <= 0) throw new BadRequestException('销售单价必须大于零');
+          const amount = qty * price;
+          totalAmount += amount;
+          return manager.getRepository(SalesOrderItem).create({
+            id: snowflake.nextId(),
+            orderId: id,
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            amount: amount.toFixed(2),
+            shippedQuantity: '0',
+            returnedQuantity: '0',
+          });
+        });
+
+        // 检查库存
+        for (const item of newItems) {
+          const inventory = await manager.findOne(Inventory, {
+            where: { productId: item.productId },
+          });
+          if (!inventory) {
+            throw new BadRequestException(`商品 ${item.productId} 无库存记录`);
+          }
+          const available = parseFloat(inventory.availableQuantity);
+          const needed = parseFloat(item.quantity);
+          if (available < needed) {
+            throw new BadRequestException(
+              `商品 ${item.productId} 库存不足：需要 ${needed}，可用 ${available}`,
+            );
+          }
+        }
+
+        await manager.save(newItems);
+
+        // 冻结新商品（在同一事务中）
+        for (const item of newItems) {
+          await this.fifoService.freeze(
+            item.productId,
+            parseFloat(item.quantity),
+            id,
+            manager,
           );
         }
+
+        order.totalAmount = totalAmount.toFixed(2);
       }
 
-      await this.itemRepo.save(newItems);
-
-      // 冻结新商品
-      for (const item of newItems) {
-        await this.fifoService.freeze(
-          item.productId,
-          parseFloat(item.quantity),
-          id,
-        );
-      }
-
-      order.totalAmount = totalAmount.toFixed(2);
-    }
-
-    return this.orderRepo.save(order);
+      return manager.save(order);
+    });
   }
 
   /**

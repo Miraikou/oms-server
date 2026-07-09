@@ -13,6 +13,7 @@ import { SalesOrderService } from './sales-order.service';
 import { SalesOrderCostService } from './sales-order-cost.service';
 import { SalesOrderController } from './sales-order.controller';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
+import { RateModule as CommonRateModule } from '@/common/rate/rate.module';
 
 /**
  * 销售订单模块
@@ -32,6 +33,7 @@ import { InventoryModule } from '@/modules/inventory/inventory.module';
       CostType,
     ]),
     InventoryModule,
+    CommonRateModule,
   ],
   controllers: [SalesOrderController],
   providers: [SalesOrderService, SalesOrderCostService],
