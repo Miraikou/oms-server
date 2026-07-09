@@ -7,6 +7,8 @@ import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity';
 import { CommonContact } from '@/modules/common-contact/entities/common-contact.entity';
+import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
+import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
 import { SalesOrderService } from './sales-order.service';
 import { SalesOrderCostService } from './sales-order-cost.service';
 import { SalesOrderController } from './sales-order.controller';
@@ -26,6 +28,8 @@ import { InventoryModule } from '@/modules/inventory/inventory.module';
       InventoryBatch,
       InventoryFlow,
       CommonContact,
+      ShipmentItem,
+      CostType,
     ]),
     InventoryModule,
   ],

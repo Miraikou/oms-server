@@ -5,8 +5,11 @@ import { BadRequestException } from '@nestjs/common'
 import { SalesOrderService } from '../sales-order.service'
 import { SalesOrder } from '../entities/sales-order.entity'
 import { SalesOrderItem } from '../entities/sales-order-item.entity'
+import { SalesOrderCost } from '../entities/sales-order-cost.entity'
 import { Inventory } from '@/modules/inventory/entities/inventory.entity'
 import { CommonContact } from '@/modules/common-contact/entities/common-contact.entity'
+import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity'
+import { CostType } from '@/modules/cost-type/entities/cost-type.entity'
 import { SequenceService } from '@/common/services/sequence.service'
 import { FifoService } from '@/modules/inventory/services/fifo.service'
 import { snowflake } from '@/common/utils/snowflake'
@@ -43,6 +46,17 @@ const mockContactRepo = {
   create: jest.fn((_entity: any, data: any) => data),
   save: jest.fn((entity: any) => Promise.resolve(entity)),
 }
+
+const mockShipmentItemRepo = {
+  find: jest.fn(),
+  createQueryBuilder: jest.fn(),
+}
+
+const mockCostRepo = {
+  createQueryBuilder: jest.fn(),
+}
+
+const mockCostTypeRepo = {}
 
 // ---- Mock QueryBuilder ----
 const mockQB = {
@@ -86,6 +100,9 @@ describe('SalesOrderService', () => {
         { provide: getRepositoryToken(SalesOrderItem), useValue: mockItemRepo },
         { provide: getRepositoryToken(Inventory), useValue: mockInventoryRepo },
         { provide: getRepositoryToken(CommonContact), useValue: mockContactRepo },
+        { provide: getRepositoryToken(ShipmentItem), useValue: mockShipmentItemRepo },
+        { provide: getRepositoryToken(SalesOrderCost), useValue: mockCostRepo },
+        { provide: getRepositoryToken(CostType), useValue: mockCostTypeRepo },
         { provide: SequenceService, useValue: mockSequenceService },
         { provide: FifoService, useValue: mockFifoService },
         { provide: DataSource, useValue: mockDataSource },
@@ -107,7 +124,7 @@ describe('SalesOrderService', () => {
       tradeType: 'FOB',
       remark: '加急',
       items: [
-        { productId: 'P001', quantity: '10', unitPriceUsd: '50' },
+        { productId: 'P001', quantity: '10', unitPrice: '50' },
       ],
     }
 
@@ -138,13 +155,13 @@ describe('SalesOrderService', () => {
     })
 
     it('商品数量小于等于0应抛出 BadRequestException', async () => {
-      const dto = { ...validDto, items: [{ productId: 'P001', quantity: '0', unitPriceUsd: '50' }] }
+      const dto = { ...validDto, items: [{ productId: 'P001', quantity: '0', unitPrice: '50' }] }
 
       await expect(service.create(dto)).rejects.toThrow(BadRequestException)
     })
 
     it('商品单价小于等于0应抛出 BadRequestException', async () => {
-      const dto = { ...validDto, items: [{ productId: 'P001', quantity: '10', unitPriceUsd: '0' }] }
+      const dto = { ...validDto, items: [{ productId: 'P001', quantity: '10', unitPrice: '0' }] }
 
       await expect(service.create(dto)).rejects.toThrow(BadRequestException)
     })
@@ -248,7 +265,7 @@ describe('SalesOrderService', () => {
       orderNo: 'SO202601010001',
       customerName: '旧客户',
       shipmentStatus: 1,
-      totalAmountUsd: '500',
+      totalAmount: '500',
       remark: '备注',
     }
 
@@ -274,7 +291,7 @@ describe('SalesOrderService', () => {
       mockInventoryRepo.findOne.mockResolvedValue({ productId: 'P002', availableQuantity: '100' })
 
       const result = await service.update('O001', {
-        items: [{ productId: 'P002', quantity: '5', unitPriceUsd: '100' }],
+        items: [{ productId: 'P002', quantity: '5', unitPrice: '100' }],
       })
 
       // 解冻旧商品
@@ -289,7 +306,7 @@ describe('SalesOrderService', () => {
       expect(mockFifoService.freeze).toHaveBeenCalledWith('P002', 5, 'O001')
       // 保存新明细
       expect(mockItemRepo.save).toHaveBeenCalled()
-      expect(result.totalAmountUsd).toBe('500.00')
+      expect(result.totalAmount).toBe('500.00')
     })
 
     it('订单不存在应抛出 BadRequestException', async () => {
@@ -312,7 +329,7 @@ describe('SalesOrderService', () => {
       mockInventoryRepo.findOne.mockResolvedValue({ productId: 'P002', availableQuantity: '2' })
 
       await expect(service.update('O001', {
-        items: [{ productId: 'P002', quantity: '5', unitPriceUsd: '100' }],
+        items: [{ productId: 'P002', quantity: '5', unitPrice: '100' }],
       })).rejects.toThrow(BadRequestException)
     })
   })
@@ -327,7 +344,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         remark: '普通订单',
-        receivedAmountUsd: '0',
+        receivedAmount: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
@@ -347,7 +364,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 2,
         remark: '部分发货',
-        receivedAmountUsd: '0',
+        receivedAmount: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '4' },
@@ -394,7 +411,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         remark: '已收款订单',
-        receivedAmountUsd: '500',
+        receivedAmount: '500',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
@@ -414,8 +431,8 @@ describe('SalesOrderService', () => {
     it('更新金额成功并重新计算状态', async () => {
       mockOrderRepo.findOne.mockResolvedValue({
         id: 'O001',
-        totalAmountUsd: '1000',
-        receivedAmountUsd: '200',
+        totalAmount: '1000',
+        receivedAmount: '200',
         receivedAmountCny: '0',
       })
       mockItemRepo.find.mockResolvedValue([
@@ -426,7 +443,7 @@ describe('SalesOrderService', () => {
 
       expect(mockOrderRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          receivedAmountUsd: '500.00',
+          receivedAmount: '500.00',
           receivedAmountCny: '2000.00',
         }),
       )
@@ -452,8 +469,8 @@ describe('SalesOrderService', () => {
         id: 'O001',
         status: 1,
         shipmentStatus: 2,
-        totalAmountUsd: '1000',
-        receivedAmountUsd: '1000',
+        totalAmount: '1000',
+        receivedAmount: '1000',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '10' },
@@ -485,8 +502,8 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 2,
         paymentStatus: 2,
-        totalAmountUsd: '1000',
-        receivedAmountUsd: '1000',
+        totalAmount: '1000',
+        receivedAmount: '1000',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '10' },
@@ -509,8 +526,8 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         paymentStatus: 1,
-        totalAmountUsd: '1000',
-        receivedAmountUsd: '0',
+        totalAmount: '1000',
+        receivedAmount: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '3' },
@@ -529,8 +546,8 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         paymentStatus: 1,
-        totalAmountUsd: '1000',
-        receivedAmountUsd: '500',
+        totalAmount: '1000',
+        receivedAmount: '500',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '0' },
@@ -549,8 +566,8 @@ describe('SalesOrderService', () => {
         status: 2,
         shipmentStatus: 3,
         paymentStatus: 3,
-        totalAmountUsd: '1000',
-        receivedAmountUsd: '1000',
+        totalAmount: '1000',
+        receivedAmount: '1000',
       })
 
       await service.recalculateStatus('O001')

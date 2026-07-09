@@ -54,11 +54,11 @@ export class PaymentService {
       }
 
       // 2. 校验不超额（微元整数运算，避免浮点精度问题）
-      const totalMicro = toMicroUnits(order.totalAmountUsd);
-      const receivedMicro = toMicroUnits(order.receivedAmountUsd);
+      const totalMicro = toMicroUnits(order.totalAmount);
+      const receivedMicro = toMicroUnits(order.receivedAmount);
       if (receivedMicro + usdMicro > totalMicro) {
         throw new BadRequestException(
-          `收款金额超出订单金额：订单 $${order.totalAmountUsd}，已收 $${order.receivedAmountUsd}，本次 $${dto.usdAmount}`,
+          `收款金额超出订单金额：订单 $${order.totalAmount}，已收 $${order.receivedAmount}，本次 $${dto.usdAmount}`,
         );
       }
 
@@ -115,13 +115,13 @@ export class PaymentService {
       if (!order) throw new BadRequestException('订单不存在');
 
       // 2. 校验可退金额（已收金额 > 0）
-      const receivedMicro = toMicroUnits(order.receivedAmountUsd);
+      const receivedMicro = toMicroUnits(order.receivedAmount);
       if (receivedMicro <= 0) {
         throw new BadRequestException('该订单无已收款，无法退款');
       }
       if (usdMicro > receivedMicro) {
         throw new BadRequestException(
-          `退款金额超出已收金额：已收 $${order.receivedAmountUsd}，本次退 $${dto.usdAmount}`,
+          `退款金额超出已收金额：已收 $${order.receivedAmount}，本次退 $${dto.usdAmount}`,
         );
       }
 

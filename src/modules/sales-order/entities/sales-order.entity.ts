@@ -55,9 +55,9 @@ export class SalesOrder extends BaseEntity {
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '订单销售金额（USD）',
+    comment: '订单销售金额（订单币种）',
   })
-  totalAmountUsd: string = '0';
+  totalAmount: string = '0';
 
   @Column({
     name: 'received_amount_usd',
@@ -65,9 +65,9 @@ export class SalesOrder extends BaseEntity {
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '已收金额（USD）',
+    comment: '已收金额（订单币种）',
   })
-  receivedAmountUsd: string = '0';
+  receivedAmount: string = '0';
 
   @Column({
     name: 'received_amount_cny',
@@ -98,14 +98,43 @@ export class SalesOrder extends BaseEntity {
   paymentStatus: number = 1;
 
   @Column({
+    name: 'currency',
+    type: 'varchar',
+    length: 10,
+    default: 'USD',
+    comment: '订单币种（CNY/USD）',
+  })
+  currency: string = 'USD';
+
+  @Column({
     name: 'exchange_rate',
     type: 'decimal',
     precision: 18,
     scale: 4,
     default: 7.0,
-    comment: '预估汇率（USD→CNY），用于毛利估算',
+    comment: '汇率（订单币种→CNY），CNY时为1',
   })
   exchangeRate: string = '7.0000';
+
+  @Column({
+    name: 'blogger_commission_rate',
+    type: 'decimal',
+    precision: 8,
+    scale: 4,
+    default: 5.0,
+    comment: '博主佣金比例(%)，默认5%',
+  })
+  bloggerCommissionRate: string = '5.0000';
+
+  @Column({
+    name: 'blogger_commission_amount',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '博主佣金金额（订单币种），收款时自动计算',
+  })
+  bloggerCommissionAmount: string = '0';
 
   @Index('idx_status')
   @Column({

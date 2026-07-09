@@ -7,6 +7,9 @@ import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { CommonContact } from '@/modules/common-contact/entities/common-contact.entity';
+import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
+import { SalesOrderCost } from './entities/sales-order-cost.entity';
+import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
 import { snowflake } from '@/common/utils/snowflake';
 import type {
   CreateSalesOrderDto,
@@ -31,6 +34,12 @@ export class SalesOrderService {
     private readonly inventoryRepo: Repository<Inventory>,
     @InjectRepository(CommonContact)
     private readonly contactRepo: Repository<CommonContact>,
+    @InjectRepository(ShipmentItem)
+    private readonly shipmentItemRepo: Repository<ShipmentItem>,
+    @InjectRepository(SalesOrderCost)
+    private readonly costRepo: Repository<SalesOrderCost>,
+    @InjectRepository(CostType)
+    private readonly costTypeRepo: Repository<CostType>,
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
@@ -50,20 +59,20 @@ export class SalesOrderService {
       const orderNo = await this.sequenceService.generate('SO');
 
       // 2. 计算总金额并校验明细
-      let totalAmountUsd = 0;
+      let totalAmount = 0;
       const items = dto.items.map((item) => {
         const qty = parseFloat(item.quantity);
-        const price = parseFloat(item.unitPriceUsd);
+        const price = parseFloat(item.unitPrice);
         if (qty <= 0) throw new BadRequestException('订单数量必须大于零');
         if (price <= 0) throw new BadRequestException('销售单价必须大于零');
         const amount = qty * price;
-        totalAmountUsd += amount;
+        totalAmount += amount;
         return {
           id: snowflake.nextId(),
           productId: item.productId,
           quantity: item.quantity,
-          unitPriceUsd: item.unitPriceUsd,
-          amountUsd: amount.toFixed(2),
+          unitPrice: item.unitPrice,
+          amount: amount.toFixed(2),
           shippedQuantity: '0',
           returnedQuantity: '0',
         };
@@ -95,9 +104,11 @@ export class SalesOrderService {
         orderDate: new Date(dto.orderDate),
         transportChannelId: dto.transportChannelId,
         tradeType: dto.tradeType,
+        currency: dto.currency || 'USD',
         exchangeRate: dto.exchangeRate || '7.0000',
-        totalAmountUsd: totalAmountUsd.toFixed(2),
-        receivedAmountUsd: '0',
+        bloggerCommissionRate: dto.bloggerCommissionRate || '5.0000',
+        totalAmount: totalAmount.toFixed(2),
+        receivedAmount: '0',
         receivedAmountCny: '0',
         shipmentStatus: 1,
         paymentStatus: 1,
@@ -164,21 +175,21 @@ export class SalesOrderService {
       await this.itemRepo.delete({ orderId: id });
 
       // 校验并创建新明细
-      let totalAmountUsd = 0;
+      let totalAmount = 0;
       const newItems = dto.items.map((item) => {
         const qty = parseFloat(item.quantity);
-        const price = parseFloat(item.unitPriceUsd);
+        const price = parseFloat(item.unitPrice);
         if (qty <= 0) throw new BadRequestException('订单数量必须大于零');
         if (price <= 0) throw new BadRequestException('销售单价必须大于零');
         const amount = qty * price;
-        totalAmountUsd += amount;
+        totalAmount += amount;
         return this.itemRepo.create({
           id: snowflake.nextId(),
           orderId: id,
           productId: item.productId,
           quantity: item.quantity,
-          unitPriceUsd: item.unitPriceUsd,
-          amountUsd: amount.toFixed(2),
+          unitPrice: item.unitPrice,
+          amount: amount.toFixed(2),
           shippedQuantity: '0',
           returnedQuantity: '0',
         });
@@ -212,7 +223,7 @@ export class SalesOrderService {
         );
       }
 
-      order.totalAmountUsd = totalAmountUsd.toFixed(2);
+      order.totalAmount = totalAmount.toFixed(2);
     }
 
     return this.orderRepo.save(order);
@@ -328,8 +339,8 @@ export class SalesOrderService {
       await manager.save(order);
 
       // 判断是否需要退款
-      const receivedUsd = parseFloat(order.receivedAmountUsd);
-      const needsRefund = receivedUsd > 0;
+      const received = parseFloat(order.receivedAmount);
+      const needsRefund = received > 0;
 
       this.logger.log(
         `订单取消成功: ${order.orderNo}, 解冻 ${unfrozenItems.length} 项, 需退款: ${needsRefund}`,
@@ -339,7 +350,7 @@ export class SalesOrderService {
         order,
         unfrozenItems,
         needsRefund,
-        refundableAmount: order.receivedAmountUsd,
+        refundableAmount: order.receivedAmount,
       };
     });
   }
@@ -377,12 +388,12 @@ export class SalesOrderService {
     }
 
     // 计算收款状态
-    const totalAmount = parseFloat(order.totalAmountUsd);
-    const receivedAmount = parseFloat(order.receivedAmountUsd);
+    const totalAmt = parseFloat(order.totalAmount);
+    const receivedAmt = parseFloat(order.receivedAmount);
 
-    if (receivedAmount >= totalAmount && totalAmount > 0) {
+    if (receivedAmt >= totalAmt && totalAmt > 0) {
       order.paymentStatus = 3;
-    } else if (receivedAmount > 0) {
+    } else if (receivedAmt > 0) {
       order.paymentStatus = 2;
     } else {
       order.paymentStatus = 1;
@@ -407,8 +418,8 @@ export class SalesOrderService {
     const order = await this.orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
-    order.receivedAmountUsd = (
-      parseFloat(order.receivedAmountUsd) + parseFloat(usdAmount)
+    order.receivedAmount = (
+      parseFloat(order.receivedAmount) + parseFloat(usdAmount)
     ).toFixed(2);
     order.receivedAmountCny = (
       parseFloat(order.receivedAmountCny) + parseFloat(cnyAmount)
@@ -429,14 +440,14 @@ export class SalesOrderService {
     const order = await this.orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
-    const newUsd = parseFloat(order.receivedAmountUsd) - parseFloat(usdAmount);
+    const newUsd = parseFloat(order.receivedAmount) - parseFloat(usdAmount);
     const newCny = parseFloat(order.receivedAmountCny) - parseFloat(cnyAmount);
 
     if (newUsd < 0 || newCny < 0) {
       throw new BadRequestException('退款金额超出已收金额');
     }
 
-    order.receivedAmountUsd = newUsd.toFixed(2);
+    order.receivedAmount = newUsd.toFixed(2);
     order.receivedAmountCny = newCny.toFixed(2);
 
     await this.orderRepo.save(order);
@@ -460,6 +471,68 @@ export class SalesOrderService {
     await this.itemRepo.save(item);
 
     await this.recalculateStatus(orderId);
+  }
+
+  /**
+   * 利润摘要
+   * 产品成本 = SUM(shipment_item.totalCost)
+   * 额外成本 = SUM(sales_order_cost.amount)
+   * 博主佣金 = 已收金额 × 佣金比例 / 100
+   * 实收金额 = 已收金额 - 博主佣金
+   * 实时CNY = 实收金额 × 汇率（CNY订单不转换）
+   * 销售利润 = 实时CNY - 产品成本 - 额外成本
+   * 利润率 = 销售利润 / 实时CNY × 100%
+   */
+  async getProfitSummary(orderId: string) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new BadRequestException('订单不存在');
+
+    // 产品成本：已发货批次的 FIFO 成本汇总（CNY）
+    // shipment_item 没有 orderId，需通过 shipment 关联
+    const costResult = await this.shipmentItemRepo
+      .createQueryBuilder('si')
+      .innerJoin('shipment', 's', 's.id = si.shipment_id')
+      .select('COALESCE(SUM(si.total_cost), 0)', 'totalCost')
+      .where('s.order_id = :orderId', { orderId })
+      .getRawOne();
+    const productCostCny = parseFloat(costResult?.totalCost || '0');
+
+    // 额外成本
+    const extraCostResult = await this.costRepo
+      .createQueryBuilder('c')
+      .select('COALESCE(SUM(c.amount), 0)', 'totalAmount')
+      .where('c.order_id = :orderId', { orderId })
+      .getRawOne();
+    const extraCostCny = parseFloat(extraCostResult?.totalAmount || '0');
+
+    // 博主佣金 & 实收
+    const receivedAmount = parseFloat(order.receivedAmount);
+    const commissionRate = parseFloat(order.bloggerCommissionRate);
+    const bloggerCommission = receivedAmount * commissionRate / 100;
+    const netReceived = receivedAmount - bloggerCommission;
+
+    // 实时 CNY
+    const exchangeRate = parseFloat(order.exchangeRate);
+    const realTimeCny = order.currency === 'CNY'
+      ? netReceived
+      : netReceived * exchangeRate;
+
+    // 销售利润 & 利润率
+    const salesProfit = realTimeCny - productCostCny - extraCostCny;
+    const profitRate = realTimeCny > 0
+      ? (salesProfit / realTimeCny) * 100
+      : 0;
+
+    return {
+      productCostCny: productCostCny.toFixed(2),
+      extraCostCny: extraCostCny.toFixed(2),
+      bloggerCommission: bloggerCommission.toFixed(2),
+      netReceived: netReceived.toFixed(2),
+      exchangeRate: order.exchangeRate,
+      realTimeCny: realTimeCny.toFixed(2),
+      salesProfit: salesProfit.toFixed(2),
+      profitRate: profitRate.toFixed(2),
+    };
   }
 
   /** 获取订单 Repository */

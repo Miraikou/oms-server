@@ -24,18 +24,18 @@ export class SalesOrderItem extends BaseEntity {
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售单价（USD）',
+    comment: '销售单价（订单币种）',
   })
-  unitPriceUsd: string;
+  unitPrice: string;
 
   @Column({
     name: 'amount_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售金额（USD）',
+    comment: '销售金额（订单币种）',
   })
-  amountUsd: string;
+  amount: string;
 
   @Column({
     name: 'shipped_quantity',

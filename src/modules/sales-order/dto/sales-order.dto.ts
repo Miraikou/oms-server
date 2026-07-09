@@ -9,8 +9,8 @@ export interface CreateSalesOrderItemDto {
   productId: string;
   /** 订单数量 */
   quantity: string;
-  /** 销售单价（USD） */
-  unitPriceUsd: string;
+  /** 销售单价（订单币种） */
+  unitPrice: string;
 }
 
 /** 创建订单 DTO */
@@ -25,8 +25,12 @@ export interface CreateSalesOrderDto {
   transportChannelId: string;
   /** 交易方式 */
   tradeType: string;
-  /** 预估汇率（USD→CNY），默认 7.0 */
+  /** 订单币种（CNY/USD），默认 USD */
+  currency?: string;
+  /** 汇率（订单币种→CNY） */
   exchangeRate?: string;
+  /** 博主佣金比例(%)，默认 5 */
+  bloggerCommissionRate?: string;
   /** 备注 */
   remark?: string;
   /** 商品明细（至少一项） */

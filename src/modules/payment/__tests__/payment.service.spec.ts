@@ -87,8 +87,8 @@ describe('PaymentService', () => {
     const mockOrder = {
       id: 'oid1',
       orderNo: 'SO202607010001',
-      totalAmountUsd: '2000.00',
-      receivedAmountUsd: '0.00',
+      totalAmount: '2000.00',
+      receivedAmount: '0.00',
       status: 1,
     };
 
@@ -146,8 +146,8 @@ describe('PaymentService', () => {
     it('收款超过订单总额时应抛出 BadRequestException', async () => {
       mockOrderRepoForManager.findOne.mockResolvedValue({
         ...mockOrder,
-        totalAmountUsd: '1000.00',
-        receivedAmountUsd: '500.00',
+        totalAmount: '1000.00',
+        receivedAmount: '500.00',
       });
       // usdAmount = 1500.00 -> 1,500,000 micro, 500k + 1,500k > 1,000k
 

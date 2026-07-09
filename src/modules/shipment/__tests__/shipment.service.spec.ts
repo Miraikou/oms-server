@@ -128,7 +128,7 @@ describe('ShipmentService', () => {
         productId: 'prod-1',
         quantity: '20',
         shippedQuantity: '0',
-        unitPriceUsd: '100.00',
+        unitPrice: '100.00',
       },
     ]
 
@@ -301,14 +301,14 @@ describe('ShipmentService', () => {
         productId: 'prod-1',
         quantity: '20',
         shippedQuantity: '5',
-        unitPriceUsd: '100.00',
+        unitPrice: '100.00',
       },
       {
         id: 'orderItem-2',
         productId: 'prod-2',
         quantity: '10',
         shippedQuantity: '10',
-        unitPriceUsd: '50.00',
+        unitPrice: '50.00',
       },
     ]
 
@@ -349,7 +349,7 @@ describe('ShipmentService', () => {
     it('所有明细无剩余数量时应跳过', async () => {
       mockOrderRepo.findOne.mockResolvedValue(mockOrder)
       mockOrderItemRepo.find.mockResolvedValue([
-        { id: 'item-1', productId: 'prod-1', quantity: '10', shippedQuantity: '10', unitPriceUsd: '100.00' },
+        { id: 'item-1', productId: 'prod-1', quantity: '10', shippedQuantity: '10', unitPrice: '100.00' },
       ])
 
       const result = await service.preview('order-1')

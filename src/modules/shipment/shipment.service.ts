@@ -108,7 +108,7 @@ export class ShipmentService {
     for (const dtoItem of dto.items) {
       const orderItem = orderItemMap.get(dtoItem.orderItemId)!;
       const shipQty = parseFloat(dtoItem.quantity);
-      const salesAmount = shipQty * parseFloat(orderItem.unitPriceUsd);
+      const salesAmount = shipQty * parseFloat(orderItem.unitPrice);
 
       // 创建发货明细
       const shipmentItem = this.itemRepo.create({
@@ -117,7 +117,7 @@ export class ShipmentService {
         orderItemId: dtoItem.orderItemId,
         productId: orderItem.productId,
         quantity: dtoItem.quantity,
-        salesUnitPrice: orderItem.unitPriceUsd,
+        salesUnitPrice: orderItem.unitPrice,
         salesAmount: salesAmount.toFixed(2),
         totalCost: '0',
         grossProfit: '0',
@@ -212,7 +212,7 @@ export class ShipmentService {
       previewItems.push({
         orderItemId: item.id,
         productId: item.productId,
-        unitPriceUsd: item.unitPriceUsd,
+        unitPrice: item.unitPrice,
         remainingQuantity: remaining,
         batches: batchPreview,
         estimatedCost: batchPreview

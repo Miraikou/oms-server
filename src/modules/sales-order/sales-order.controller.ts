@@ -42,11 +42,12 @@ export class SalesOrderController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '订单详情（含明细 + 成本）' })
+  @ApiOperation({ summary: '订单详情（含明细 + 成本 + 利润摘要）' })
   async findOne(@Param('id') id: string) {
     const order = await this.orderService.findOne(id);
     const costs = await this.costService.findByOrderId(id);
-    return { ...order, costs };
+    const profitSummary = await this.orderService.getProfitSummary(id);
+    return { ...order, costs, profitSummary };
   }
 
   @Post()
