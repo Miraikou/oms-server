@@ -17,6 +17,12 @@ export class SalesOrderCost extends BaseEntity {
   @Column({ name: 'cost_type_id', type: 'bigint', comment: '成本类型 ID' })
   costTypeId: string;
 
-  @Column({ type: 'decimal', precision: 18, scale: 2, comment: '成本金额' })
+  @Column({ type: 'decimal', precision: 18, scale: 2, comment: '成本金额（原币种）' })
   amount: string;
+
+  @Column({ type: 'varchar', length: 3, default: 'CNY', comment: '成本币种' })
+  currency: string = 'CNY';
+
+  @Column({ name: 'exchange_rate', type: 'decimal', precision: 18, scale: 6, default: 1, comment: '汇率（原币种→CNY）' })
+  exchangeRate: string = '1.000000';
 }
