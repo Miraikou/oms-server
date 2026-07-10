@@ -14,13 +14,22 @@ import { snowflake } from '@/common/utils/snowflake';
  * 属于缓存数据，所有数量均可由库存批次重新推导
  */
 @Entity('inventory')
-@Index('uk_product_id', ['productId'], { unique: true })
+@Index('uk_product_model', ['productId', 'productModelId'], { unique: true })
 export class Inventory {
   @PrimaryColumn('bigint')
   id: string = snowflake.nextId();
 
   @Column({ name: 'product_id', type: 'bigint', comment: '商品 ID' })
   productId: string;
+
+  @Index('idx_product_model_id')
+  @Column({
+    name: 'product_model_id',
+    type: 'bigint',
+    nullable: true,
+    comment: '商品型号 ID',
+  })
+  productModelId: string | null = null;
 
   @Column({
     name: 'available_quantity',

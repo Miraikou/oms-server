@@ -16,6 +16,11 @@ export class CreateAdjustmentItemDto {
   @IsNotEmpty({ message: '商品不能为空' })
   productId: string;
 
+  @ApiPropertyOptional({ description: '商品型号 ID' })
+  @IsString()
+  @IsOptional()
+  productModelId?: string;
+
   @ApiPropertyOptional({ description: '指定批次 ID（为空则自动处理）' })
   @IsString()
   @IsOptional()

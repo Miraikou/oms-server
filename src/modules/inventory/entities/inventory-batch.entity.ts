@@ -25,6 +25,15 @@ export class InventoryBatch {
   @Column({ name: 'product_id', type: 'bigint', comment: '商品 ID' })
   productId: string;
 
+  @Index('idx_product_model_id')
+  @Column({
+    name: 'product_model_id',
+    type: 'bigint',
+    nullable: true,
+    comment: '商品型号 ID',
+  })
+  productModelId: string | null = null;
+
   @Index('idx_receipt_item_id')
   @Column({
     name: 'receipt_item_id',

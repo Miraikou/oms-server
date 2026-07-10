@@ -67,6 +67,7 @@ export class InventoryAdjustmentService {
           id: snowflake.nextId(),
           adjustmentId: saved.id,
           productId: item.productId,
+          productModelId: item.productModelId || null,
           batchId: item.batchId || null,
           changeQuantity: item.changeQuantity,
         });
@@ -102,12 +103,13 @@ export class InventoryAdjustmentService {
             await manager.save(InventoryBatch, batch);
 
             // 更新库存汇总
-            await this.addToInventory(item.productId, changeQty, manager);
+            await this.addToInventory(item.productId, item.productModelId, changeQty, manager);
 
             // 写流水
             await this.writeAdjustmentFlow(
               batch.id,
               item.productId,
+              item.productModelId,
               saved.id,
               item.changeQuantity,
               batch.unitCost,
@@ -121,6 +123,7 @@ export class InventoryAdjustmentService {
             const batch = manager.create(InventoryBatch, {
               id: snowflake.nextId(),
               productId: item.productId,
+              productModelId: item.productModelId || null,
               receiptItemId: null,
               batchSource: 3, // 库存调整
               batchNo,
@@ -135,11 +138,12 @@ export class InventoryAdjustmentService {
             });
             const savedBatch = await manager.save(InventoryBatch, batch);
 
-            await this.addToInventory(item.productId, changeQty, manager);
+            await this.addToInventory(item.productId, item.productModelId, changeQty, manager);
 
             await this.writeAdjustmentFlow(
               savedBatch.id,
               item.productId,
+              item.productModelId,
               saved.id,
               item.changeQuantity,
               '0',
@@ -185,12 +189,13 @@ export class InventoryAdjustmentService {
             await manager.save(InventoryBatch, batch);
 
             // 更新库存汇总
-            await this.addToInventory(item.productId, -absQty, manager);
+            await this.addToInventory(item.productId, item.productModelId, -absQty, manager);
 
             // 写流水
             await this.writeAdjustmentFlow(
               batch.id,
               item.productId,
+              item.productModelId,
               saved.id,
               item.changeQuantity,
               batch.unitCost,
@@ -200,7 +205,7 @@ export class InventoryAdjustmentService {
             );
           } else {
             // 未指定批次：调用 FIFO 引擎扣减（传入事务 manager，changeType=5 调整）
-            await this.fifoService.consume(item.productId, absQty, saved.id, 5, manager, 5);
+            await this.fifoService.consume(item.productId, item.productModelId, absQty, saved.id, 5, manager, 5);
           }
         }
       }
@@ -243,18 +248,27 @@ export class InventoryAdjustmentService {
   /** 辅助：增加库存汇总 */
   private async addToInventory(
     productId: string,
+    productModelId: string | null | undefined,
     delta: number,
     manager: EntityManager,
   ): Promise<void> {
-    let inv = await manager
+    let qb = manager
       .createQueryBuilder(Inventory, 'i')
       .setLock('pessimistic_write')
-      .where('i.productId = :productId', { productId })
-      .getOne();
+      .where('i.productId = :productId', { productId });
+
+    if (productModelId) {
+      qb = qb.andWhere('i.productModelId = :productModelId', { productModelId });
+    } else {
+      qb = qb.andWhere('i.productModelId IS NULL');
+    }
+
+    let inv = await qb.getOne();
     if (!inv) {
       inv = manager.create(Inventory, {
         id: snowflake.nextId(),
         productId,
+        productModelId: productModelId || null,
         availableQuantity: String(delta),
         frozenQuantity: '0',
         stockQuantity: String(delta),
@@ -275,6 +289,7 @@ export class InventoryAdjustmentService {
   private async writeAdjustmentFlow(
     batchId: string,
     productId: string,
+    productModelId: string | null | undefined,
     businessId: string,
     quantity: string,
     unitCost: string,
@@ -282,7 +297,10 @@ export class InventoryAdjustmentService {
     afterAvailable: string,
     manager: EntityManager,
   ): Promise<void> {
-    const inv = await manager.findOne(Inventory, { where: { productId } });
+    const modelWhere = productModelId
+      ? { productId, productModelId }
+      : { productId, productModelId: undefined as any };
+    const inv = await manager.findOne(Inventory, { where: modelWhere });
     const totalCost = (Math.abs(parseFloat(quantity)) * parseFloat(unitCost)).toFixed(2);
 
     await manager.save(
@@ -291,6 +309,7 @@ export class InventoryAdjustmentService {
         id: snowflake.nextId(),
         batchId,
         productId,
+        productModelId: productModelId || null,
         businessType: 5, // 库存调整
         businessId,
         changeType: 5, // 库存调整

@@ -127,7 +127,7 @@ describe('InventoryService', () => {
       }
       mockInventoryRepo.findOne.mockResolvedValue(existingInv)
 
-      const result = await service.updateInventorySummary('p1', 20, 'user1')
+      const result = await service.updateInventorySummary('p1', null, 20, 'user1')
 
       expect(mockInventoryRepo.findOne).toHaveBeenCalledWith({
         where: { productId: 'p1' },
@@ -143,7 +143,7 @@ describe('InventoryService', () => {
     it('库存不存在时创建新汇总', async () => {
       mockInventoryRepo.findOne.mockResolvedValue(null)
 
-      const result = await service.updateInventorySummary('p2', 50)
+      const result = await service.updateInventorySummary('p2', null, 50)
 
       expect(mockInventoryRepo.findOne).toHaveBeenCalledWith({
         where: { productId: 'p2' },
@@ -174,7 +174,7 @@ describe('InventoryService', () => {
       }
       mockInventoryRepo.findOne.mockResolvedValue(existingInv)
 
-      await service.updateInventorySummary('p1', 30.5)
+      await service.updateInventorySummary('p1', null, 30.5)
 
       expect(existingInv.availableQuantity).toBe('130.5')
       expect(existingInv.stockQuantity).toBe('130.5')
@@ -192,7 +192,7 @@ describe('InventoryService', () => {
       }
       mockInventoryRepo.findOne.mockResolvedValue(existingInv)
 
-      await service.updateInventorySummary('p1', -25)
+      await service.updateInventorySummary('p1', null, -25)
 
       expect(existingInv.availableQuantity).toBe('75')
       expect(existingInv.stockQuantity).toBe('75')

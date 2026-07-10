@@ -28,6 +28,7 @@ export class InventoryService {
    */
   async createBatch(data: {
     productId: string;
+    productModelId?: string | null;
     receiptItemId: string | null;
     batchSource: number;
     batchNo: string;
@@ -39,6 +40,7 @@ export class InventoryService {
     const batch = this.batchRepo.create({
       id: snowflake.nextId(),
       productId: data.productId,
+      productModelId: data.productModelId || null,
       receiptItemId: data.receiptItemId,
       batchSource: data.batchSource,
       batchNo: data.batchNo,
@@ -58,20 +60,30 @@ export class InventoryService {
   /**
    * 更新库存汇总（不存在则创建）
    * @param productId 商品 ID
+   * @param productModelId 型号 ID（可选）
    * @param quantityDelta 可用库存变化量（正数增加，负数减少）
    */
   async updateInventorySummary(
     productId: string,
+    productModelId: string | null | undefined,
     quantityDelta: number,
     createdBy?: string | null,
   ): Promise<Inventory> {
-    let inventory = await this.inventoryRepo.findOne({ where: { productId } });
+    const where: Record<string, unknown> = { productId };
+    if (productModelId) {
+      where.productModelId = productModelId;
+    } else {
+      where.productModelId = undefined as any; // IS NULL
+    }
+
+    let inventory = await this.inventoryRepo.findOne({ where });
 
     if (!inventory) {
       // 首次入库，创建库存汇总记录
       inventory = this.inventoryRepo.create({
         id: snowflake.nextId(),
         productId,
+        productModelId: productModelId || null,
         availableQuantity: String(quantityDelta),
         frozenQuantity: '0',
         stockQuantity: String(quantityDelta),
@@ -98,6 +110,7 @@ export class InventoryService {
   async writeFlow(data: {
     batchId: string;
     productId: string;
+    productModelId?: string | null;
     businessType: number;
     businessId: string;
     changeType: number;
@@ -114,6 +127,7 @@ export class InventoryService {
     const flow = this.flowRepo.create({
       id: snowflake.nextId(),
       ...data,
+      productModelId: data.productModelId || null,
     });
     return this.flowRepo.save(flow);
   }
