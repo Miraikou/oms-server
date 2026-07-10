@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { SysRole } from './entities/sys-role.entity';
 import { SysUserRole } from './entities/sys-user-role.entity';
 import { SysRoleMenu } from '../menu/entities/sys-role-menu.entity';
@@ -250,17 +250,23 @@ export class RoleService {
   /**
    * 分配用户角色（事务：先删后插）
    */
-  async assignUserRoles(userId: string, roleIds: string[]) {
-    await this.dataSource.transaction(async (manager) => {
-      await manager.delete(SysUserRole, { userId });
+  async assignUserRoles(userId: string, roleIds: string[], externalManager?: EntityManager) {
+    const run = async (mgr: EntityManager) => {
+      await mgr.delete(SysUserRole, { userId });
 
       if (roleIds.length > 0) {
         const userRoles = roleIds.map((roleId) =>
-          manager.create(SysUserRole, { userId, roleId }),
+          mgr.create(SysUserRole, { userId, roleId }),
         );
-        await manager.save(userRoles);
+        await mgr.save(userRoles);
       }
-    });
+    };
+
+    if (externalManager) {
+      await run(externalManager);
+    } else {
+      await this.dataSource.transaction(run);
+    }
   }
 
   /**

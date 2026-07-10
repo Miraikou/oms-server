@@ -134,7 +134,7 @@ export class UserService {
 
       // 分配角色（roleIds 为空数组时不操作，避免无角色登录）
       if (dto.roleIds && dto.roleIds.length > 0) {
-        await this.roleService.assignUserRoles(saved.id, dto.roleIds);
+        await this.roleService.assignUserRoles(saved.id, dto.roleIds, manager);
       }
 
       return {
@@ -167,7 +167,7 @@ export class UserService {
 
       // 仅当明确传入 roleIds 时才更新角色
       if (dto.roleIds !== undefined) {
-        await this.roleService.assignUserRoles(id, dto.roleIds);
+        await this.roleService.assignUserRoles(id, dto.roleIds, manager);
       }
 
       return { id: user.id, username: user.username, realName: user.realName };
