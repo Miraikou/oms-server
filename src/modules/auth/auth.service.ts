@@ -56,7 +56,7 @@ export class AuthService {
     // 用户不存在 或 已停用
     if (!user || user.status !== 1) {
       await this.recordLoginLog(null, dto.username, ip, userAgent, 0);
-      throw new UnauthorizedException('用户名或密码错误');
+      throw new UnauthorizedException('用户不存在或已停用');
     }
 
     // 验证密码
