@@ -7,6 +7,15 @@ import { BaseEntity } from '@/common/entities/base.entity';
  */
 @Entity('supplier')
 export class Supplier extends BaseEntity {
+  @Index('uk_supplier_no', { unique: true })
+  @Column({
+    name: 'supplier_no',
+    type: 'varchar',
+    length: 50,
+    comment: '供应商编号（GYS+流水号）',
+  })
+  supplierNo: string;
+
   @Index('uk_supplier_name', { unique: true })
   @Column({
     name: 'supplier_name',
