@@ -433,18 +433,16 @@ describe('SalesOrderService', () => {
         id: 'O001',
         totalAmount: '1000',
         receivedAmount: '200',
-        receivedAmountCny: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '10' },
       ])
 
-      await service.updateReceivedAmount('O001', '300', '2000')
+      await service.updateReceivedAmount('O001', '300')
 
       expect(mockOrderRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           receivedAmount: '500.00',
-          receivedAmountCny: '2000.00',
         }),
       )
     })
@@ -452,7 +450,7 @@ describe('SalesOrderService', () => {
     it('订单不存在应抛出 BadRequestException', async () => {
       mockOrderRepo.findOne.mockResolvedValue(null)
 
-      await expect(service.updateReceivedAmount('O999', '100', '700')).rejects.toThrow(BadRequestException)
+      await expect(service.updateReceivedAmount('O999', '100')).rejects.toThrow(BadRequestException)
     })
   })
 

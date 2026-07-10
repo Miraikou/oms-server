@@ -87,16 +87,20 @@ export interface QuerySalesOrderDto {
 export interface CreateSalesOrderCostDto {
   /** 成本类型 ID */
   costTypeId: string;
-  /** 金额 */
+  /** 金额（原币种） */
   amount: string;
+  /** 币种，默认 CNY */
+  currency?: string;
   /** 备注 */
   remark?: string;
 }
 
 /** 修改订单成本 DTO */
 export interface UpdateSalesOrderCostDto {
-  /** 金额 */
+  /** 金额（原币种） */
   amount?: string;
+  /** 币种（变更时重新查汇率） */
+  currency?: string;
   /** 备注 */
   remark?: string;
 }

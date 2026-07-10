@@ -69,16 +69,6 @@ export class SalesOrder extends BaseEntity {
   })
   receivedAmount: string = '0';
 
-  @Column({
-    name: 'received_amount_cny',
-    type: 'decimal',
-    precision: 18,
-    scale: 2,
-    default: 0,
-    comment: '已收人民币（CNY）',
-  })
-  receivedAmountCny: string = '0';
-
   @Index('idx_shipment_status')
   @Column({
     name: 'shipment_status',
