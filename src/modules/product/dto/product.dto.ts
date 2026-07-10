@@ -1,6 +1,37 @@
-import { IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsIn,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
+
+/** 创建商品时内嵌的型号 DTO */
+export class CreateProductModelInlineDto {
+  @ApiProperty({ description: '型号名称' })
+  @IsString()
+  @IsNotEmpty({ message: '型号名称不能为空' })
+  modelName: string;
+
+  @ApiPropertyOptional({ description: '默认采购价' })
+  @IsString()
+  @IsOptional()
+  purchasePrice?: string;
+
+  @ApiPropertyOptional({ description: '默认销售价' })
+  @IsString()
+  @IsOptional()
+  salePrice?: string;
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
+  remark?: string;
+}
 
 export class CreateProductDto {
   @ApiProperty({ description: '供应商 ID' })
@@ -18,11 +49,6 @@ export class CreateProductDto {
   @IsNotEmpty({ message: '商品名称不能为空' })
   productName: string;
 
-  @ApiPropertyOptional({ description: '产品型号' })
-  @IsString()
-  @IsOptional()
-  productModel?: string;
-
   @ApiPropertyOptional({ description: '商品图片 URL' })
   @IsString()
   @IsOptional()
@@ -32,6 +58,13 @@ export class CreateProductDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @ApiPropertyOptional({ description: '商品型号列表（可选，创建时一并添加）', type: [CreateProductModelInlineDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateProductModelInlineDto)
+  @IsOptional()
+  models?: CreateProductModelInlineDto[];
 }
 
 export class UpdateProductDto {
@@ -50,11 +83,6 @@ export class UpdateProductDto {
   @IsOptional()
   productName?: string;
 
-  @ApiPropertyOptional({ description: '产品型号' })
-  @IsString()
-  @IsOptional()
-  productModel?: string;
-
   @ApiPropertyOptional({ description: '商品图片 URL' })
   @IsString()
   @IsOptional()
@@ -72,7 +100,7 @@ export class UpdateProductDto {
 }
 
 export class QueryProductDto extends PaginationParamsDto {
-  @ApiPropertyOptional({ description: '关键词（名称/型号）' })
+  @ApiPropertyOptional({ description: '关键词（名称）' })
   @IsString()
   @IsOptional()
   keyword?: string;

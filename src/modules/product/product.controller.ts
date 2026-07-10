@@ -46,6 +46,12 @@ export class ProductController {
     return this.service.findOne(id);
   }
 
+  @Get(':id/detail')
+  @ApiOperation({ summary: '商品详情（含型号列表）' })
+  findDetail(@Param('id') id: string) {
+    return this.service.findDetail(id);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '创建商品' })

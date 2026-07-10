@@ -27,16 +27,6 @@ export class Product extends BaseEntity {
   })
   productName: string;
 
-  @Index('idx_product_model')
-  @Column({
-    name: 'product_model',
-    type: 'varchar',
-    length: 100,
-    nullable: true,
-    comment: '产品型号',
-  })
-  productModel: string | null = null;
-
   @Column({
     name: 'image_url',
     type: 'varchar',
