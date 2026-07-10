@@ -8,16 +8,6 @@ export class CreateProductModelDto {
   @IsNotEmpty({ message: '型号名称不能为空' })
   modelName: string;
 
-  @ApiPropertyOptional({ description: '默认采购价' })
-  @IsString()
-  @IsOptional()
-  purchasePrice?: string;
-
-  @ApiPropertyOptional({ description: '默认销售价' })
-  @IsString()
-  @IsOptional()
-  salePrice?: string;
-
   @ApiPropertyOptional({ description: '备注' })
   @IsString()
   @IsOptional()
@@ -29,16 +19,6 @@ export class UpdateProductModelDto {
   @IsString()
   @IsOptional()
   modelName?: string;
-
-  @ApiPropertyOptional({ description: '默认采购价' })
-  @IsString()
-  @IsOptional()
-  purchasePrice?: string;
-
-  @ApiPropertyOptional({ description: '默认销售价' })
-  @IsString()
-  @IsOptional()
-  salePrice?: string;
 
   @ApiPropertyOptional({ description: '状态' })
   @IsIn([0, 1])

@@ -1,6 +1,6 @@
 import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { ProductModel } from './entities/product-model.entity';
 import { BaseCrudService } from '@/common/services/base-crud.service';
@@ -15,42 +15,109 @@ export class ProductService extends BaseCrudService<Product> {
     @InjectRepository(ProductModel)
     private readonly modelRepo: Repository<ProductModel>,
     private readonly ossService: OssService,
+    private readonly dataSource: DataSource,
   ) {
     super(repo, 'product');
   }
 
-  /** 创建商品（支持同时创建型号） */
+  /** 创建商品（支持同时创建型号，事务保证一致性） */
   async create(data: object): Promise<Product> {
     const d = data as Record<string, unknown>;
     const models = d.models as Array<Record<string, unknown>> | undefined;
-
-    // 剥离 models 字段，避免传入 base create
     const { models: _models, ...rest } = d;
+
     await this.checkDuplicate(rest);
-    const product = await super.create(rest);
 
-    // 批量创建型号
-    if (models && models.length > 0) {
-      const entities = models.map((m) =>
-        this.modelRepo.create({
-          id: snowflake.nextId(),
-          productId: product.id,
-          modelName: m.modelName as string,
-          purchasePrice: (m.purchasePrice as string) || null,
-          salePrice: (m.salePrice as string) || null,
-          remark: (m.remark as string) || null,
-        }),
-      );
-      await this.modelRepo.save(entities);
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const product = manager.create(Product, {
+        id: snowflake.nextId(),
+        ...rest,
+      });
+      const savedProduct = await manager.save(Product, product);
 
-    return product;
+      if (models && models.length > 0) {
+        const entities = models.map((m) =>
+          manager.create(ProductModel, {
+            id: snowflake.nextId(),
+            productId: savedProduct.id,
+            modelName: m.modelName as string,
+            status: typeof m.status === 'number' ? m.status : 1,
+            remark: (m.remark as string) || null,
+          }),
+        );
+        await manager.save(ProductModel, entities);
+      }
+
+      return savedProduct;
+    });
   }
 
-  /** 更新商品前查重 */
+  /** 更新商品（支持同步型号，事务保证一致性） */
   async update(id: string, data: object): Promise<Product> {
-    await this.checkDuplicate(data, id)
-    return super.update(id, data)
+    const d = data as Record<string, unknown>;
+    const models = d.models as Array<Record<string, unknown>> | undefined;
+    const { models: _models, ...rest } = d;
+
+    await this.checkDuplicate(rest, id);
+
+    return this.dataSource.transaction(async (manager) => {
+      const product = await manager.findOneBy(Product, { id });
+      if (!product) {
+        throw new ConflictException('商品不存在');
+      }
+      Object.assign(product, rest);
+      const savedProduct = await manager.save(Product, product);
+
+      if (models) {
+        const existingModels = await manager.find(ProductModel, {
+          where: { productId: id, isDeleted: 0 },
+        });
+        const payloadNames = new Set(
+          models.filter((m) => m.modelName).map((m) => m.modelName as string),
+        );
+
+        for (const m of models) {
+          if (m.id) {
+            await manager.update(ProductModel, m.id, {
+              modelName: m.modelName as string,
+              remark: (m.remark as string) || null,
+              status: typeof m.status === 'number' ? m.status : 1,
+            });
+          } else {
+            // 检查是否有同名已软删除型号，有则恢复（保留原ID，确保下游单据引用不受影响）
+            const exists = await manager.findOne(ProductModel, {
+              where: {
+                productId: id,
+                modelName: m.modelName as string,
+              },
+            });
+            if (exists) {
+              await manager.update(ProductModel, exists.id, {
+                isDeleted: 0,
+                remark: (m.remark as string) || null,
+                status: typeof m.status === 'number' ? m.status : 1,
+              });
+            } else {
+              const newModel = manager.create(ProductModel, {
+                id: snowflake.nextId(),
+                productId: id,
+                modelName: m.modelName as string,
+                remark: (m.remark as string) || null,
+              });
+              await manager.save(ProductModel, newModel);
+            }
+          }
+        }
+
+        for (const existing of existingModels) {
+          if (!payloadNames.has(existing.modelName)) {
+            await manager.update(ProductModel, existing.id, { isDeleted: 1 });
+          }
+        }
+      }
+
+      return savedProduct;
+    });
   }
 
   /**
@@ -142,11 +209,11 @@ export class ProductService extends BaseCrudService<Product> {
     await this.repo.remove(product);
   }
 
-  /** 商品详情（含型号列表） */
+  /** 商品详情（含型号列表，排除已删除型号） */
   async findDetail(id: string) {
     const product = await this.findOne(id);
     const models = await this.modelRepo.find({
-      where: { productId: id },
+      where: { productId: id, isDeleted: 0 },
       order: { createdTime: 'ASC' },
     });
     return { ...product, models };
