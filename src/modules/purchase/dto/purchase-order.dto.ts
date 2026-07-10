@@ -83,8 +83,7 @@ export class UpdatePurchaseOrderDto {
 
 	@ApiPropertyOptional({ description: '采购日期' })
 	@IsString()
-	@IsOptional()
-	purchaseDate?: string;
+	purchaseDate: string;
 
 	@ApiPropertyOptional({ description: '备注' })
 	@IsString()

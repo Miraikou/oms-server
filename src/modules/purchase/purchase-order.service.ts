@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { PurchaseOrder } from './entities/purchase-order.entity';
 import { PurchaseOrderItem } from './entities/purchase-order-item.entity';
 import { SequenceService } from '@/common/services/sequence.service';
@@ -25,6 +25,7 @@ export class PurchaseOrderService {
 		private readonly itemRepo: Repository<PurchaseOrderItem>,
 		private readonly sequenceService: SequenceService,
 		private readonly rateService: RateService,
+		private readonly dataSource: DataSource,
 	) {}
 
 	/**
@@ -58,41 +59,38 @@ export class PurchaseOrderService {
 			};
 		});
 
-		let rate;
-		try {
-			const res = await this.rateService.getRate({
-				date: dto.purchaseDate || '',
-				base: dto.currency || 'USD',
-			});
-
-			if (!res?.isDefault && res?.rate) {
-				rate = res?.rate;
-			}
-		} catch (error) {
-			// ignore
-		}
-
-		// 保存主表
-		const order = this.orderRepo.create({
-			id: snowflake.nextId(),
-			purchaseNo,
-			supplierId: dto.supplierId,
-			currency: dto.currency || 'CNY',
-			exchangeRate: rate || dto.exchangeRate || '1',
-			totalAmount: totalAmount.toFixed(2),
-			purchaseDate: new Date(dto.purchaseDate),
-			status: 1,
-			remark: dto.remark || null,
+		const exchangeRate = await this.rateService.getRate({
+			date: dto.purchaseDate,
+			base: 'USD',
+			quotes: 'CNY',
 		});
-		const savedOrder = await this.orderRepo.save(order);
 
-		// 保存明细
-		const savedItems = items.map((item) =>
-			this.itemRepo.create({ ...item, purchaseOrderId: savedOrder.id }),
-		);
-		await this.itemRepo.save(savedItems);
+		return this.dataSource.transaction(async (manager: EntityManager) => {
+			const orderRepo = manager.getRepository(PurchaseOrder);
+			const itemRepo = manager.getRepository(PurchaseOrderItem);
 
-		return savedOrder;
+			// 保存主表
+			const order = orderRepo.create({
+				id: snowflake.nextId(),
+				purchaseNo,
+				supplierId: dto.supplierId,
+				currency: dto.currency || 'CNY',
+				exchangeRate,
+				totalAmount: totalAmount.toFixed(2),
+				purchaseDate: new Date(dto.purchaseDate),
+				status: 1,
+				remark: dto.remark || null,
+			});
+			const savedOrder = await orderRepo.save(order);
+
+			// 保存明细
+			const savedItems = items.map((item) =>
+				itemRepo.create({ ...item, purchaseOrderId: savedOrder.id }),
+			);
+			await itemRepo.save(savedItems);
+
+			return savedOrder;
+		});
 	}
 
 	/**
@@ -107,66 +105,62 @@ export class PurchaseOrderService {
 			throw new BadRequestException('仅待入库状态的采购单可以修改');
 		}
 
-		let rate;
-		try {
-			const res = await this.rateService.getRate({
-				date: dto.purchaseDate || '',
-				base: dto.currency || 'USD',
-			});
-
-			if (!res?.isDefault && res?.rate) {
-				rate = res?.rate;
-			}
-		} catch (error) {
-			// ignore
-		}
+		const exchangeRate = await this.rateService.getRate({
+			date: dto.purchaseDate,
+			base: 'USD',
+			quotes: 'CNY',
+		});
 
 		const {
 			items: _items,
 			purchaseDate,
-			exchangeRate,
 			...restDto
 		} = dto as UpdatePurchaseOrderDto & Record<string, unknown>;
-		order = { ...order, ...restDto };
+		order = { ...order, ...restDto, exchangeRate };
 		if (purchaseDate) {
 			order.purchaseDate = new Date(purchaseDate);
 		}
-		if (exchangeRate || rate) {
-			order.exchangeRate = rate || exchangeRate || '1';
-		}
 
-		// 如果提供了新的明细，整体替换
-		if (dto.items && dto.items.length > 0) {
-			// 删除旧明细
-			await this.itemRepo.delete({ purchaseOrderId: id });
+		return this.dataSource.transaction(async (manager: EntityManager) => {
+			const orderRepo = manager.getRepository(PurchaseOrder);
+			const itemRepo = manager.getRepository(PurchaseOrderItem);
 
-			// 重新计算总金额
-			let totalAmount = 0;
-			const items = dto.items.map((item) => {
-				const qty = parseFloat(item.quantity);
-				const price = parseFloat(item.unitPrice);
-				if (qty <= 0)
-					throw new BadRequestException('采购数量必须大于零');
-				if (price <= 0)
-					throw new BadRequestException('采购单价必须大于零');
-				const amount = qty * price;
-				totalAmount += amount;
-				return this.itemRepo.create({
-					id: snowflake.nextId(),
-					purchaseOrderId: id,
-					productId: item.productId,
-					quantity: item.quantity,
-					unitPrice: item.unitPrice,
-					amount: amount.toFixed(2),
-					receivedQuantity: '0',
-					returnedQuantity: '0',
+			// 如果提供了新的明细，整体替换
+			if (dto.items && dto.items.length > 0) {
+				// 删除旧明细
+				await itemRepo.delete({ purchaseOrderId: id });
+
+				// 重新计算总金额
+				let totalAmount = 0;
+				const items = dto.items.map((item) => {
+					const qty = parseFloat(item.quantity);
+					const price = parseFloat(item.unitPrice);
+					if (qty <= 0)
+						throw new BadRequestException('采购数量必须大于零');
+
+					if (price <= 0)
+						throw new BadRequestException('采购单价必须大于零');
+
+					const amount = qty * price;
+					totalAmount += amount;
+
+					return itemRepo.create({
+						id: snowflake.nextId(),
+						purchaseOrderId: id,
+						productId: item.productId,
+						quantity: item.quantity,
+						unitPrice: item.unitPrice,
+						amount: amount.toFixed(2),
+						receivedQuantity: '0',
+						returnedQuantity: '0',
+					});
 				});
-			});
 
-			await this.itemRepo.save(items);
-		}
+				await itemRepo.save(items);
+			}
 
-		return this.orderRepo.save(order);
+			return orderRepo.save(order);
+		});
 	}
 
 	/**
