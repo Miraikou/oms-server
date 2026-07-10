@@ -272,6 +272,7 @@ const DEFAULT_MENUS = [
           { name: '查询', permission: 'common-contact:query' },
           { name: '新增', permission: 'common-contact:create' },
           { name: '编辑', permission: 'common-contact:edit' },
+          { name: '删除', permission: 'common-contact:delete' },
         ],
       },
       {
@@ -827,6 +828,7 @@ export class MenuService {
         'common-contact:query',
         'common-contact:create',
         'common-contact:edit',
+        'common-contact:delete',
       ],
       WAREHOUSE: [
         'dashboard',
