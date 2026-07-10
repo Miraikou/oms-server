@@ -51,6 +51,7 @@ export class PurchaseOrderService {
 			return {
 				id: snowflake.nextId(),
 				productId: item.productId,
+				productModelId: item.productModelId || null,
 				quantity: item.quantity,
 				unitPrice: item.unitPrice,
 				amount: amount.toFixed(2),
@@ -106,7 +107,9 @@ export class PurchaseOrderService {
 		}
 
 		const exchangeRate = await this.rateService.getRate({
-			date: dto.purchaseDate,
+			date: dto.purchaseDate || (order.purchaseDate instanceof Date
+				? order.purchaseDate.toISOString().slice(0, 10)
+				: order.purchaseDate),
 			base: 'USD',
 			quotes: 'CNY',
 		});
@@ -148,6 +151,7 @@ export class PurchaseOrderService {
 						id: snowflake.nextId(),
 						purchaseOrderId: id,
 						productId: item.productId,
+						productModelId: item.productModelId || null,
 						quantity: item.quantity,
 						unitPrice: item.unitPrice,
 						amount: amount.toFixed(2),

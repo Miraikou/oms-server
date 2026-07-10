@@ -7,6 +7,8 @@
 export interface CreateSalesOrderItemDto {
   /** 商品 ID */
   productId: string;
+  /** 商品型号 ID（可选） */
+  productModelId?: string;
   /** 订单数量 */
   quantity: string;
   /** 销售单价（订单币种） */

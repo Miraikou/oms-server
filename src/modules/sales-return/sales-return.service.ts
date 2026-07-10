@@ -119,6 +119,7 @@ export class SalesReturnService {
           salesReturnId: savedReturn.id,
           shipmentItemId: dtoItem.shipmentItemId,
           productId: shipItem!.productId,
+          productModelId: shipItem!.productModelId || null,
           quantity: dtoItem.quantity,
           restoreInventory: dto.restoreInventory,
         });
@@ -160,10 +161,17 @@ export class SalesReturnService {
               await manager.save(batch);
 
               // 更新库存汇总（加悲观锁防止并发覆盖）
+              const invModelWhere = batch.productModelId
+                ? 'i.productModelId = :productModelId'
+                : 'i.productModelId IS NULL';
+              const invModelParams = batch.productModelId
+                ? { productModelId: batch.productModelId }
+                : {};
               const inventory = await manager
                 .createQueryBuilder(Inventory, 'i')
                 .setLock('pessimistic_write')
                 .where('i.productId = :productId', { productId: shipItem!.productId })
+                .andWhere(invModelWhere, invModelParams)
                 .getOne();
               if (inventory) {
                 inventory.availableQuantity = (
@@ -180,6 +188,7 @@ export class SalesReturnService {
                   id: snowflake.nextId(),
                   batchId: batch.id,
                   productId: shipItem!.productId,
+                  productModelId: batch.productModelId || null,
                   businessType: 3, // 客户退货
                   businessId: savedReturn.id,
                   changeType: 1, // 入库

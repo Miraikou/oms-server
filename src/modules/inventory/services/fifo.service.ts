@@ -56,6 +56,7 @@ export class FifoService {
    * 按 inboundTime ASC 选取批次，依次扣减 availableQuantity
    *
    * @param productId 商品 ID
+   * @param productModelId 型号 ID（可选）
    * @param quantity 扣减数量
    * @param businessId 业务单据 ID（如发货单 ID）
    * @param businessType 业务类型（2=销售发货）
@@ -65,6 +66,7 @@ export class FifoService {
    */
   async consume(
     productId: string,
+    productModelId: string | null | undefined,
     quantity: number,
     businessId: string,
     businessType: number = 2,
@@ -73,14 +75,26 @@ export class FifoService {
   ): Promise<FifoConsumeResult> {
     if (quantity <= 0) throw new BadRequestException('扣减数量必须大于零');
 
+    const modelWhere = productModelId
+      ? { productId, productModelId }
+      : { productId, productModelId: undefined as any };
+
     const doConsume = async (manager: EntityManager): Promise<FifoConsumeResult> => {
       // 1. 按 FIFO 顺序获取可用批次
-      const batches = await manager
+      let batchQb = manager
         .createQueryBuilder(InventoryBatch, 'b')
         .setLock('pessimistic_write')
         .where('b.productId = :productId', { productId })
         .andWhere('b.status = :status', { status: 1 })
-        .andWhere('b.availableQuantity > 0')
+        .andWhere('b.availableQuantity > 0');
+
+      if (productModelId) {
+        batchQb = batchQb.andWhere('b.productModelId = :productModelId', { productModelId });
+      } else {
+        batchQb = batchQb.andWhere('b.productModelId IS NULL');
+      }
+
+      const batches = await batchQb
         .orderBy('b.inboundTime', 'ASC')
         .getMany();
 
@@ -97,7 +111,7 @@ export class FifoService {
 
       // 3. 获取当前库存汇总
       const inventory = await manager.findOne(Inventory, {
-        where: { productId },
+        where: modelWhere,
       });
       if (!inventory) throw new BadRequestException('库存记录不存在');
       const beforeAvailable = parseFloat(inventory.availableQuantity);
@@ -161,6 +175,7 @@ export class FifoService {
           id: snowflake.nextId(),
           batchId: item.batchId,
           productId,
+          productModelId: productModelId || null,
           businessType,
           businessId,
           changeType,
@@ -177,7 +192,7 @@ export class FifoService {
       }
 
       this.logger.log(
-        `FIFO 扣减完成: 商品=${productId}, 数量=${quantity}, 成本=${totalCostValue.toFixed(2)}`,
+        `FIFO 扣减完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}, 成本=${totalCostValue.toFixed(2)}`,
       );
 
       return {
@@ -204,19 +219,32 @@ export class FifoService {
    */
   async freeze(
     productId: string,
+    productModelId: string | null | undefined,
     quantity: number,
     orderId: string,
     externalManager?: EntityManager,
   ): Promise<FreezeResult> {
     if (quantity <= 0) throw new BadRequestException('冻结数量必须大于零');
 
+    const modelWhere = productModelId
+      ? { productId, productModelId }
+      : { productId, productModelId: undefined as any };
+
     const doFreeze = async (manager: EntityManager): Promise<FreezeResult> => {
-      const batches = await manager
+      let batchQb = manager
         .createQueryBuilder(InventoryBatch, 'b')
         .setLock('pessimistic_write')
         .where('b.productId = :productId', { productId })
         .andWhere('b.status = :status', { status: 1 })
-        .andWhere('b.availableQuantity > 0')
+        .andWhere('b.availableQuantity > 0');
+
+      if (productModelId) {
+        batchQb = batchQb.andWhere('b.productModelId = :productModelId', { productModelId });
+      } else {
+        batchQb = batchQb.andWhere('b.productModelId IS NULL');
+      }
+
+      const batches = await batchQb
         .orderBy('b.inboundTime', 'ASC')
         .getMany();
 
@@ -231,7 +259,7 @@ export class FifoService {
       }
 
       const inventory = await manager.findOne(Inventory, {
-        where: { productId },
+        where: modelWhere,
       });
       if (!inventory) throw new BadRequestException('库存记录不存在');
 
@@ -279,6 +307,7 @@ export class FifoService {
           id: snowflake.nextId(),
           batchId: batch.id,
           productId,
+          productModelId: productModelId || null,
           businessType: 6, // 下单冻结
           businessId: orderId,
           changeType: 3, // 冻结
@@ -301,7 +330,7 @@ export class FifoService {
       inventory.version += 1;
       await manager.save(inventory);
 
-      this.logger.log(`库存冻结完成: 商品=${productId}, 数量=${quantity}`);
+      this.logger.log(`库存冻结完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);
       return { items: freezeItems };
     };
 
@@ -323,19 +352,32 @@ export class FifoService {
    */
   async unfreeze(
     productId: string,
+    productModelId: string | null | undefined,
     quantity: number,
     orderId: string,
     externalManager?: EntityManager,
   ): Promise<FreezeResult> {
     if (quantity <= 0) throw new BadRequestException('解冻数量必须大于零');
 
+    const modelWhere = productModelId
+      ? { productId, productModelId }
+      : { productId, productModelId: undefined as any };
+
     const doUnfreeze = async (manager: EntityManager): Promise<FreezeResult> => {
       // 获取有冻结的批次
-      const batches = await manager
+      let batchQb = manager
         .createQueryBuilder(InventoryBatch, 'b')
         .setLock('pessimistic_write')
         .where('b.productId = :productId', { productId })
-        .andWhere('b.frozenQuantity > 0')
+        .andWhere('b.frozenQuantity > 0');
+
+      if (productModelId) {
+        batchQb = batchQb.andWhere('b.productModelId = :productModelId', { productModelId });
+      } else {
+        batchQb = batchQb.andWhere('b.productModelId IS NULL');
+      }
+
+      const batches = await batchQb
         .orderBy('b.inboundTime', 'ASC')
         .getMany();
 
@@ -350,7 +392,7 @@ export class FifoService {
       }
 
       const inventory = await manager.findOne(Inventory, {
-        where: { productId },
+        where: modelWhere,
       });
       if (!inventory) throw new BadRequestException('库存记录不存在');
 
@@ -402,6 +444,7 @@ export class FifoService {
           id: snowflake.nextId(),
           batchId: batch.id,
           productId,
+          productModelId: productModelId || null,
           businessType: 7, // 解冻库存
           businessId: orderId,
           changeType: 4, // 解冻
@@ -424,7 +467,7 @@ export class FifoService {
       inventory.version += 1;
       await manager.save(inventory);
 
-      this.logger.log(`库存解冻完成: 商品=${productId}, 数量=${quantity}`);
+      this.logger.log(`库存解冻完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);
       return { items: unfreezeItems };
     };
 
@@ -444,6 +487,7 @@ export class FifoService {
    */
   async deductFrozen(
     productId: string,
+    productModelId: string | null | undefined,
     quantity: number,
     businessId: string,
     businessType: number = 2,
@@ -451,14 +495,26 @@ export class FifoService {
   ): Promise<FifoConsumeResult> {
     if (quantity <= 0) throw new BadRequestException('扣减数量必须大于零');
 
+    const modelWhere = productModelId
+      ? { productId, productModelId }
+      : { productId, productModelId: undefined as any };
+
     return this.withRetry(async () => {
       return this.dataSource.transaction(async (manager) => {
         // 获取有冻结的批次
-        const batches = await manager
+        let batchQb = manager
           .createQueryBuilder(InventoryBatch, 'b')
           .setLock('pessimistic_write')
           .where('b.productId = :productId', { productId })
-          .andWhere('b.frozenQuantity > 0')
+          .andWhere('b.frozenQuantity > 0');
+
+        if (productModelId) {
+          batchQb = batchQb.andWhere('b.productModelId = :productModelId', { productModelId });
+        } else {
+          batchQb = batchQb.andWhere('b.productModelId IS NULL');
+        }
+
+        const batches = await batchQb
           .orderBy('b.inboundTime', 'ASC')
           .getMany();
 
@@ -473,7 +529,7 @@ export class FifoService {
         }
 
         const inventory = await manager.findOne(Inventory, {
-          where: { productId },
+          where: modelWhere,
         });
         if (!inventory) throw new BadRequestException('库存记录不存在');
 
@@ -535,6 +591,7 @@ export class FifoService {
             id: snowflake.nextId(),
             batchId: batch.id,
             productId,
+            productModelId: productModelId || null,
             businessType,
             businessId,
             changeType,
@@ -559,7 +616,7 @@ export class FifoService {
         inventory.version += 1;
         await manager.save(inventory);
 
-        this.logger.log(`冻结扣减完成: 商品=${productId}, 数量=${quantity}`);
+        this.logger.log(`冻结扣减完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);
         return { items: consumeItems, totalCost: totalCostValue.toFixed(2) };
       });
     });

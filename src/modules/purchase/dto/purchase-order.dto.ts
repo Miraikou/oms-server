@@ -16,6 +16,11 @@ export class CreatePurchaseOrderItemDto {
 	@IsNotEmpty({ message: '商品不能为空' })
 	productId: string;
 
+	@ApiPropertyOptional({ description: '商品型号 ID' })
+	@IsString()
+	@IsOptional()
+	productModelId?: string;
+
 	@ApiProperty({ description: '采购数量' })
 	@IsString()
 	@IsNotEmpty({ message: '采购数量不能为空' })
@@ -83,7 +88,8 @@ export class UpdatePurchaseOrderDto {
 
 	@ApiPropertyOptional({ description: '采购日期' })
 	@IsString()
-	purchaseDate: string;
+	@IsOptional()
+	purchaseDate?: string;
 
 	@ApiPropertyOptional({ description: '备注' })
 	@IsString()

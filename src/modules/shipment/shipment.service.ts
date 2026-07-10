@@ -116,6 +116,7 @@ export class ShipmentService {
         shipmentId: savedShipment.id,
         orderItemId: dtoItem.orderItemId,
         productId: orderItem.productId,
+        productModelId: orderItem.productModelId,
         quantity: dtoItem.quantity,
         salesUnitPrice: orderItem.unitPrice,
         salesAmount: salesAmount.toFixed(2),
@@ -127,6 +128,7 @@ export class ShipmentService {
       // 4. FIFO 扣减冻结库存
       const fifoResult = await this.fifoService.deductFrozen(
         orderItem.productId,
+        orderItem.productModelId,
         shipQty,
         savedShipment.id,
         2, // 销售发货

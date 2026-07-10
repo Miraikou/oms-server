@@ -117,7 +117,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      const result = await service.consume('prod-1', 50, 'biz-1');
+      const result = await service.consume('prod-1', null, 50, 'biz-1');
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(50);
@@ -151,7 +151,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch1, batch2]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      const result = await service.consume('prod-1', 50, 'biz-1');
+      const result = await service.consume('prod-1', null, 50, 'biz-1');
 
       expect(result.items).toHaveLength(2);
       // 第一批扣 30
@@ -170,17 +170,17 @@ describe('FifoService', () => {
       const batch = makeBatch({ availableQuantity: '10.0000' });
       mockQB.getMany.mockResolvedValue([batch]);
 
-      await expect(service.consume('prod-1', 50, 'biz-1')).rejects.toThrow(
+      await expect(service.consume('prod-1', null, 50, 'biz-1')).rejects.toThrow(
         BadRequestException,
       );
     });
 
     it('扣减数量 <= 0 时应抛出 BadRequestException', async () => {
-      await expect(service.consume('prod-1', 0, 'biz-1')).rejects.toThrow(
+      await expect(service.consume('prod-1', null, 0, 'biz-1')).rejects.toThrow(
         BadRequestException,
       );
 
-      await expect(service.consume('prod-1', -5, 'biz-1')).rejects.toThrow(
+      await expect(service.consume('prod-1', null, -5, 'biz-1')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -198,7 +198,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      await service.consume('prod-1', 30, 'biz-1');
+      await service.consume('prod-1', null, 30, 'biz-1');
 
       // 找到库存汇总的 save（id = 'inv-1'）
       const inventorySave = savedEntities.find((e) => e.id === 'inv-1');
@@ -220,7 +220,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      await service.consume('prod-1', 50, 'biz-1');
+      await service.consume('prod-1', null, 50, 'biz-1');
 
       // batch save 应在 inventory save 之前
       const batchSave = savedEntities.find((e) => e.id === 'batch-1');
@@ -246,7 +246,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      const result = await service.freeze('prod-1', 30, 'order-1');
+      const result = await service.freeze('prod-1', null, 30, 'order-1');
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(30);
@@ -261,13 +261,13 @@ describe('FifoService', () => {
       const batch = makeBatch({ availableQuantity: '10.0000' });
       mockQB.getMany.mockResolvedValue([batch]);
 
-      await expect(service.freeze('prod-1', 50, 'order-1')).rejects.toThrow(
+      await expect(service.freeze('prod-1', null, 50, 'order-1')).rejects.toThrow(
         BadRequestException,
       );
     });
 
     it('冻结数量 <= 0 时应抛出异常', async () => {
-      await expect(service.freeze('prod-1', 0, 'order-1')).rejects.toThrow(
+      await expect(service.freeze('prod-1', null, 0, 'order-1')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -293,7 +293,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch1, batch2]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      const result = await service.freeze('prod-1', 50, 'order-1');
+      const result = await service.freeze('prod-1', null, 50, 'order-1');
 
       expect(result.items).toHaveLength(2);
       expect(result.items[0].batchId).toBe('b1');
@@ -322,7 +322,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      const result = await service.unfreeze('prod-1', 30, 'order-1');
+      const result = await service.unfreeze('prod-1', null, 30, 'order-1');
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(30);
@@ -337,7 +337,7 @@ describe('FifoService', () => {
       const batch = makeBatch({ frozenQuantity: '10.0000' });
       mockQB.getMany.mockResolvedValue([batch]);
 
-      await expect(service.unfreeze('prod-1', 50, 'order-1')).rejects.toThrow(
+      await expect(service.unfreeze('prod-1', null, 50, 'order-1')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -364,7 +364,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      const result = await service.deductFrozen('prod-1', 30, 'shipment-1');
+      const result = await service.deductFrozen('prod-1', null, 30, 'shipment-1');
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(30);
@@ -382,7 +382,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
 
       await expect(
-        service.deductFrozen('prod-1', 50, 'shipment-1'),
+        service.deductFrozen('prod-1', null, 50, 'shipment-1'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -401,7 +401,7 @@ describe('FifoService', () => {
         throw new BadRequestException('库存不足');
       });
 
-      await expect(service.consume('prod-1', 50, 'biz-1')).rejects.toThrow(
+      await expect(service.consume('prod-1', null, 50, 'biz-1')).rejects.toThrow(
         BadRequestException,
       );
 
@@ -416,7 +416,7 @@ describe('FifoService', () => {
         throw new Error('deadlock detected');
       });
 
-      await expect(service.consume('prod-1', 50, 'biz-1')).rejects.toThrow(
+      await expect(service.consume('prod-1', null, 50, 'biz-1')).rejects.toThrow(
         'deadlock detected',
       );
 
@@ -446,7 +446,7 @@ describe('FifoService', () => {
       mockQB.getMany.mockResolvedValue([batch]);
       mockManager.findOne.mockResolvedValue(inventory);
 
-      const result = await service.consume('prod-1', 10, 'biz-1');
+      const result = await service.consume('prod-1', null, 10, 'biz-1');
 
       expect(callCount).toBe(3);
       expect(result.items).toHaveLength(1);

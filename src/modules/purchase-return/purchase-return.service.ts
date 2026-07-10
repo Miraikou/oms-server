@@ -99,6 +99,7 @@ export class PurchaseReturnService {
           purchaseReturnId: savedReturn.id,
           purchaseOrderItemId: dtoItem.purchaseOrderItemId,
           productId: orderItem!.productId,
+          productModelId: orderItem!.productModelId,
           quantity: dtoItem.quantity,
         });
         await manager.save(returnItem);
@@ -106,6 +107,7 @@ export class PurchaseReturnService {
         // 4. 扣减库存（传入 manager 保证事务原子性）
         await this.fifoService.consume(
           orderItem!.productId,
+          orderItem!.productModelId,
           parseFloat(dtoItem.quantity),
           savedReturn.id,
           4, // 采购退货

@@ -114,6 +114,7 @@ export class PurchaseReceiptService {
           receiptId: savedReceipt.id,
           purchaseOrderItemId: item.purchaseOrderItemId,
           productId: orderItem.productId,
+          productModelId: orderItem.productModelId || null,
           quantity: item.quantity,
           unitPrice: orderItem.unitPrice,
           amount: amount.toFixed(2),
@@ -127,6 +128,7 @@ export class PurchaseReceiptService {
         const batch = manager.create(InventoryBatch, {
           id: snowflake.nextId(),
           productId: ri.productId,
+          productModelId: ri.productModelId || null,
           receiptItemId: ri.id,
           batchSource: 1,
           batchNo,
@@ -153,12 +155,19 @@ export class PurchaseReceiptService {
           .createQueryBuilder(Inventory, 'i')
           .setLock('pessimistic_write')
           .where('i.productId = :productId', { productId: ri.productId })
+          .andWhere(
+            ri.productModelId
+              ? 'i.productModelId = :productModelId'
+              : 'i.productModelId IS NULL',
+            ri.productModelId ? { productModelId: ri.productModelId } : {},
+          )
           .getOne();
         const qtyDelta = parseFloat(ri.quantity);
         if (!inventory) {
           inventory = manager.create(Inventory, {
             id: snowflake.nextId(),
             productId: ri.productId,
+            productModelId: ri.productModelId || null,
             availableQuantity: ri.quantity,
             frozenQuantity: '0',
             stockQuantity: ri.quantity,
@@ -183,6 +192,7 @@ export class PurchaseReceiptService {
             id: snowflake.nextId(),
             batchId: savedBatch.id,
             productId: ri.productId,
+            productModelId: ri.productModelId || null,
             businessType: 1,
             businessId: savedReceipt.id,
             changeType: 1,

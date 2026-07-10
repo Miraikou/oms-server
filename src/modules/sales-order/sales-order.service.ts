@@ -72,6 +72,7 @@ export class SalesOrderService {
         return {
           id: snowflake.nextId(),
           productId: item.productId,
+          productModelId: item.productModelId || null,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           amount: amount.toFixed(2),
@@ -82,8 +83,14 @@ export class SalesOrderService {
 
       // 3. 检查库存并对每个商品冻结
       for (const item of items) {
+        const invWhere: any = { productId: item.productId };
+        if (item.productModelId) {
+          invWhere.productModelId = item.productModelId;
+        } else {
+          invWhere.productModelId = undefined as any;
+        }
         const inventory = await manager.findOne(Inventory, {
-          where: { productId: item.productId },
+          where: invWhere,
         });
         if (!inventory) {
           throw new BadRequestException(`商品 ${item.productId} 无库存记录`);
@@ -142,6 +149,7 @@ export class SalesOrderService {
       for (const item of items) {
         await this.fifoService.freeze(
           item.productId,
+          item.productModelId,
           parseFloat(item.quantity),
           savedOrder.id,
           manager,
@@ -199,7 +207,7 @@ export class SalesOrderService {
         for (const oldItem of oldItems) {
           const qty = parseFloat(oldItem.quantity);
           if (qty > 0) {
-            await this.fifoService.unfreeze(oldItem.productId, qty, id, manager);
+            await this.fifoService.unfreeze(oldItem.productId, oldItem.productModelId, qty, id, manager);
           }
         }
 
@@ -219,6 +227,7 @@ export class SalesOrderService {
             id: snowflake.nextId(),
             orderId: id,
             productId: item.productId,
+            productModelId: item.productModelId || null,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             amount: amount.toFixed(2),
@@ -229,8 +238,14 @@ export class SalesOrderService {
 
         // 检查库存
         for (const item of newItems) {
+          const invWhere: any = { productId: item.productId };
+          if (item.productModelId) {
+            invWhere.productModelId = item.productModelId;
+          } else {
+            invWhere.productModelId = undefined as any;
+          }
           const inventory = await manager.findOne(Inventory, {
-            where: { productId: item.productId },
+            where: invWhere,
           });
           if (!inventory) {
             throw new BadRequestException(`商品 ${item.productId} 无库存记录`);
@@ -250,6 +265,7 @@ export class SalesOrderService {
         for (const item of newItems) {
           await this.fifoService.freeze(
             item.productId,
+            item.productModelId,
             parseFloat(item.quantity),
             id,
             manager,
@@ -364,6 +380,7 @@ export class SalesOrderService {
         if (toUnfreeze > 0) {
           await this.fifoService.unfreeze(
             item.productId,
+            item.productModelId,
             toUnfreeze,
             id,
             manager,
