@@ -7,6 +7,7 @@ import { Payment } from '../entities/payment.entity';
 import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
+import { RateService } from '@/common/rate/rate.service';
 
 jest.mock('@/common/utils/snowflake', () => ({
   snowflake: { nextId: jest.fn(() => '9999999999999999') },
@@ -30,6 +31,10 @@ describe('PaymentService', () => {
 
   const mockSalesOrderService = {
     updateReceivedAmount: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockRateService = {
+    getRate: jest.fn().mockResolvedValue('7.12'),
   };
 
   /* ---- 事务内 manager.getRepository 返回的 Mock ---- */
@@ -65,6 +70,7 @@ describe('PaymentService', () => {
         { provide: SequenceService, useValue: mockSequenceService },
         { provide: SalesOrderService, useValue: mockSalesOrderService },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: RateService, useValue: mockRateService },
       ],
     }).compile();
 
@@ -75,9 +81,7 @@ describe('PaymentService', () => {
   describe('create', () => {
     const validDto = {
       orderId: 'oid1',
-      usdAmount: '1500.00',
-      exchangeRate: '7.12',
-      cnyAmount: '10680.00',
+      amount: '1500.00',
       paymentDate: '2026-07-01',
       paymentMethod: '银行转账',
       payer: '客户A',
@@ -111,20 +115,21 @@ describe('PaymentService', () => {
       );
     });
 
-    it('usdAmount <= 0 时应抛出 BadRequestException', async () => {
+    it('amount <= 0 时应抛出 BadRequestException', async () => {
       await expect(
-        service.create({ ...validDto, usdAmount: '0' }),
+        service.create({ ...validDto, amount: '0' }),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockDataSource.transaction).not.toHaveBeenCalled();
     });
 
-    it('exchangeRate <= 0 时应抛出 BadRequestException', async () => {
-      await expect(
-        service.create({ ...validDto, exchangeRate: '0' }),
-      ).rejects.toThrow(BadRequestException);
+    it('应调用 RateService 获取汇率', async () => {
+      mockOrderRepoForManager.findOne.mockResolvedValue(mockOrder);
+      mockSequenceService.generate.mockResolvedValue('SK202607010001');
 
-      expect(mockDataSource.transaction).not.toHaveBeenCalled();
+      await service.create(validDto);
+
+      expect(mockRateService.getRate).toHaveBeenCalled();
     });
 
     it('订单不存在时应抛出 BadRequestException', async () => {
@@ -148,7 +153,7 @@ describe('PaymentService', () => {
         totalAmount: '1000.00',
         receivedAmount: '500.00',
       });
-      // usdAmount = 1500.00 -> 1,500,000 micro, 500k + 1,500k > 1,000k
+      // amount = 1500.00, total = 1000.00, received = 500.00 → 500k + 1,500k > 1,000k
 
       await expect(service.create(validDto)).rejects.toThrow(BadRequestException);
     });

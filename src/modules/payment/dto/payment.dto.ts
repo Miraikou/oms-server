@@ -9,20 +9,15 @@ export class CreatePaymentDto {
   @IsNotEmpty({ message: '订单不能为空' })
   orderId: string;
 
-  @ApiProperty({ description: '本次收款（USD）' })
+  @ApiProperty({ description: '本次收款金额（原币）' })
   @IsString()
   @IsNotEmpty({ message: '收款金额不能为空' })
-  usdAmount: string;
+  amount: string;
 
-  @ApiProperty({ description: '实际汇率' })
+  @ApiPropertyOptional({ description: '币种，默认 USD' })
   @IsString()
-  @IsNotEmpty({ message: '汇率不能为空' })
-  exchangeRate: string;
-
-  @ApiProperty({ description: '实际到账人民币' })
-  @IsString()
-  @IsNotEmpty({ message: '到账金额不能为空' })
-  cnyAmount: string;
+  @IsOptional()
+  currency?: string;
 
   @ApiProperty({ description: '收款日期' })
   @IsString()
@@ -79,20 +74,15 @@ export class CreateRefundDto {
   @IsNotEmpty({ message: '订单不能为空' })
   orderId: string;
 
-  @ApiProperty({ description: '退款金额（USD）' })
+  @ApiProperty({ description: '退款金额（原币）' })
   @IsString()
   @IsNotEmpty({ message: '退款金额不能为空' })
-  usdAmount: string;
+  amount: string;
 
-  @ApiProperty({ description: '实际汇率' })
+  @ApiPropertyOptional({ description: '币种，默认 USD' })
   @IsString()
-  @IsNotEmpty({ message: '汇率不能为空' })
-  exchangeRate: string;
-
-  @ApiProperty({ description: '实际退人民币' })
-  @IsString()
-  @IsNotEmpty({ message: '退款金额不能为空' })
-  cnyAmount: string;
+  @IsOptional()
+  currency?: string;
 
   @ApiProperty({ description: '退款日期' })
   @IsString()

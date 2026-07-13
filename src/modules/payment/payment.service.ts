@@ -42,8 +42,8 @@ export class PaymentService {
 	 * 事务：校验订单 → 校验不超额 → 生成收款单号 → 创建 Payment → 更新订单已收金额
 	 */
 	async create(dto: CreatePaymentDto): Promise<Payment> {
-		const usdMicro = toMicroUnits(dto.usdAmount);
-		if (usdMicro <= 0) throw new BadRequestException('收款金额必须大于零');
+		const amountMicro = toMicroUnits(dto.amount);
+		if (amountMicro <= 0) throw new BadRequestException('收款金额必须大于零');
 
 		return this.dataSource.transaction(async (manager: EntityManager) => {
 			const orderRepo = manager.getRepository(SalesOrder);
@@ -61,20 +61,21 @@ export class PaymentService {
 			// 2. 校验不超额（微元整数运算，避免浮点精度问题）
 			const totalMicro = toMicroUnits(order.totalAmount);
 			const receivedMicro = toMicroUnits(order.receivedAmount);
-			if (receivedMicro + usdMicro > totalMicro) {
+			if (receivedMicro + amountMicro > totalMicro) {
 				throw new BadRequestException(
-					`收款金额超出订单金额：订单 $${order.totalAmount}，已收 $${order.receivedAmount}，本次 $${dto.usdAmount}`,
+					`收款金额超出订单金额：订单 ${order.totalAmount}，已收 ${order.receivedAmount}，本次 ${dto.amount}`,
 				);
 			}
 
 			// 3. 生成收款单号
 			const paymentNo = await this.sequenceService.generate('SK');
 
-			const exchangeRate = await this.rateService.getRate({
-				date: dto.paymentDate,
-				base: 'USD',
-				quotes: 'CNY',
-			});
+			const currency = order.currency || 'USD';
+			const exchangeRate = await this.rateService.getRate(
+				dto.paymentDate,
+				currency,
+			);
+			const baseAmount = (parseFloat(dto.amount) * parseFloat(exchangeRate)).toFixed(2);
 
 			// 4. 创建 Payment 记录
 			const payment = paymentRepo.create({
@@ -83,23 +84,25 @@ export class PaymentService {
 				type: 1,
 				orderId: dto.orderId,
 				paymentDate: new Date(dto.paymentDate),
-				usdAmount: dto.usdAmount,
+				amount: dto.amount,
+				currency,
 				exchangeRate,
-				cnyAmount: dto.cnyAmount,
+				baseAmount,
 				paymentMethod: dto.paymentMethod || null,
 				payer: dto.payer || null,
 				remark: dto.remark || null,
 			});
 			const savedPayment = await paymentRepo.save(payment);
 
-			// 5. 更新订单已收金额 + 重算三维状态
+			// 5. 更新订单已收金额 + 重算三维状态（传入 manager 保证事务原子性）
 			await this.salesOrderService.updateReceivedAmount(
 				dto.orderId,
-				dto.usdAmount,
+				dto.amount,
+				manager,
 			);
 
 			this.logger.log(
-				`收款成功: ${paymentNo}, 订单: ${order.orderNo}, $${dto.usdAmount}`,
+				`收款成功: ${paymentNo}, 订单: ${order.orderNo}, ${dto.amount} ${currency}`,
 			);
 			return savedPayment;
 		});
@@ -110,11 +113,8 @@ export class PaymentService {
 	 * 事务：校验订单 → 校验可退金额 → 生成退款单号 → 创建 Payment(type=2) → 扣减订单已收金额
 	 */
 	async createRefund(dto: CreateRefundDto): Promise<Payment> {
-		const usdMicro = toMicroUnits(dto.usdAmount);
-		if (usdMicro <= 0) throw new BadRequestException('退款金额必须大于零');
-
-		const exchangeRate = parseFloat(dto.exchangeRate);
-		if (exchangeRate <= 0) throw new BadRequestException('汇率必须大于零');
+		const amountMicro = toMicroUnits(dto.amount);
+		if (amountMicro <= 0) throw new BadRequestException('退款金额必须大于零');
 
 		return this.dataSource.transaction(async (manager: EntityManager) => {
 			const orderRepo = manager.getRepository(SalesOrder);
@@ -131,14 +131,21 @@ export class PaymentService {
 			if (receivedMicro <= 0) {
 				throw new BadRequestException('该订单无已收款，无法退款');
 			}
-			if (usdMicro > receivedMicro) {
+			if (amountMicro > receivedMicro) {
 				throw new BadRequestException(
-					`退款金额超出已收金额：已收 $${order.receivedAmount}，本次退 $${dto.usdAmount}`,
+					`退款金额超出已收金额：已收 ${order.receivedAmount}，本次退 ${dto.amount}`,
 				);
 			}
 
 			// 3. 生成退款单号（复用 SK 前缀）
 			const paymentNo = await this.sequenceService.generate('SK');
+
+			const currency = order.currency || 'USD';
+			const exchangeRate = await this.rateService.getRate(
+				dto.paymentDate,
+				currency,
+			);
+			const baseAmount = (parseFloat(dto.amount) * parseFloat(exchangeRate)).toFixed(2);
 
 			// 4. 创建退款记录
 			const payment = paymentRepo.create({
@@ -147,23 +154,25 @@ export class PaymentService {
 				type: 2,
 				orderId: dto.orderId,
 				paymentDate: new Date(dto.paymentDate),
-				usdAmount: dto.usdAmount,
-				exchangeRate: dto.exchangeRate,
-				cnyAmount: dto.cnyAmount,
+				amount: dto.amount,
+				currency,
+				exchangeRate,
+				baseAmount,
 				paymentMethod: dto.paymentMethod || null,
 				payer: dto.payer || null,
 				remark: dto.remark || null,
 			});
 			const savedPayment = await paymentRepo.save(payment);
 
-			// 5. 扣减订单已收金额 + 重算三维状态
+			// 5. 扣减订单已收金额 + 重算三维状态（传入 manager 保证事务原子性）
 			await this.salesOrderService.decreaseReceivedAmount(
 				dto.orderId,
-				dto.usdAmount,
+				dto.amount,
+				manager,
 			);
 
 			this.logger.log(
-				`退款成功: ${paymentNo}, 订单: ${order.orderNo}, $${dto.usdAmount}`,
+				`退款成功: ${paymentNo}, 订单: ${order.orderNo}, ${dto.amount} ${currency}`,
 			);
 			return savedPayment;
 		});
@@ -207,6 +216,11 @@ export class PaymentService {
 			qb.andWhere('p.paymentDate <= :endDate', {
 				endDate: query.endDate,
 			});
+		}
+
+		const allowedSortFields = ['createdTime', 'paymentDate', 'amount', 'paymentNo'];
+		if (!allowedSortFields.includes(sortField)) {
+			throw new BadRequestException(`不支持的排序字段: ${sortField}`);
 		}
 
 		qb.orderBy(`p.${sortField}`, sortOrder)
