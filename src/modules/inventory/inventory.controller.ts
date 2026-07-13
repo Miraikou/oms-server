@@ -173,6 +173,7 @@ export class InventoryController {
   async consistencyCheck(@Body() body: { productId?: string }) {
     const results: Array<{
       productId: string;
+      productModelId: string | null;
       summaryAvailable: string;
       batchSumAvailable: string;
       match: boolean;
@@ -186,12 +187,19 @@ export class InventoryController {
         .createQueryBuilder('b')
         .select('SUM(b.availableQuantity)', 'total')
         .where('b.productId = :productId', { productId: inv.productId })
-        .andWhere('b.status = 1')
+        .andWhere('b.status = :status', { status: 1 })
+        .andWhere(
+          inv.productModelId
+            ? 'b.productModelId = :productModelId'
+            : 'b.productModelId IS NULL',
+          inv.productModelId ? { productModelId: inv.productModelId } : {},
+        )
         .getRawOne();
 
       const batchTotal = batchSum?.total || '0';
       results.push({
         productId: inv.productId,
+        productModelId: inv.productModelId || null,
         summaryAvailable: inv.availableQuantity,
         batchSumAvailable: String(parseFloat(batchTotal)),
         match:
@@ -225,7 +233,7 @@ export class InventoryController {
     const inventories = await this.inventoryRepo.find({ where });
 
     for (const inv of inventories) {
-      // 从批次表汇总有效批次的数量（与 consistency-check 一致）
+      // 从批次表汇总有效批次的数量（按 productId + productModelId 匹配）
       const batchSum = await this.batchRepo
         .createQueryBuilder('b')
         .select('COALESCE(SUM(b.availableQuantity), 0)', 'available')
@@ -233,6 +241,12 @@ export class InventoryController {
         .addSelect('COALESCE(SUM(b.stockQuantity), 0)', 'stock')
         .where('b.productId = :productId', { productId: inv.productId })
         .andWhere('b.status = 1')
+        .andWhere(
+          inv.productModelId
+            ? 'b.productModelId = :productModelId'
+            : 'b.productModelId IS NULL',
+          inv.productModelId ? { productModelId: inv.productModelId } : {},
+        )
         .getRawOne<{ available: string; frozen: string; stock: string }>();
 
       const sumAvailable = batchSum?.available || '0';
