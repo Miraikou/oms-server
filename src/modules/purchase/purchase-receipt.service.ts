@@ -258,6 +258,18 @@ export class PurchaseReceiptService {
       });
     }
 
+    if (query.receiptNo) {
+      qb.andWhere('pr.receiptNo = :receiptNo', {
+        receiptNo: query.receiptNo,
+      });
+    }
+
+    if (query.purchaseNo) {
+      qb.andWhere('po.purchaseNo = :purchaseNo', {
+        purchaseNo: query.purchaseNo,
+      });
+    }
+
     qb.orderBy('pr.createdTime', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);

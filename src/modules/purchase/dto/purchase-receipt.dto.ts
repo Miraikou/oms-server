@@ -55,4 +55,14 @@ export class QueryPurchaseReceiptDto extends PaginationParamsDto {
   @IsString()
   @IsOptional()
   purchaseOrderId?: string;
+
+  @ApiPropertyOptional({ description: '入库单号' })
+  @IsString()
+  @IsOptional()
+  receiptNo?: string;
+
+  @ApiPropertyOptional({ description: '采购单号' })
+  @IsString()
+  @IsOptional()
+  purchaseNo?: string;
 }
