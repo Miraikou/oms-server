@@ -121,9 +121,10 @@ export class PurchaseReturnService {
         await manager.save(orderItem!);
       }
 
-      // 6. 更新采购单退货状态
+      // 6. 更新采购单退货状态（传入 manager 保证事务原子性）
       await this.purchaseOrderService.recalculateReturnStatus(
         dto.purchaseOrderId,
+        manager,
       );
 
       this.logger.log(`采购退货完成: ${returnNo}, 采购单: ${order.purchaseNo}`);

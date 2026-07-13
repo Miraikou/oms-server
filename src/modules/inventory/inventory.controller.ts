@@ -44,20 +44,23 @@ export class InventoryController {
 
     const [list, total] = await qb.getManyAndCount();
 
-    // 从批次表实时汇总，覆盖汇总表的缓存值
+    // 从批次表实时汇总，覆盖汇总表的缓存值（按 productId + productModelId 分组）
     if (list.length > 0) {
       const productIds = list.map((inv) => inv.productId);
       const batchSums = await this.batchRepo
         .createQueryBuilder('b')
         .select('b.productId', 'productId')
+        .addSelect('b.productModelId', 'productModelId')
         .addSelect('COALESCE(SUM(b.availableQuantity), 0)', 'availableQuantity')
         .addSelect('COALESCE(SUM(b.frozenQuantity), 0)', 'frozenQuantity')
         .addSelect('COALESCE(SUM(b.stockQuantity), 0)', 'stockQuantity')
         .where('b.productId IN (:...productIds)', { productIds })
         .andWhere('b.status = 1')
         .groupBy('b.productId')
+        .addGroupBy('b.productModelId')
         .getRawMany<{
           productId: string;
+          productModelId: string | null;
           availableQuantity: string;
           frozenQuantity: string;
           stockQuantity: string;
@@ -65,7 +68,10 @@ export class InventoryController {
 
       const sumMap = new Map<string, { availableQuantity: string; frozenQuantity: string; stockQuantity: string }>();
       for (const row of batchSums) {
-        sumMap.set(row.productId, {
+        const key = row.productModelId
+          ? `${row.productId}::${row.productModelId}`
+          : `${row.productId}::`;
+        sumMap.set(key, {
           availableQuantity: row.availableQuantity,
           frozenQuantity: row.frozenQuantity,
           stockQuantity: row.stockQuantity,
@@ -73,7 +79,10 @@ export class InventoryController {
       }
 
       for (const inv of list) {
-        const sum = sumMap.get(inv.productId);
+        const key = inv.productModelId
+          ? `${inv.productId}::${inv.productModelId}`
+          : `${inv.productId}::`;
+        const sum = sumMap.get(key);
         if (sum) {
           inv.availableQuantity = sum.availableQuantity;
           inv.frozenQuantity = sum.frozenQuantity;

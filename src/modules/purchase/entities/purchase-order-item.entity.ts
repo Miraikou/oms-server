@@ -40,6 +40,9 @@ export class PurchaseOrderItem extends BaseEntity {
   @Column({ type: 'decimal', precision: 18, scale: 2, comment: '采购金额' })
   amount: string;
 
+  @Column({ name: 'base_amount', type: 'decimal', precision: 18, scale: 2, default: 0, comment: '采购金额（CNY）= amount × PO汇率' })
+  baseAmount: string = '0';
+
   @Column({
     name: 'received_quantity',
     type: 'decimal',

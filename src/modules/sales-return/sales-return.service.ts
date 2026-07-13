@@ -195,6 +195,9 @@ export class SalesReturnService {
                   quantity: String(toRestore),
                   unitCost: sb.unitCost,
                   totalCost: (toRestore * parseFloat(sb.unitCost)).toFixed(2),
+                  totalCostBase: (toRestore * parseFloat(sb.unitCostBase || '0')).toFixed(2),
+                  flowCurrency: sb.currency || 'CNY',
+                  flowExchangeRate: sb.exchangeRate || '1',
                   beforeAvailable: beforeAvailable.toFixed(4),
                   afterAvailable: (beforeAvailable + toRestore).toFixed(4),
                   beforeFrozen: beforeFrozen.toFixed(4),
@@ -220,6 +223,9 @@ export class SalesReturnService {
           await manager.save(orderItem);
         }
       }
+
+      // 6. 重算订单发货状态（退货减少净发货量，可能改变 shipmentStatus）
+      await this.salesOrderService.recalculateStatus(dto.orderId, manager);
 
       this.logger.log(`客户退货完成: ${returnNo}, 订单: ${order.orderNo}`);
       return savedReturn;

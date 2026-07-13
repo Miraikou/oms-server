@@ -65,6 +65,35 @@ export class InventoryBatch {
   unitCost: string;
 
   @Column({
+    name: 'unit_cost_base',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '批次采购单价（CNY）= unitCost × exchangeRate',
+  })
+  unitCostBase: string = '0';
+
+  @Column({
+    name: 'currency',
+    type: 'varchar',
+    length: 10,
+    default: 'CNY',
+    comment: '采购币种',
+  })
+  currency: string = 'CNY';
+
+  @Column({
+    name: 'exchange_rate',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    default: 1.0,
+    comment: '采购币种→CNY 汇率',
+  })
+  exchangeRate: string = '1.0000';
+
+  @Column({
     name: 'original_quantity',
     type: 'decimal',
     precision: 18,

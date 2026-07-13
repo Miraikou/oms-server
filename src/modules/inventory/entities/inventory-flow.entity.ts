@@ -83,6 +83,35 @@ export class InventoryFlow {
   totalCost: string | null = null;
 
   @Column({
+    name: 'total_cost_base',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '本次总成本（CNY）',
+  })
+  totalCostBase: string | null = null;
+
+  @Column({
+    name: 'flow_currency',
+    type: 'varchar',
+    length: 10,
+    nullable: true,
+    comment: '成本币种',
+  })
+  flowCurrency: string | null = null;
+
+  @Column({
+    name: 'flow_exchange_rate',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    nullable: true,
+    comment: '成本币种→CNY 汇率',
+  })
+  flowExchangeRate: string | null = null;
+
+  @Column({
     name: 'before_available',
     type: 'decimal',
     precision: 18,

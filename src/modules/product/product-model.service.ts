@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, QueryFailedError } from 'typeorm';
 import { ProductModel } from './entities/product-model.entity';
+import { Product } from './entities/product.entity';
 import {
 	CreateProductModelDto,
 	UpdateProductModelDto,
@@ -17,6 +18,8 @@ export class ProductModelService {
 	constructor(
 		@InjectRepository(ProductModel)
 		private readonly repo: Repository<ProductModel>,
+		@InjectRepository(Product)
+		private readonly productRepo: Repository<Product>,
 	) {}
 
 	/** 分页查询某商品下的型号 */
@@ -61,17 +64,24 @@ export class ProductModelService {
 		});
 	}
 
-	/** 获取所有启用型号（含商品名，供全局下拉用） */
+	/** 获取所有启用型号（含商品名，供全局下拉/展示用） */
 	async findAllActiveWithProduct() {
-		return this.repo
-			.createQueryBuilder('pm')
-			.innerJoin('product', 'p', 'p.id = pm.productId')
-			.addSelect(['p.productName', 'p.supplierId'])
-			.where('pm.status = :status', { status: 1 })
-			.andWhere('pm.isDeleted = :isDeleted', { isDeleted: 0 })
-			.orderBy('p.productName', 'ASC')
-			.addOrderBy('pm.modelName', 'ASC')
-			.getRawMany();
+		const models = await this.repo.find({
+			where: { status: 1, isDeleted: 0 },
+			order: { productId: 'ASC', modelName: 'ASC' },
+		});
+		if (!models.length) return [];
+		const productIds = [...new Set(models.map((m) => m.productId))];
+		const products = await this.productRepo
+			.createQueryBuilder('p')
+			.select(['p.id', 'p.productName'])
+			.where('p.id IN (:...ids)', { ids: productIds })
+			.getMany();
+		const nameMap = new Map(products.map((p) => [p.id, p.productName]));
+		return models.map((m) => ({
+			...m,
+			productName: nameMap.get(m.productId) || '',
+		}));
 	}
 
 	/** 查询单个型号（排除已删除） */
@@ -121,14 +131,13 @@ export class ProductModelService {
 	): Promise<ProductModel> {
 		const model = await this.findOne(id);
 
-		const newModel = {
-			...model,
-      ...dto,
-			status: dto.status || model.status,
-		};
+		// 显式挑选可修改字段
+		if (dto.modelName !== undefined) model.modelName = dto.modelName;
+		if (dto.status !== undefined) model.status = dto.status;
+		if (dto.remark !== undefined) model.remark = dto.remark === '' ? null : dto.remark;
 
 		try {
-			return await this.repo.save(newModel);
+			return await this.repo.save(model);
 		} catch (error) {
 			this.handleDuplicateError(error);
 			throw error;

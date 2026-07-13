@@ -113,6 +113,9 @@ export class InventoryAdjustmentService {
               saved.id,
               item.changeQuantity,
               batch.unitCost,
+              batch.unitCostBase || '0',
+              batch.currency || 'CNY',
+              batch.exchangeRate || '1',
               beforeAvailable,
               batch.availableQuantity,
               manager,
@@ -128,6 +131,9 @@ export class InventoryAdjustmentService {
               batchSource: 3, // 库存调整
               batchNo,
               unitCost: '0',
+              unitCostBase: '0',
+              currency: 'CNY',
+              exchangeRate: '1',
               originalQuantity: item.changeQuantity,
               availableQuantity: item.changeQuantity,
               frozenQuantity: '0',
@@ -147,6 +153,9 @@ export class InventoryAdjustmentService {
               saved.id,
               item.changeQuantity,
               '0',
+              '0',
+              'CNY',
+              '1',
               '0',
               item.changeQuantity,
               manager,
@@ -199,6 +208,9 @@ export class InventoryAdjustmentService {
               saved.id,
               item.changeQuantity,
               batch.unitCost,
+              batch.unitCostBase || '0',
+              batch.currency || 'CNY',
+              batch.exchangeRate || '1',
               beforeAvailable,
               batch.availableQuantity,
               manager,
@@ -293,6 +305,9 @@ export class InventoryAdjustmentService {
     businessId: string,
     quantity: string,
     unitCost: string,
+    unitCostBase: string,
+    currency: string,
+    exchangeRate: string,
     beforeAvailable: string,
     afterAvailable: string,
     manager: EntityManager,
@@ -302,6 +317,7 @@ export class InventoryAdjustmentService {
       : { productId, productModelId: undefined as any };
     const inv = await manager.findOne(Inventory, { where: modelWhere });
     const totalCost = (Math.abs(parseFloat(quantity)) * parseFloat(unitCost)).toFixed(2);
+    const totalCostBase = (Math.abs(parseFloat(quantity)) * parseFloat(unitCostBase)).toFixed(2);
 
     await manager.save(
       InventoryFlow,
@@ -316,6 +332,9 @@ export class InventoryAdjustmentService {
         quantity: String(Math.abs(parseFloat(quantity))),
         unitCost,
         totalCost,
+        totalCostBase,
+        flowCurrency: currency,
+        flowExchangeRate: exchangeRate,
         beforeAvailable,
         afterAvailable,
         beforeFrozen: inv?.frozenQuantity || '0',

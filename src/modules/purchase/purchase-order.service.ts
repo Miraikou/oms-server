@@ -55,16 +55,24 @@ export class PurchaseOrderService {
 				quantity: item.quantity,
 				unitPrice: item.unitPrice,
 				amount: amount.toFixed(2),
+				baseAmount: '0',
 				receivedQuantity: '0',
 				returnedQuantity: '0',
 			};
 		});
 
-		const exchangeRate = await this.rateService.getRate({
-			date: dto.purchaseDate,
-			base: 'USD',
-			quotes: 'CNY',
-		});
+		const currency = dto.currency || 'CNY';
+		const exchangeRate = await this.rateService.getRate(
+			dto.purchaseDate || new Date().toISOString().slice(0, 10),
+			currency,
+		);
+
+		// 计算每条明细的 baseAmount
+		const rateNum = parseFloat(exchangeRate);
+		for (const item of items) {
+			item.baseAmount = (parseFloat(item.amount) * rateNum).toFixed(2);
+		}
+		const totalBaseAmount = (totalAmount * rateNum).toFixed(2);
 
 		return this.dataSource.transaction(async (manager: EntityManager) => {
 			const orderRepo = manager.getRepository(PurchaseOrder);
@@ -75,9 +83,10 @@ export class PurchaseOrderService {
 				id: snowflake.nextId(),
 				purchaseNo,
 				supplierId: dto.supplierId,
-				currency: dto.currency || 'CNY',
+				currency,
 				exchangeRate,
 				totalAmount: totalAmount.toFixed(2),
+				totalBaseAmount,
 				purchaseDate: new Date(dto.purchaseDate),
 				status: 1,
 				remark: dto.remark || null,
@@ -106,23 +115,22 @@ export class PurchaseOrderService {
 			throw new BadRequestException('仅待入库状态的采购单可以修改');
 		}
 
-		const exchangeRate = await this.rateService.getRate({
-			date: dto.purchaseDate || (order.purchaseDate instanceof Date
-				? order.purchaseDate.toISOString().slice(0, 10)
-				: order.purchaseDate),
-			base: 'USD',
-			quotes: 'CNY',
-		});
-
-		const {
-			items: _items,
+		const currency = dto.currency || order.currency || 'CNY';
+		const purchaseDate = dto.purchaseDate || (order.purchaseDate instanceof Date
+			? order.purchaseDate.toISOString().slice(0, 10)
+			: order.purchaseDate);
+		const exchangeRate = await this.rateService.getRate(
 			purchaseDate,
-			...restDto
-		} = dto as UpdatePurchaseOrderDto & Record<string, unknown>;
-		order = { ...order, ...restDto, exchangeRate };
-		if (purchaseDate) {
-			order.purchaseDate = new Date(purchaseDate);
-		}
+			currency,
+		);
+
+		// 显式挑选可修改字段，忽略系统管理字段（status/totalAmount/receivedAmount 等）
+		if (dto.supplierId !== undefined) order.supplierId = dto.supplierId;
+		if (dto.purchaseDate !== undefined) order.purchaseDate = new Date(dto.purchaseDate);
+		if (dto.currency !== undefined) order.currency = dto.currency;
+		order.exchangeRate = exchangeRate;
+		// remark: 空字符串 → null（用户主动清空）
+		if (dto.remark !== undefined) order.remark = dto.remark === '' ? null : dto.remark;
 
 		return this.dataSource.transaction(async (manager: EntityManager) => {
 			const orderRepo = manager.getRepository(PurchaseOrder);
@@ -135,6 +143,7 @@ export class PurchaseOrderService {
 
 				// 重新计算总金额
 				let totalAmount = 0;
+				const rateNum = parseFloat(exchangeRate);
 				const items = dto.items.map((item) => {
 					const qty = parseFloat(item.quantity);
 					const price = parseFloat(item.unitPrice);
@@ -155,10 +164,14 @@ export class PurchaseOrderService {
 						quantity: item.quantity,
 						unitPrice: item.unitPrice,
 						amount: amount.toFixed(2),
+						baseAmount: (amount * rateNum).toFixed(2),
 						receivedQuantity: '0',
 						returnedQuantity: '0',
 					});
 				});
+
+				order.totalAmount = totalAmount.toFixed(2);
+				order.totalBaseAmount = (totalAmount * rateNum).toFixed(2);
 
 				await itemRepo.save(items);
 			}
@@ -232,8 +245,11 @@ export class PurchaseOrderService {
 	 * 重新计算采购单状态（入库后调用）
 	 * 1=待入库 → 2=部分入库 → 3=全部入库
 	 */
-	async recalculateStatus(orderId: string): Promise<void> {
-		const items = await this.itemRepo.find({
+	async recalculateStatus(orderId: string, externalManager?: EntityManager): Promise<void> {
+		const orderRepo = externalManager ? externalManager.getRepository(PurchaseOrder) : this.orderRepo;
+		const itemRepo = externalManager ? externalManager.getRepository(PurchaseOrderItem) : this.itemRepo;
+
+		const items = await itemRepo.find({
 			where: { purchaseOrderId: orderId },
 		});
 		if (items.length === 0) return;
@@ -248,7 +264,7 @@ export class PurchaseOrderService {
 			if (received < qty) allReceived = false;
 		}
 
-		const order = await this.orderRepo.findOne({ where: { id: orderId } });
+		const order = await orderRepo.findOne({ where: { id: orderId } });
 		if (!order || order.status === 4) return;
 
 		if (allReceived) {
@@ -259,15 +275,18 @@ export class PurchaseOrderService {
 			order.status = 1; // 待入库
 		}
 
-		await this.orderRepo.save(order);
+		await orderRepo.save(order);
 	}
 
 	/**
 	 * 重新计算采购单退货状态（退货后调用）
 	 * 1=未退货 → 2=部分退货 → 3=全部退货
 	 */
-	async recalculateReturnStatus(orderId: string): Promise<void> {
-		const items = await this.itemRepo.find({
+	async recalculateReturnStatus(orderId: string, externalManager?: EntityManager): Promise<void> {
+		const orderRepo = externalManager ? externalManager.getRepository(PurchaseOrder) : this.orderRepo;
+		const itemRepo = externalManager ? externalManager.getRepository(PurchaseOrderItem) : this.itemRepo;
+
+		const items = await itemRepo.find({
 			where: { purchaseOrderId: orderId },
 		});
 		if (items.length === 0) return;
@@ -294,7 +313,7 @@ export class PurchaseOrderService {
 			allReturned = false;
 		}
 
-		const order = await this.orderRepo.findOne({ where: { id: orderId } });
+		const order = await orderRepo.findOne({ where: { id: orderId } });
 		if (!order) return;
 
 		if (!anyReturned) {
@@ -305,7 +324,7 @@ export class PurchaseOrderService {
 			order.returnStatus = 2; // 部分退货
 		}
 
-		await this.orderRepo.save(order);
+		await orderRepo.save(order);
 	}
 
 	/** 获取采购单 Repository */

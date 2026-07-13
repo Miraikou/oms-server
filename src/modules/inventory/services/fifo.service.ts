@@ -13,12 +13,17 @@ export interface FifoConsumeItem {
   quantity: number;
   unitCost: string;
   totalCost: string;
+  unitCostBase: string;
+  totalCostBase: string;
+  currency: string;
+  exchangeRate: string;
 }
 
 /** FIFO 扣减结果 */
 export interface FifoConsumeResult {
   items: FifoConsumeItem[];
   totalCost: string;
+  totalCostBase: string;
 }
 
 /** 冻结/解冻结果 */
@@ -121,6 +126,7 @@ export class FifoService {
       let remaining = quantity;
       const consumeItems: FifoConsumeItem[] = [];
       let totalCostValue = 0;
+      let totalCostBaseValue = 0;
 
       for (const batch of batches) {
         if (remaining <= 0) break;
@@ -148,12 +154,20 @@ export class FifoService {
         const cost = deduct * unitCost;
         totalCostValue += cost;
 
+        const unitCostBase = parseFloat(batch.unitCostBase);
+        const costBase = deduct * unitCostBase;
+        totalCostBaseValue += costBase;
+
         consumeItems.push({
           batchId: batch.id,
           batchNo: batch.batchNo,
           quantity: deduct,
           unitCost: batch.unitCost,
           totalCost: cost.toFixed(2),
+          unitCostBase: batch.unitCostBase,
+          totalCostBase: costBase.toFixed(2),
+          currency: batch.currency,
+          exchangeRate: batch.exchangeRate,
         });
 
         remaining -= deduct;
@@ -182,6 +196,9 @@ export class FifoService {
           quantity: String(item.quantity),
           unitCost: item.unitCost,
           totalCost: item.totalCost,
+          totalCostBase: item.totalCostBase,
+          flowCurrency: item.currency,
+          flowExchangeRate: item.exchangeRate,
           beforeAvailable: cumulativeAvailable.toFixed(4),
           afterAvailable: afterAvailable.toFixed(4),
           beforeFrozen: beforeFrozen.toFixed(4),
@@ -192,12 +209,13 @@ export class FifoService {
       }
 
       this.logger.log(
-        `FIFO 扣减完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}, 成本=${totalCostValue.toFixed(2)}`,
+        `FIFO 扣减完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}, 成本=${totalCostValue.toFixed(2)}, 成本(CNY)=${totalCostBaseValue.toFixed(2)}`,
       );
 
       return {
         items: consumeItems,
         totalCost: totalCostValue.toFixed(2),
+        totalCostBase: totalCostBaseValue.toFixed(2),
       };
     };
 
@@ -492,6 +510,7 @@ export class FifoService {
     businessId: string,
     businessType: number = 2,
     changeType: number = 2,
+    externalManager?: EntityManager,
   ): Promise<FifoConsumeResult> {
     if (quantity <= 0) throw new BadRequestException('扣减数量必须大于零');
 
@@ -499,8 +518,7 @@ export class FifoService {
       ? { productId, productModelId }
       : { productId, productModelId: undefined as any };
 
-    return this.withRetry(async () => {
-      return this.dataSource.transaction(async (manager) => {
+    const doDeduct = async (manager: EntityManager): Promise<FifoConsumeResult> => {
         // 获取有冻结的批次
         let batchQb = manager
           .createQueryBuilder(InventoryBatch, 'b')
@@ -539,6 +557,7 @@ export class FifoService {
         let remaining = quantity;
         const consumeItems: FifoConsumeItem[] = [];
         let totalCostValue = 0;
+        let totalCostBaseValue = 0;
         let cumulativeFrozen = beforeFrozen;
         let cumulativeStock = parseFloat(inventory.stockQuantity);
 
@@ -576,12 +595,20 @@ export class FifoService {
           const cost = toDeduct * unitCost;
           totalCostValue += cost;
 
+          const unitCostBase = parseFloat(batch.unitCostBase);
+          const costBase = toDeduct * unitCostBase;
+          totalCostBaseValue += costBase;
+
           consumeItems.push({
             batchId: batch.id,
             batchNo: batch.batchNo,
             quantity: toDeduct,
             unitCost: batch.unitCost,
             totalCost: cost.toFixed(2),
+            unitCostBase: batch.unitCostBase,
+            totalCostBase: costBase.toFixed(2),
+            currency: batch.currency,
+            exchangeRate: batch.exchangeRate,
           });
 
           // 写流水
@@ -598,6 +625,9 @@ export class FifoService {
             quantity: String(toDeduct),
             unitCost: batch.unitCost,
             totalCost: cost.toFixed(2),
+            totalCostBase: costBase.toFixed(2),
+            flowCurrency: batch.currency,
+            flowExchangeRate: batch.exchangeRate,
             beforeAvailable: beforeAvailable.toFixed(4),
             afterAvailable: beforeAvailable.toFixed(4), // 可用不变（已在冻结时扣减）
             beforeFrozen: cumulativeFrozen.toFixed(4),
@@ -617,8 +647,16 @@ export class FifoService {
         await manager.save(inventory);
 
         this.logger.log(`冻结扣减完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);
-        return { items: consumeItems, totalCost: totalCostValue.toFixed(2) };
-      });
+        return { items: consumeItems, totalCost: totalCostValue.toFixed(2), totalCostBase: totalCostBaseValue.toFixed(2) };
+    };
+
+    // 有外部事务 manager 时直接执行，不开新事务也不重试
+    if (externalManager) {
+      return doDeduct(externalManager);
+    }
+
+    return this.withRetry(async () => {
+      return this.dataSource.transaction(doDeduct);
     });
   }
 

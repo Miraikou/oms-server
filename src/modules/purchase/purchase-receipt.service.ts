@@ -109,6 +109,7 @@ export class PurchaseReceiptService {
         }
 
         const amount = qty * parseFloat(orderItem.unitPrice);
+        const poRate = parseFloat(order.exchangeRate || '1');
         const receiptItem = manager.create(PurchaseReceiptItem, {
           id: snowflake.nextId(),
           receiptId: savedReceipt.id,
@@ -118,6 +119,7 @@ export class PurchaseReceiptService {
           quantity: item.quantity,
           unitPrice: orderItem.unitPrice,
           amount: amount.toFixed(2),
+          baseAmount: (amount * poRate).toFixed(2),
         });
         receiptItems.push(await manager.save(receiptItem));
       }
@@ -133,6 +135,11 @@ export class PurchaseReceiptService {
           batchSource: 1,
           batchNo,
           unitCost: ri.unitPrice,
+          unitCostBase: ri.baseAmount
+            ? (parseFloat(ri.baseAmount) / parseFloat(ri.quantity)).toFixed(2)
+            : ri.unitPrice,
+          currency: order.currency || 'CNY',
+          exchangeRate: order.exchangeRate || '1',
           originalQuantity: ri.quantity,
           availableQuantity: ri.quantity,
           frozenQuantity: '0',
@@ -199,6 +206,9 @@ export class PurchaseReceiptService {
             quantity: ri.quantity,
             unitCost: ri.unitPrice,
             totalCost: ri.amount,
+            totalCostBase: ri.baseAmount,
+            flowCurrency: order.currency || 'CNY',
+            flowExchangeRate: order.exchangeRate || '1',
             beforeAvailable,
             afterAvailable: savedInventory.availableQuantity,
             beforeFrozen: savedInventory.frozenQuantity,

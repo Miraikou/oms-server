@@ -56,16 +56,23 @@ export class ProductService extends BaseCrudService<Product> {
   async update(id: string, data: object): Promise<Product> {
     const d = data as Record<string, unknown>;
     const models = d.models as Array<Record<string, unknown>> | undefined;
-    const { models: _models, ...rest } = d;
 
-    await this.checkDuplicate(rest, id);
+    await this.checkDuplicate(d, id);
 
     return this.dataSource.transaction(async (manager) => {
       const product = await manager.findOneBy(Product, { id });
       if (!product) {
         throw new ConflictException('商品不存在');
       }
-      Object.assign(product, rest);
+
+      // 显式挑选可修改字段，忽略系统字段（id/isDeleted/createdTime 等）
+      if (d.supplierId !== undefined) product.supplierId = d.supplierId as string;
+      if (d.categoryId !== undefined) product.categoryId = (d.categoryId === '' ? null : d.categoryId) as string | null;
+      if (d.productName !== undefined) product.productName = d.productName as string;
+      if (d.imageUrl !== undefined) product.imageUrl = (d.imageUrl === '' ? null : d.imageUrl) as string | null;
+      if (d.remark !== undefined) product.remark = (d.remark === '' ? null : d.remark) as string | null;
+      if (d.status !== undefined) product.status = d.status as number;
+
       const savedProduct = await manager.save(Product, product);
 
       if (models) {

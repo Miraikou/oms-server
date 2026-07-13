@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductService } from './product.service';
+import { ProductModelService } from './product-model.service';
 import {
   CreateProductDto,
   UpdateProductDto,
@@ -26,7 +27,10 @@ import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 @Controller('products')
 export class ProductController {
-  constructor(private readonly service: ProductService) {}
+  constructor(
+    private readonly service: ProductService,
+    private readonly modelService: ProductModelService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: '分页查询商品' })
@@ -38,6 +42,12 @@ export class ProductController {
   @ApiOperation({ summary: '获取所有启用商品' })
   findAllActive() {
     return this.service.findAllActive();
+  }
+
+  @Get('models/all')
+  @ApiOperation({ summary: '获取所有启用型号（全局，含商品名）' })
+  findAllModels() {
+    return this.modelService.findAllActiveWithProduct();
   }
 
   @Get(':id')
