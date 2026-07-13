@@ -1,5 +1,6 @@
-import { Entity, Column, Index } from 'typeorm';
+import { Entity, Column, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from '@/common/entities/base.entity';
+import { PurchaseOrder } from './purchase-order.entity';
 
 /**
  * 采购入库单实体
@@ -24,6 +25,10 @@ export class PurchaseReceipt extends BaseEntity {
     comment: '来源采购单 ID',
   })
   purchaseOrderId: string;
+
+  @ManyToOne(() => PurchaseOrder, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'purchase_order_id' })
+  purchaseOrder: PurchaseOrder;
 
   @Index('idx_receipt_date')
   @Column({ name: 'receipt_date', type: 'datetime', comment: '入库时间' })

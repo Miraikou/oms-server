@@ -59,7 +59,7 @@ export class PurchaseReceiptService {
       throw new BadRequestException('入库明细不能为空');
     }
 
-    const receiptNo = await this.sequenceService.generate('CG'); // 复用采购编号前缀
+    const receiptNo = await this.sequenceService.generate('RK');
 
     // 在事务中执行所有步骤
     return this.dataSource.transaction(async (manager) => {
@@ -248,7 +248,9 @@ export class PurchaseReceiptService {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
 
-    const qb = this.receiptRepo.createQueryBuilder('pr');
+    const qb = this.receiptRepo
+      .createQueryBuilder('pr')
+      .leftJoinAndSelect('pr.purchaseOrder', 'po');
 
     if (query.purchaseOrderId) {
       qb.andWhere('pr.purchaseOrderId = :purchaseOrderId', {
@@ -261,20 +263,29 @@ export class PurchaseReceiptService {
       .take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
-    return { list, total, page, pageSize };
+    
+    // 扁平化：将 purchaseOrder.purchaseNo 提升到顶层
+    const flatList = list.map((receipt) => ({
+      ...receipt,
+      purchaseNo: receipt.purchaseOrder?.purchaseNo,
+      purchaseOrder: undefined,
+    }));
+    
+    return { list: flatList, total, page, pageSize };
   }
 
   /** 查询入库单详情（含明细和采购单币种） */
   async findOne(
     id: string,
-  ): Promise<PurchaseReceipt & { items?: PurchaseReceiptItem[]; currency?: string }> {
+  ): Promise<PurchaseReceipt & { items?: PurchaseReceiptItem[]; currency?: string, purchaseNo?: string }> {
     const receipt = await this.receiptRepo.findOne({ where: { id } });
     if (!receipt) throw new BadRequestException('入库单不存在');
     const items = await this.receiptItemRepo.find({ where: { receiptId: id } });
     const order = await this.orderRepo.findOne({
       where: { id: receipt.purchaseOrderId },
-      select: { currency: true } as Record<string, boolean>,
+      select: { currency: true, purchaseNo: true } as Record<string, boolean>,
     });
-    return { ...receipt, items, currency: order?.currency };
+    
+    return { ...receipt, items, currency: order?.currency, purchaseNo: order?.purchaseNo };
   }
 }

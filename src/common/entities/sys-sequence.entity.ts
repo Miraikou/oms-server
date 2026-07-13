@@ -15,7 +15,7 @@ export class SysSequence {
     name: 'biz_type',
     type: 'varchar',
     length: 20,
-    comment: '业务类型（SO/CG/FH/SK/TH/PT/KC/BT/CP/SP/GYS）',
+    comment: '业务类型（SO/CG/RK/FH/SK/TH/PT/KC/BT/CP/SP/GYS）',
   })
   bizType: string;
 

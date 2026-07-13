@@ -54,7 +54,7 @@ const mockDataSource = {
 }
 
 const mockSequenceService = {
-  generate: jest.fn().mockResolvedValue('CG202601010001'),
+  generate: jest.fn().mockResolvedValue('RK202601010001'),
 }
 
 describe('PurchaseReceiptService', () => {
@@ -138,9 +138,9 @@ describe('PurchaseReceiptService', () => {
 
       const result = await service.createReceipt(validDto)
 
-      expect(mockSequenceService.generate).toHaveBeenCalledWith('CG')
+      expect(mockSequenceService.generate).toHaveBeenCalledWith('RK')
       expect(mockDataSource.transaction).toHaveBeenCalled()
-      expect(result.receiptNo).toBe('CG202601010001')
+      expect(result.receiptNo).toBe('RK202601010001')
       expect(result.purchaseOrderId).toBe('PO001')
       expect(result.remark).toBe('正常入库')
     })
@@ -165,7 +165,7 @@ describe('PurchaseReceiptService', () => {
 
       const result = await service.createReceipt(validDto)
 
-      expect(result.receiptNo).toBe('CG202601010001')
+      expect(result.receiptNo).toBe('RK202601010001')
       // 验证库存版本号已递增（version: 0 → version: 1）
       expect(mockManager.save).toHaveBeenCalledWith(
         expect.objectContaining({ version: 1 }),

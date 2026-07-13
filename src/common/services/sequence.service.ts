@@ -12,6 +12,7 @@ import { snowflake } from '@/common/utils/snowflake';
 export type BizType =
   | 'SO' // 销售订单
   | 'CG' // 采购订单
+  | 'RK' // 入库单
   | 'FH' // 发货单
   | 'SK' // 收款单
   | 'TH' // 客户退货
