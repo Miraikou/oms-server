@@ -326,90 +326,136 @@ export class InventoryController {
     const page = Number(pageStr) || 1;
     const pageSize = Number(pageSizeStr) || 10;
 
-    // 1. 查询去重的 receipt_id 列表（分页）
+    // 1. 通过 batch → receipt_item 关联，查询去重的 receipt_id（分页）
     const receiptQb = this.batchRepo
       .createQueryBuilder('b')
-      .select('b.receiptItemId', 'receiptItemId')
-      .where('b.productId = :productId', { productId });
+      .innerJoin('purchase_receipt_item', 'pri', 'pri.id = b.receiptItemId')
+      .select('pri.receipt_id', 'receiptId')
+      .where('b.productId = :productId', { productId })
+      .andWhere('b.receiptItemId IS NOT NULL');
+
     if (productModelId) {
-      receiptQb.andWhere('b.productModelId = :productModelId', { productModelId });
+      if (productModelId === 'empty') {
+        receiptQb.andWhere('b.productModelId IS NULL');
+      } else {
+        receiptQb.andWhere(
+          'b.productModelId = :productModelId',
+          { productModelId },
+        );
+      }
     }
+
     receiptQb
-      .andWhere('b.receiptItemId IS NOT NULL')
-      .groupBy('b.receiptItemId')
+      .groupBy('pri.receipt_id')
       .orderBy('MIN(b.inboundTime)', 'DESC');
 
     const receiptResult = await receiptQb
       .skip((page - 1) * pageSize)
       .take(pageSize)
-      .getRawMany<{ receiptItemId: string }>();
+      .getRawMany<{ receiptId: string }>();
 
-    const receiptItemIds = receiptResult.map((r) => r.receiptItemId);
+    const receiptIds = receiptResult.map((r) => r.receiptId);
 
-    // 统计有入库单的总数
+    // 统计入库单总数
     const countQb = this.batchRepo
       .createQueryBuilder('b')
-      .select('COUNT(DISTINCT b.receiptItemId)', 'cnt')
+      .innerJoin('purchase_receipt_item', 'pri', 'pri.id = b.receiptItemId')
+      .select('COUNT(DISTINCT pri.receipt_id)', 'cnt')
       .where('b.productId = :productId', { productId })
       .andWhere('b.receiptItemId IS NOT NULL');
-    if (productModelId) {
-      countQb.andWhere('b.productModelId = :productModelId', { productModelId });
-    }
-    const countResult = await countQb.getRawOne<{ cnt: string }>();
-    const total = parseInt(countResult?.cnt || '0', 10);
 
-    // 2. 查询这些 receiptItemId 对应的所有批次
-    let batches: InventoryBatch[] = [];
-    if (receiptItemIds.length > 0) {
-      batches = await this.batchRepo.find({
-        where: { productId, receiptItemId: In(receiptItemIds) },
-        order: { inboundTime: 'ASC' },
-      });
-      if (productModelId) {
-        batches = batches.filter((b) => b.productModelId === productModelId);
+    if (productModelId) {
+      if (productModelId === 'empty') {
+        countQb.andWhere('b.productModelId IS NULL');
+      } else {
+        receiptQb.andWhere(
+          'b.productModelId = :productModelId',
+          { productModelId },
+        );
       }
     }
 
-    // 3. 查询入库单信息 + 币种（receipt_item → receipt → order）
+    const countResult = await countQb.getRawOne<{ cnt: string }>();
+    const total = parseInt(countResult?.cnt || '0', 10);
+
+    // 2. 查询这些入库单下的所有 receiptItemId，再查对应批次
+    let batches: InventoryBatch[] = [];
+    let receiptItemIds: string[] = [];
+    if (receiptIds.length > 0) {
+      const riRows = await this.batchRepo.manager
+        .createQueryBuilder()
+        .select('pri.id', 'receiptItemId')
+        .from('purchase_receipt_item', 'pri')
+        .where('pri.receipt_id IN (:...ids)', { ids: receiptIds })
+        .getRawMany<{ receiptItemId: string }>();
+      receiptItemIds = riRows.map((r) => r.receiptItemId);
+
+      if (receiptItemIds.length > 0) {
+        batches = await this.batchRepo.find({
+          where: { productId, receiptItemId: In(receiptItemIds) },
+          order: { inboundTime: 'ASC' },
+        });
+        
+        if (productModelId) {
+          if (productModelId === 'empty') {
+            batches = batches.filter((b) => b.productModelId === null);
+          } else {
+            batches = batches.filter((b) => b.productModelId === productModelId);
+          }
+        }
+      }
+    }
+
+    // 3. 查询 receiptItemId → receiptId 映射 + 入库单信息 + 币种
     interface ReceiptInfo {
-      receiptItemId: string;
       receiptId: string;
       receiptNo: string;
       receiptDate: string;
       currency: string;
     }
+    const riToReceiptId = new Map<string, string>();
     let receiptInfoMap: ReceiptInfo[] = [];
-    if (receiptItemIds.length > 0) {
-      receiptInfoMap = await this.batchRepo.manager
+    if (receiptIds.length > 0) {
+      const mappingRows = await this.batchRepo.manager
         .createQueryBuilder()
         .select('pri.id', 'receiptItemId')
-        .addSelect('pr.id', 'receiptId')
+        .addSelect('pri.receipt_id', 'receiptId')
+        .from('purchase_receipt_item', 'pri')
+        .where('pri.receipt_id IN (:...ids)', { ids: receiptIds })
+        .getRawMany<{ receiptItemId: string; receiptId: string }>();
+      for (const row of mappingRows) {
+        riToReceiptId.set(row.receiptItemId, row.receiptId);
+      }
+
+      receiptInfoMap = await this.batchRepo.manager
+        .createQueryBuilder()
+        .select('pr.id', 'receiptId')
         .addSelect('pr.receipt_no', 'receiptNo')
         .addSelect('pr.receipt_date', 'receiptDate')
         .addSelect('po.currency', 'currency')
-        .from('purchase_receipt_item', 'pri')
-        .leftJoin('purchase_receipt', 'pr', 'pr.id = pri.receipt_id')
+        .from('purchase_receipt', 'pr')
         .leftJoin('purchase_order', 'po', 'po.id = pr.purchase_order_id')
-        .where('pri.id IN (:...ids)', { ids: receiptItemIds })
+        .where('pr.id IN (:...ids)', { ids: receiptIds })
         .getRawMany<ReceiptInfo>();
     }
 
-    // 4. 按 receiptItemId 分组
-    const infoByRiId = new Map(receiptInfoMap.map((r) => [r.receiptItemId, r]));
+    // 4. 按 receiptId 分组
+    const infoByReceiptId = new Map(receiptInfoMap.map((r) => [r.receiptId, r]));
     const groupMap = new Map<string, { info: ReceiptInfo; batches: InventoryBatch[] }>();
-    for (const riId of receiptItemIds) {
-      const info = infoByRiId.get(riId);
+    for (const rId of receiptIds) {
+      const info = infoByReceiptId.get(rId);
       if (info) {
-        groupMap.set(riId, { info, batches: [] });
+        groupMap.set(rId, { info, batches: [] });
       }
     }
     for (const b of batches) {
-      const g = b.receiptItemId ? groupMap.get(b.receiptItemId) : undefined;
+      const rId = b.receiptItemId ? riToReceiptId.get(b.receiptItemId) : undefined;
+      const g = rId ? groupMap.get(rId) : undefined;
       if (g) g.batches.push(b);
     }
 
-    const list = Array.from(groupMap.values()).map(({ info, batches: bList }) => ({
-      receiptId: info.receiptId,
+    const list = Array.from(groupMap.entries()).map(([rId, { info, batches: bList }]) => ({
+      receiptId: rId,
       receiptNo: info.receiptNo,
       receiptDate: info.receiptDate,
       currency: info.currency || 'CNY',
