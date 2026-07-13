@@ -46,14 +46,14 @@ export class DashboardService {
       inventoryStats,
     ] = await Promise.all([
       this.executeQuery(
-        `SELECT COALESCE(SUM(total_amount_usd), 0) AS totalSales, COUNT(*) AS orderCount
+        `SELECT COALESCE(SUM(total_base_amount), 0) AS totalSales, COUNT(*) AS orderCount
            FROM sales_order so WHERE so.status >= 1 {dateFilter}`,
         'so.order_date',
         startDate,
         endDate,
       ),
       this.executeQuery(
-        `SELECT COALESCE(SUM(usd_amount), 0) AS totalPayment
+        `SELECT COALESCE(SUM(base_amount), 0) AS totalPayment
            FROM payment p INNER JOIN sales_order so ON p.order_id = so.id
            WHERE 1=1 {dateFilter}`,
         'p.payment_date',
@@ -71,7 +71,7 @@ export class DashboardService {
         endDate,
       ),
       this.executeQuery(
-        `SELECT COALESCE(SUM(soc.amount), 0) AS totalCost
+        `SELECT COALESCE(SUM(soc.base_amount), 0) AS totalCost
            FROM sales_order_cost soc
            INNER JOIN sales_order so ON soc.order_id = so.id
            WHERE 1=1 {dateFilter}`,
@@ -88,14 +88,14 @@ export class DashboardService {
         endDate,
       ),
       this.executeQuery(
-        `SELECT COALESCE(SUM(total_amount), 0) AS totalPurchase
+        `SELECT COALESCE(SUM(total_base_amount), 0) AS totalPurchase
            FROM purchase_order po WHERE po.status >= 1 {dateFilter}`,
         'po.purchase_date',
         startDate,
         endDate,
       ),
       this.executeQuery(
-        `SELECT COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost AS DECIMAL(18,2))), 0) AS inventoryValue
+        `SELECT COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost_base AS DECIMAL(18,2))), 0) AS inventoryValue
            FROM inventory_batch ib WHERE ib.status = 1`,
       ),
     ]);
@@ -131,7 +131,7 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
-              COALESCE(SUM(so.total_amount_usd), 0) AS amount,
+              COALESCE(SUM(so.total_base_amount), 0) AS amount,
               COUNT(*) AS count
        FROM sales_order so WHERE so.status >= 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
@@ -175,7 +175,7 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
-              COALESCE(SUM(p.usd_amount), 0) AS amount, COUNT(*) AS count
+              COALESCE(SUM(p.base_amount), 0) AS amount, COUNT(*) AS count
        FROM payment p WHERE 1=1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'p.payment_date',
@@ -195,7 +195,7 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(po.purchase_date, '${dateFormat}') AS period,
-              COALESCE(SUM(po.total_amount), 0) AS amount, COUNT(*) AS count
+              COALESCE(SUM(po.total_base_amount), 0) AS amount, COUNT(*) AS count
        FROM purchase_order po WHERE po.status >= 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'po.purchase_date',
@@ -215,7 +215,7 @@ export class DashboardService {
     const safeLimit = Math.max(1, Math.min(limit || 10, 100));
     return this.executeQuery(
       `SELECT sp.id AS salespersonId, sp.name AS salespersonName,
-              COALESCE(SUM(so.total_amount_usd), 0) AS totalSales, COUNT(so.id) AS orderCount
+              COALESCE(SUM(so.total_base_amount), 0) AS totalSales, COUNT(so.id) AS orderCount
        FROM salesperson sp
        LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status >= 1 {dateFilter}
        GROUP BY sp.id, sp.name ORDER BY totalSales DESC LIMIT ?`,
@@ -234,7 +234,7 @@ export class DashboardService {
     return this.executeQuery(
       `SELECT oi.product_id AS productId,
               COALESCE(SUM(CAST(oi.quantity AS DECIMAL(18,4))), 0) AS totalQuantity,
-              COALESCE(SUM(oi.amount_usd), 0) AS totalSales
+              COALESCE(SUM(oi.base_amount), 0) AS totalSales
        FROM sales_order_item oi
        INNER JOIN sales_order so ON oi.order_id = so.id
        WHERE so.status >= 1 {dateFilter}

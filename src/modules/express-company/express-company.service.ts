@@ -14,4 +14,12 @@ export class ExpressCompanyService extends BaseCrudService<ExpressCompany> {
   protected getSearchFields(): string[] {
     return ['companyName'];
   }
+
+  protected getUpdatableFields(): string[] {
+    return ['companyName', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['remark'];
+  }
 }

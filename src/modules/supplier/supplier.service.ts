@@ -24,4 +24,12 @@ export class SupplierService extends BaseCrudService<Supplier> {
   protected getSearchFields(): string[] {
     return ['supplierNo', 'supplierName', 'contactName'];
   }
+
+  protected getUpdatableFields(): string[] {
+    return ['supplierName', 'contactName', 'contactPhone', 'address', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['contactName', 'contactPhone', 'address', 'remark'];
+  }
 }

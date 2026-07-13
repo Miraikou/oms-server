@@ -104,10 +104,7 @@ export class AuthService {
   async refreshToken(refreshToken: string) {
     try {
       const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
-        secret: this.configService.get<string>(
-          'JWT_REFRESH_SECRET',
-          'oms-dev-refresh-secret',
-        ),
+        secret: this.getRefreshSecret(),
       });
 
       // 验证用户是否仍然有效
@@ -212,12 +209,20 @@ export class AuthService {
       10,
     );
     return this.jwtService.sign(payload, {
-      secret: this.configService.get<string>(
-        'JWT_REFRESH_SECRET',
-        'oms-dev-refresh-secret',
-      ),
+      secret: this.getRefreshSecret(),
       expiresIn,
     });
+  }
+
+  /**
+   * 获取 JWT 刷新密钥，生产环境必须配置环境变量
+   */
+  private getRefreshSecret(): string {
+    const secret = this.configService.get<string>('JWT_REFRESH_SECRET');
+    if (!secret) {
+      throw new Error('JWT_REFRESH_SECRET 环境变量未配置');
+    }
+    return secret;
   }
 
   /**

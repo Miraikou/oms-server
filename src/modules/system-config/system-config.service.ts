@@ -14,6 +14,14 @@ export class SystemConfigService extends BaseCrudService<SystemConfig> {
     return ['configKey', 'configName'];
   }
 
+  protected getUpdatableFields(): string[] {
+    return ['configValue', 'configName', 'valueType', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['remark'];
+  }
+
   /** 根据 key 获取配置值 */
   async getByKey(key: string): Promise<string | null> {
     const config = await this.repo.findOne({ where: { configKey: key } });

@@ -158,10 +158,10 @@ export class UserService {
 
     return this.dataSource.transaction(async (manager) => {
       if (dto.realName !== undefined) user.realName = dto.realName;
-      if (dto.phone !== undefined) user.phone = dto.phone;
-      if (dto.email !== undefined) user.email = dto.email;
+      if (dto.phone !== undefined) user.phone = dto.phone === '' ? null : dto.phone;
+      if (dto.email !== undefined) user.email = dto.email === '' ? null : dto.email;
       if (dto.status !== undefined) user.status = dto.status;
-      if (dto.remark !== undefined) user.remark = dto.remark;
+      if (dto.remark !== undefined) user.remark = dto.remark === '' ? null : dto.remark;
 
       await manager.save(user);
 

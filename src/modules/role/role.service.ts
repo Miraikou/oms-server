@@ -170,7 +170,7 @@ export class RoleService {
     }
 
     if (data.status !== undefined) role.status = data.status;
-    if (data.remark !== undefined) role.remark = data.remark;
+    if (data.remark !== undefined) role.remark = data.remark === '' ? null : data.remark;
 
     return this.roleRepo.save(role);
   }

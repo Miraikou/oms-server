@@ -82,16 +82,54 @@ export abstract class BaseCrudService<T extends { id: string }> {
     }
   }
 
-  /** 更新记录 */
+  /** 更新记录（安全模式：白名单过滤 + 空字符串转 null） */
   async update(id: string, data: object): Promise<T> {
     try {
       const entity = await this.findOne(id);
-      Object.assign(entity, data);
+      const updatableFields = this.getUpdatableFields();
+      const nullableFields = this.getNullableFields();
+
+      // 只允许更新白名单中的字段
+      if (updatableFields.length > 0) {
+        for (const field of updatableFields) {
+          if ((data as any)[field] !== undefined) {
+            let value = (data as any)[field];
+            // 可空字段：空字符串转为 null
+            if (nullableFields.includes(field) && value === '') {
+              value = null;
+            }
+            (entity as any)[field] = value;
+          }
+        }
+      } else {
+        // 子类未定义白名单时，回退到显式排除系统字段
+        const systemFields = ['id', 'createdTime', 'updatedTime', 'createdBy', 'updatedBy'];
+        for (const key of Object.keys(data)) {
+          if (!systemFields.includes(key)) {
+            let value = (data as any)[key];
+            if (nullableFields.includes(key) && value === '') {
+              value = null;
+            }
+            (entity as any)[key] = value;
+          }
+        }
+      }
+
       return await this.repo.save(entity);
     } catch (error) {
       this.handleDuplicateError(error);
-      throw error
+      throw error;
     }
+  }
+
+  /** 获取可更新字段白名单（子类覆写以限制可修改的字段） */
+  protected getUpdatableFields(): string[] {
+    return [];
+  }
+
+  /** 获取可空字段列表（用于空字符串转 null） */
+  protected getNullableFields(): string[] {
+    return [];
   }
 
   /**

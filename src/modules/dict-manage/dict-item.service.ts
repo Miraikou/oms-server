@@ -17,6 +17,14 @@ export class DictItemService extends BaseCrudService<SysDictItem> {
     return ['itemLabel'];
   }
 
+  protected getUpdatableFields(): string[] {
+    return ['itemValue', 'itemLabel', 'sortOrder', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['remark'];
+  }
+
   /**
    * 覆写分页查询，支持按 typeCode 过滤
    */

@@ -14,6 +14,14 @@ export class CategoryService extends BaseCrudService<Category> {
     return ['categoryName'];
   }
 
+  protected getUpdatableFields(): string[] {
+    return ['parentId', 'categoryName', 'sortNo', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['remark'];
+  }
+
   /** 获取分类树形结构 */
   async getTree() {
     const all = await this.repo.find({

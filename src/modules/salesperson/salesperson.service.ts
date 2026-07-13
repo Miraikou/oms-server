@@ -13,4 +13,12 @@ export class SalespersonService extends BaseCrudService<Salesperson> {
   protected getSearchFields(): string[] {
     return ['name', 'phone'];
   }
+
+  protected getUpdatableFields(): string[] {
+    return ['name', 'phone', 'commissionRate', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['phone', 'remark'];
+  }
 }

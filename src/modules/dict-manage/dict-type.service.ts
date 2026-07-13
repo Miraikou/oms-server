@@ -16,4 +16,12 @@ export class DictTypeService extends BaseCrudService<SysDictType> {
   protected getSearchFields(): string[] {
     return ['typeCode', 'typeName'];
   }
+
+  protected getUpdatableFields(): string[] {
+    return ['typeName', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['remark'];
+  }
 }

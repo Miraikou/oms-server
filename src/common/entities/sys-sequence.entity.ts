@@ -33,7 +33,7 @@ export class SysSequence {
     default: 0,
     comment: '当前流水号',
   })
-  currentValue: number = 0;
+  currentValue: string = '0';
 
   @UpdateDateColumn({
     name: 'updated_time',

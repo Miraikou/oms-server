@@ -14,4 +14,12 @@ export class TransportChannelService extends BaseCrudService<TransportChannel> {
   protected getSearchFields(): string[] {
     return ['channelName'];
   }
+
+  protected getUpdatableFields(): string[] {
+    return ['channelName', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['remark'];
+  }
 }

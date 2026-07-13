@@ -12,4 +12,12 @@ export class CostTypeService extends BaseCrudService<CostType> {
   protected getSearchFields(): string[] {
     return ['costName'];
   }
+
+  protected getUpdatableFields(): string[] {
+    return ['costName', 'sortNo', 'status', 'remark'];
+  }
+
+  protected getNullableFields(): string[] {
+    return ['remark'];
+  }
 }

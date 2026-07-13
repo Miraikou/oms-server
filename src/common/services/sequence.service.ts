@@ -74,12 +74,12 @@ export class SequenceService {
           id: snowflake.nextId(),
           bizType,
           bizDate,
-          currentValue: 1,
+          currentValue: '1',
         });
         await manager.save(record);
       } else {
-        // 流水号 +1（bigint 从数据库读出可能是字符串，需先转为数字）
-        record.currentValue = Number(record.currentValue) + 1;
+        // 流水号 +1（bigint 从数据库读出是字符串，需先转为数字再加回字符串）
+        record.currentValue = String(Number(record.currentValue) + 1);
         await manager.save(record);
       }
 
