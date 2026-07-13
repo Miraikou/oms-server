@@ -37,7 +37,7 @@ export class ShipmentItem extends BaseEntity {
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售单价（USD）',
+    comment: '销售单价（原币）',
   })
   salesUnitPrice: string;
 
@@ -46,9 +46,19 @@ export class ShipmentItem extends BaseEntity {
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售金额（USD）',
+    comment: '销售金额（原币）',
   })
   salesAmount: string;
+
+  @Column({
+    name: 'sales_base_amount',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '销售金额（CNY）= salesAmount × exchangeRate',
+  })
+  salesBaseAmount: string = '0';
 
   @Column({
     name: 'total_cost',
@@ -56,7 +66,7 @@ export class ShipmentItem extends BaseEntity {
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '产品总成本（FIFO 汇总）',
+    comment: '产品总成本（FIFO 汇总，CNY）',
   })
   totalCost: string = '0';
 
@@ -66,7 +76,26 @@ export class ShipmentItem extends BaseEntity {
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '产品毛利润',
+    comment: '产品毛利润（CNY）',
   })
   grossProfit: string = '0';
+
+  @Column({
+    name: 'currency',
+    type: 'varchar',
+    length: 10,
+    default: 'USD',
+    comment: '销售币种（继承自订单）',
+  })
+  currency: string = 'USD';
+
+  @Column({
+    name: 'exchange_rate',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    default: 1.0,
+    comment: '订单汇率',
+  })
+  exchangeRate: string = '1.0000';
 }

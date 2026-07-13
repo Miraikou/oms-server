@@ -1,108 +1,230 @@
-/**
- * 订单管理 DTO
- * 包含创建、修改、查询订单及成本的数据传输对象
- */
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsArray,
+  IsNumber,
+  IsInt,
+  ValidateNested,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 
 /** 订单明细项 DTO */
-export interface CreateSalesOrderItemDto {
-  /** 商品 ID */
+export class CreateSalesOrderItemDto {
+  @ApiProperty({ description: '商品 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '商品不能为空' })
   productId: string;
-  /** 商品型号 ID（可选） */
+
+  @ApiPropertyOptional({ description: '商品型号 ID' })
+  @IsString()
+  @IsOptional()
   productModelId?: string;
-  /** 订单数量 */
+
+  @ApiProperty({ description: '采购数量' })
+  @IsString()
+  @IsNotEmpty({ message: '采购数量不能为空' })
   quantity: string;
-  /** 销售单价（订单币种） */
+
+  @ApiProperty({ description: '销售单价（订单币种）' })
+  @IsString()
+  @IsNotEmpty({ message: '销售单价不能为空' })
   unitPrice: string;
 }
 
 /** 创建订单 DTO */
-export interface CreateSalesOrderDto {
-  /** 销售员 ID */
+export class CreateSalesOrderDto {
+  @ApiProperty({ description: '销售员 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '销售员不能为空' })
   salespersonId: string;
-  /** 客户名称 */
+
+  @ApiProperty({ description: '客户名称' })
+  @IsString()
+  @IsNotEmpty({ message: '客户名称不能为空' })
   customerName: string;
-  /** 下单日期 */
+
+  @ApiProperty({ description: '下单日期' })
+  @IsString()
+  @IsNotEmpty({ message: '下单日期不能为空' })
   orderDate: string;
-  /** 运输渠道 ID */
+
+  @ApiProperty({ description: '运输渠道 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '运输渠道不能为空' })
   transportChannelId: string;
-  /** 交易方式 */
+
+  @ApiProperty({ description: '交易方式' })
+  @IsString()
+  @IsNotEmpty({ message: '交易方式不能为空' })
   tradeType: string;
-  /** 订单币种（CNY/USD），默认 USD */
+
+  @ApiPropertyOptional({ description: '订单币种（CNY/USD），默认 USD' })
+  @IsString()
+  @IsOptional()
   currency?: string;
-  /** 汇率（订单币种→CNY） */
+
+  @ApiPropertyOptional({ description: '汇率（后端自动获取，前端传值将被忽略）' })
+  @IsString()
+  @IsOptional()
   exchangeRate?: string;
-  /** 博主佣金比例(%)，默认 5 */
+
+  @ApiPropertyOptional({ description: '博主佣金比例(%)，默认 5' })
+  @IsString()
+  @IsOptional()
   bloggerCommissionRate?: string;
-  /** 备注 */
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
   remark?: string;
-  /** 商品明细（至少一项） */
+
+  @ApiProperty({
+    description: '商品明细（至少一项）',
+    type: [CreateSalesOrderItemDto],
+  })
+  @IsArray({ message: '商品明细不能为空' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateSalesOrderItemDto)
   items: CreateSalesOrderItemDto[];
 }
 
 /** 修改订单 DTO（仅待发货状态可修改） */
-export interface UpdateSalesOrderDto {
-  /** 销售员 ID */
+export class UpdateSalesOrderDto {
+  @ApiPropertyOptional({ description: '销售员 ID' })
+  @IsString()
+  @IsOptional()
   salespersonId?: string;
-  /** 客户名称 */
+
+  @ApiPropertyOptional({ description: '客户名称' })
+  @IsString()
+  @IsOptional()
   customerName?: string;
-  /** 下单日期 */
+
+  @ApiPropertyOptional({ description: '下单日期' })
+  @IsString()
+  @IsOptional()
   orderDate?: string;
-  /** 运输渠道 ID */
+
+  @ApiPropertyOptional({ description: '运输渠道 ID' })
+  @IsString()
+  @IsOptional()
   transportChannelId?: string;
-  /** 交易方式 */
+
+  @ApiPropertyOptional({ description: '交易方式' })
+  @IsString()
+  @IsOptional()
   tradeType?: string;
-  /** 订单币种（CNY/USD） */
+
+  @ApiPropertyOptional({ description: '订单币种（CNY/USD）' })
+  @IsString()
+  @IsOptional()
   currency?: string;
-  /** 汇率（订单币种→CNY） */
+
+  @ApiPropertyOptional({ description: '汇率（后端自动获取，前端传值将被忽略）' })
+  @IsString()
+  @IsOptional()
   exchangeRate?: string;
-  /** 博主佣金比例(%) */
+
+  @ApiPropertyOptional({ description: '博主佣金比例(%)' })
+  @IsString()
+  @IsOptional()
   bloggerCommissionRate?: string;
-  /** 备注 */
-  remark?: string;
-  /** 商品明细（整体替换） */
+
+  @ApiPropertyOptional({ description: '备注（传空字符串将置为 null）' })
+  @IsString()
+  @IsOptional()
+  remark?: string | null;
+
+  @ApiPropertyOptional({ description: '商品明细（整体替换）', type: [CreateSalesOrderItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSalesOrderItemDto)
+  @IsOptional()
   items?: CreateSalesOrderItemDto[];
 }
 
 /** 订单查询 DTO */
-export interface QuerySalesOrderDto {
-  /** 订单编号（模糊） */
+export class QuerySalesOrderDto extends PaginationParamsDto {
+  @ApiPropertyOptional({ description: '订单编号（模糊）' })
+  @IsString()
+  @IsOptional()
   orderNo?: string;
-  /** 订单状态 */
+
+  @ApiPropertyOptional({ description: '订单状态' })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
   status?: number;
-  /** 发货状态 */
+
+  @ApiPropertyOptional({ description: '发货状态' })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
   shipmentStatus?: number;
-  /** 收款状态 */
+
+  @ApiPropertyOptional({ description: '收款状态' })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
   paymentStatus?: number;
-  /** 销售员 ID */
+
+  @ApiPropertyOptional({ description: '销售员 ID' })
+  @IsString()
+  @IsOptional()
   salespersonId?: string;
-  /** 开始日期 */
+
+  @ApiPropertyOptional({ description: '开始日期' })
+  @IsString()
+  @IsOptional()
   startDate?: string;
-  /** 结束日期 */
+
+  @ApiPropertyOptional({ description: '结束日期' })
+  @IsString()
+  @IsOptional()
   endDate?: string;
-  /** 页码 */
-  page?: number;
-  /** 每页条数 */
-  pageSize?: number;
 }
 
 /** 创建订单成本 DTO */
-export interface CreateSalesOrderCostDto {
-  /** 成本类型 ID */
+export class CreateSalesOrderCostDto {
+  @ApiProperty({ description: '成本类型 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '成本类型不能为空' })
   costTypeId: string;
-  /** 金额（原币种） */
+
+  @ApiProperty({ description: '金额（原币种）' })
+  @IsString()
+  @IsNotEmpty({ message: '金额不能为空' })
   amount: string;
-  /** 币种，默认 CNY */
+
+  @ApiPropertyOptional({ description: '币种，默认 CNY' })
+  @IsString()
+  @IsOptional()
   currency?: string;
-  /** 备注 */
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
   remark?: string;
 }
 
 /** 修改订单成本 DTO */
-export interface UpdateSalesOrderCostDto {
-  /** 金额（原币种） */
+export class UpdateSalesOrderCostDto {
+  @ApiPropertyOptional({ description: '金额（原币种）' })
+  @IsString()
+  @IsOptional()
   amount?: string;
-  /** 币种（变更时重新查汇率） */
+
+  @ApiPropertyOptional({ description: '币种（变更时重新查汇率）' })
+  @IsString()
+  @IsOptional()
   currency?: string;
-  /** 备注 */
-  remark?: string;
+
+  @ApiPropertyOptional({ description: '备注（传空字符串将置为 null）' })
+  @IsString()
+  @IsOptional()
+  remark?: string | null;
 }

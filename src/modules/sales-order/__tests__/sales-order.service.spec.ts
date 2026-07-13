@@ -213,6 +213,8 @@ describe('SalesOrderService', () => {
         endDate: '2026-12-31',
         page: 1,
         pageSize: 20,
+        sortField: 'createdTime',
+        sortOrder: 'DESC',
       })
 
       expect(mockQB.andWhere).toHaveBeenCalledTimes(7)
@@ -225,7 +227,12 @@ describe('SalesOrderService', () => {
     it('默认分页参数应正常工作', async () => {
       mockQB.getManyAndCount.mockResolvedValue([[], 0])
 
-      const result = await service.findAll({})
+      const result = await service.findAll({
+        page: 1,
+        pageSize: 20,
+        sortField: 'createdTime',
+        sortOrder: 'DESC',
+      })
 
       expect(mockQB.skip).toHaveBeenCalledWith(0)
       expect(mockQB.take).toHaveBeenCalledWith(20)

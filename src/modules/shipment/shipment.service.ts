@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { Shipment } from './entities/shipment.entity';
 import { ShipmentItem } from './entities/shipment-item.entity';
 import { ShipmentItemBatch } from './entities/shipment-item-batch.entity';
@@ -37,6 +37,7 @@ export class ShipmentService {
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
     private readonly salesOrderService: SalesOrderService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -89,84 +90,102 @@ export class ShipmentService {
       }
     }
 
-    // 3. 生成发货单号并创建
-    const shipmentNo = await this.sequenceService.generate('FH');
+    // 3-7. 所有写操作包裹在事务中
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const shipmentRepo = manager.getRepository(Shipment);
+      const itemRepo = manager.getRepository(ShipmentItem);
+      const batchRepo = manager.getRepository(ShipmentItemBatch);
 
-    const shipment = this.shipmentRepo.create({
-      id: snowflake.nextId(),
-      shipmentNo,
-      orderId: dto.orderId,
-      expressCompanyId: dto.expressCompanyId,
-      trackingNo: dto.trackingNo,
-      shipmentDate: new Date(dto.shipmentDate),
-      status: 1,
-      remark: dto.remark || null,
-    });
-    const savedShipment = await this.shipmentRepo.save(shipment);
+      // 3. 生成发货单号并创建
+      const shipmentNo = await this.sequenceService.generate('FH');
 
-    // 4-6. 遍历每个明细：创建明细 → FIFO 扣减 → 写批次 → 计算成本/利润
-    for (const dtoItem of dto.items) {
-      const orderItem = orderItemMap.get(dtoItem.orderItemId)!;
-      const shipQty = parseFloat(dtoItem.quantity);
-      const salesAmount = shipQty * parseFloat(orderItem.unitPrice);
-
-      // 创建发货明细
-      const shipmentItem = this.itemRepo.create({
+      const shipment = shipmentRepo.create({
         id: snowflake.nextId(),
-        shipmentId: savedShipment.id,
-        orderItemId: dtoItem.orderItemId,
-        productId: orderItem.productId,
-        productModelId: orderItem.productModelId,
-        quantity: dtoItem.quantity,
-        salesUnitPrice: orderItem.unitPrice,
-        salesAmount: salesAmount.toFixed(2),
-        totalCost: '0',
-        grossProfit: '0',
+        shipmentNo,
+        orderId: dto.orderId,
+        expressCompanyId: dto.expressCompanyId,
+        trackingNo: dto.trackingNo,
+        shipmentDate: new Date(dto.shipmentDate),
+        status: 1,
+        remark: dto.remark || null,
       });
-      const savedItem = await this.itemRepo.save(shipmentItem);
+      const savedShipment = await shipmentRepo.save(shipment);
 
-      // 4. FIFO 扣减冻结库存
-      const fifoResult = await this.fifoService.deductFrozen(
-        orderItem.productId,
-        orderItem.productModelId,
-        shipQty,
-        savedShipment.id,
-        2, // 销售发货
-      );
+      // 4-6. 遍历每个明细：创建明细 → FIFO 扣减 → 写批次 → 计算成本/利润
+      for (const dtoItem of dto.items) {
+        const orderItem = orderItemMap.get(dtoItem.orderItemId)!;
+        const shipQty = parseFloat(dtoItem.quantity);
+        const salesAmount = shipQty * parseFloat(orderItem.unitPrice);
+        const orderRate = parseFloat(order.exchangeRate || '1');
+        const salesBaseAmount = (salesAmount * orderRate).toFixed(2);
 
-      // 5. 写入发货批次明细
-      for (const batch of fifoResult.items) {
-        const itemBatch = this.batchRepo.create({
+        // 创建发货明细
+        const shipmentItem = itemRepo.create({
           id: snowflake.nextId(),
-          shipmentItemId: savedItem.id,
-          inventoryBatchId: batch.batchId,
-          quantity: String(batch.quantity),
-          unitCost: batch.unitCost,
-          totalCost: batch.totalCost,
+          shipmentId: savedShipment.id,
+          orderItemId: dtoItem.orderItemId,
+          productId: orderItem.productId,
+          productModelId: orderItem.productModelId,
+          quantity: dtoItem.quantity,
+          salesUnitPrice: orderItem.unitPrice,
+          salesAmount: salesAmount.toFixed(2),
+          salesBaseAmount,
+          totalCost: '0',
+          grossProfit: '0',
+          currency: order.currency || 'USD',
+          exchangeRate: order.exchangeRate || '1',
         });
-        await this.batchRepo.save(itemBatch);
+        const savedItem = await itemRepo.save(shipmentItem);
+
+        // 4. FIFO 扣减冻结库存（传入 manager 保证事务原子性）
+        const fifoResult = await this.fifoService.deductFrozen(
+          orderItem.productId,
+          orderItem.productModelId,
+          shipQty,
+          savedShipment.id,
+          2, // 销售发货
+          2, // changeType: 出库
+          manager,
+        );
+
+        // 5. 写入发货批次明细
+        for (const batch of fifoResult.items) {
+          const itemBatch = batchRepo.create({
+            id: snowflake.nextId(),
+            shipmentItemId: savedItem.id,
+            inventoryBatchId: batch.batchId,
+            quantity: String(batch.quantity),
+            unitCost: batch.unitCost,
+            totalCost: batch.totalCost,
+            unitCostBase: batch.unitCostBase,
+            totalCostBase: batch.totalCostBase,
+            currency: batch.currency,
+            exchangeRate: batch.exchangeRate,
+          });
+          await batchRepo.save(itemBatch);
+        }
+
+        // 6. 汇总成本、计算毛利(CNY)
+        savedItem.totalCost = fifoResult.totalCostBase;
+        savedItem.grossProfit = (
+          parseFloat(salesBaseAmount) - parseFloat(fifoResult.totalCostBase)
+        ).toFixed(2);
+        await itemRepo.save(savedItem);
       }
 
-      // 6. 汇总成本、计算毛利(CNY)
-      // 毛利(CNY) = 销售额(USD) × 汇率 - 成本(CNY)
-      const totalCost = parseFloat(fifoResult.totalCost);
-      const exchangeRate = parseFloat(order.exchangeRate || '7.0000');
-      savedItem.totalCost = fifoResult.totalCost;
-      savedItem.grossProfit = (salesAmount * exchangeRate - totalCost).toFixed(2);
-      await this.itemRepo.save(savedItem);
-    }
+      // 7. 更新订单已发数量 + 重算三维状态（传入 manager）
+      for (const dtoItem of dto.items) {
+        await this.salesOrderService.updateShippedQuantity(
+          dto.orderId,
+          dtoItem.orderItemId,
+          parseFloat(dtoItem.quantity),
+          manager,
+        );
+      }
 
-    // 7. 更新订单已发数量 + 重算三维状态
-    for (const dtoItem of dto.items) {
-      await this.salesOrderService.updateShippedQuantity(
-        dto.orderId,
-        dtoItem.orderItemId,
-        parseFloat(dtoItem.quantity),
-      );
-    }
-
-    this.logger.log(`发货完成: ${shipmentNo}, 订单: ${order.orderNo}`);
-    return savedShipment;
+      this.logger.log(`发货完成: ${shipmentNo}, 订单: ${order.orderNo}`);
+      return savedShipment;
+    });
   }
 
   /**

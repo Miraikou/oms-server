@@ -51,6 +51,45 @@ export class ShipmentItemBatch {
   totalCost: string;
 
   @Column({
+    name: 'unit_cost_base',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '成本单价（CNY）',
+  })
+  unitCostBase: string = '0';
+
+  @Column({
+    name: 'total_cost_base',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '成本金额（CNY）',
+  })
+  totalCostBase: string = '0';
+
+  @Column({
+    name: 'currency',
+    type: 'varchar',
+    length: 10,
+    default: 'CNY',
+    comment: '成本币种（继承自 InventoryBatch）',
+  })
+  currency: string = 'CNY';
+
+  @Column({
+    name: 'exchange_rate',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    default: 1.0,
+    comment: '成本币种→CNY 汇率',
+  })
+  exchangeRate: string = '1.0000';
+
+  @Column({
     name: 'created_by',
     type: 'bigint',
     nullable: true,

@@ -76,6 +76,7 @@ export class SalesOrderService {
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           amount: amount.toFixed(2),
+          baseAmount: '0',
           shippedQuantity: '0',
           returnedQuantity: '0',
         };
@@ -104,18 +105,16 @@ export class SalesOrderService {
         }
       }
 
-      let rate;
-      try {
-        const res = await this.rateService.getRate({
-          date: dto.orderDate || '',
-          base: dto.currency || 'USD',
-        });
+      // 3. 查询汇率
+      const currency = dto.currency || 'USD';
+      const exchangeRate = await this.rateService.getRate(
+        dto.orderDate || new Date().toISOString().slice(0, 10),
+        currency,
+      );
 
-        if (!res?.isDefault && res?.rate) {
-          rate = res?.rate;
-        }
-      } catch (error) {
-        // ignore
+      // 为每个明细项计算 baseAmount
+      for (const item of items) {
+        item.baseAmount = (parseFloat(item.amount) * parseFloat(exchangeRate)).toFixed(2);
       }
 
       // 4. 创建主表
@@ -127,11 +126,14 @@ export class SalesOrderService {
         orderDate: new Date(dto.orderDate),
         transportChannelId: dto.transportChannelId,
         tradeType: dto.tradeType,
-        currency: dto.currency || 'USD',
-        exchangeRate: rate || dto.exchangeRate || '6.8',
+        currency,
+        exchangeRate,
         bloggerCommissionRate: dto.bloggerCommissionRate || '5.0000',
         totalAmount: totalAmount.toFixed(2),
+        totalBaseAmount: (totalAmount * parseFloat(exchangeRate)).toFixed(2),
         receivedAmount: '0',
+        receivedBaseAmount: '0',
+        bloggerCommissionBaseAmount: '0',
         shipmentStatus: 1,
         paymentStatus: 1,
         status: 1,
@@ -177,26 +179,27 @@ export class SalesOrderService {
         throw new BadRequestException('仅待发货状态的订单可以修改');
       }
 
-      let rate;
-      try {
-        const res = await this.rateService.getRate({
-          date: dto.orderDate || '',
-          base: dto.currency || 'USD',
-        });
+      // 查询汇率
+      const orderCurrency = dto.currency || order.currency;
+      const exchangeRate = await this.rateService.getRate(
+        dto.orderDate || (order.orderDate instanceof Date
+          ? order.orderDate.toISOString().slice(0, 10)
+          : order.orderDate),
+        orderCurrency,
+      );
 
-        if (!res?.isDefault && res?.rate) {
-          rate = res?.rate;
-        }
-      } catch (error) {
-        // ignore
-      }
-
-      order = {
-        ...order,
-        ...dto,
-        orderDate: new Date(dto.orderDate || order.orderDate),
-        exchangeRate: rate || dto.exchangeRate || '6.8',
-      }
+      // 显式挑选可修改字段，忽略系统管理字段（status/shipmentStatus/paymentStatus/totalAmount 等）
+      if (dto.salespersonId !== undefined) order.salespersonId = dto.salespersonId;
+      if (dto.customerName !== undefined) order.customerName = dto.customerName;
+      if (dto.orderDate !== undefined) order.orderDate = new Date(dto.orderDate);
+      if (dto.transportChannelId !== undefined) order.transportChannelId = dto.transportChannelId;
+      if (dto.tradeType !== undefined) order.tradeType = dto.tradeType;
+      if (dto.bloggerCommissionRate !== undefined) order.bloggerCommissionRate = dto.bloggerCommissionRate;
+      // remark: 空字符串 → null（用户主动清空）
+      if (dto.remark !== undefined) order.remark = dto.remark === '' ? null : dto.remark;
+      // currency + exchangeRate: 后端自动获取汇率，不信任前端传值
+      if (dto.currency !== undefined) order.currency = dto.currency;
+      order.exchangeRate = exchangeRate;
 
       // 如果提供了新的明细，整体替换
       if (dto.items && dto.items.length > 0) {
@@ -231,6 +234,7 @@ export class SalesOrderService {
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             amount: amount.toFixed(2),
+            baseAmount: (amount * parseFloat(exchangeRate)).toFixed(2),
             shippedQuantity: '0',
             returnedQuantity: '0',
           });
@@ -273,6 +277,7 @@ export class SalesOrderService {
         }
 
         order.totalAmount = totalAmount.toFixed(2);
+        order.totalBaseAmount = (totalAmount * parseFloat(exchangeRate)).toFixed(2);
       }
 
       // 客户名称变更时同步常用联系人
@@ -364,6 +369,9 @@ export class SalesOrderService {
     if (order.shipmentStatus === 3) {
       throw new BadRequestException('订单已全部发货，无法取消，请走退货流程');
     }
+    if (parseFloat(order.receivedAmount) > 0) {
+      throw new BadRequestException('订单已有收款，请先完成退款后再取消');
+    }
 
     return this.dataSource.transaction(async (manager: EntityManager) => {
       const items = await manager
@@ -418,21 +426,26 @@ export class SalesOrderService {
    * - payment_status: 1=未收款 2=部分收款 3=已收款
    * - status: shipment_status=3 且 payment_status=3 → 2=已完成
    */
-  async recalculateStatus(orderId: string): Promise<void> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+  async recalculateStatus(orderId: string, externalManager?: EntityManager): Promise<void> {
+    const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
+    const itemRepo = externalManager ? externalManager.getRepository(SalesOrderItem) : this.itemRepo;
+
+    const order = await orderRepo.findOne({ where: { id: orderId } });
     if (!order || order.status === 2 || order.status === 3) return;
 
-    const items = await this.itemRepo.find({ where: { orderId } });
+    const items = await itemRepo.find({ where: { orderId } });
     if (items.length === 0) return;
 
-    // 计算发货状态
+    // 计算发货状态（使用净发货量 = 已发 - 已退，退货会减少有效发货量）
     let allShipped = true;
     let anyShipped = false;
     for (const item of items) {
       const qty = parseFloat(item.quantity);
       const shipped = parseFloat(item.shippedQuantity);
-      if (shipped > 0) anyShipped = true;
-      if (shipped < qty) allShipped = false;
+      const returned = parseFloat(item.returnedQuantity || '0');
+      const netShipped = shipped - returned;
+      if (netShipped > 0) anyShipped = true;
+      if (netShipped < qty) allShipped = false;
     }
 
     if (allShipped) {
@@ -460,37 +473,50 @@ export class SalesOrderService {
       order.status = 2;
     }
 
-    await this.orderRepo.save(order);
+    await orderRepo.save(order);
   }
 
   /**
    * 更新已收金额（收款模块调用）
+   * 同时更新 receivedBaseAmount（CNY）
    */
   async updateReceivedAmount(
     orderId: string,
     amount: string,
+    externalManager?: EntityManager,
   ): Promise<void> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
+
+    const order = await orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
+    const rate = parseFloat(order.exchangeRate);
     order.receivedAmount = (
       parseFloat(order.receivedAmount) + parseFloat(amount)
     ).toFixed(2);
+    order.receivedBaseAmount = (
+      parseFloat(order.receivedBaseAmount || '0') + parseFloat(amount) * rate
+    ).toFixed(2);
 
-    await this.orderRepo.save(order);
-    await this.recalculateStatus(orderId);
+    await orderRepo.save(order);
+    await this.recalculateStatus(orderId, externalManager);
   }
 
   /**
    * 扣减已收金额（退款模块调用）
+   * 同时扣减 receivedBaseAmount（CNY）
    */
   async decreaseReceivedAmount(
     orderId: string,
     amount: string,
+    externalManager?: EntityManager,
   ): Promise<void> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
+
+    const order = await orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
+    const rate = parseFloat(order.exchangeRate);
     const newVal = parseFloat(order.receivedAmount) - parseFloat(amount);
 
     if (newVal < 0) {
@@ -498,9 +524,13 @@ export class SalesOrderService {
     }
 
     order.receivedAmount = newVal.toFixed(2);
+    order.receivedBaseAmount = Math.max(
+      0,
+      parseFloat(order.receivedBaseAmount || '0') - parseFloat(amount) * rate,
+    ).toFixed(2);
 
-    await this.orderRepo.save(order);
-    await this.recalculateStatus(orderId);
+    await orderRepo.save(order);
+    await this.recalculateStatus(orderId, externalManager);
   }
 
   /**
@@ -510,41 +540,40 @@ export class SalesOrderService {
     orderId: string,
     itemId: string,
     shippedQty: number,
+    externalManager?: EntityManager,
   ): Promise<void> {
-    const item = await this.itemRepo.findOne({ where: { id: itemId } });
+    const itemRepo = externalManager ? externalManager.getRepository(SalesOrderItem) : this.itemRepo;
+
+    const item = await itemRepo.findOne({ where: { id: itemId } });
     if (!item) throw new BadRequestException('订单明细不存在');
 
     item.shippedQuantity = (
       parseFloat(item.shippedQuantity) + shippedQty
     ).toFixed(4);
-    await this.itemRepo.save(item);
+    await itemRepo.save(item);
 
-    await this.recalculateStatus(orderId);
+    await this.recalculateStatus(orderId, externalManager);
   }
 
   /**
    * 利润摘要
-   * 产品成本 = SUM(shipment_item.totalCost) —  inherently CNY
-   * 额外成本 = SUM(cost.amount × cost.exchangeRate) — 逐条折算 CNY
-   * 博主佣金 = 已收金额 × 佣金比例 / 100（订单币种）
-   * 实收金额 = 已收金额 - 博主佣金（订单币种）
-   * 实时CNY = 实收金额 × 汇率（CNY订单不转换）
-   * 销售利润 = 实时CNY - 产品成本CNY - 额外成本CNY
-   * 利润率 = 销售利润 / 实时CNY × 100%
+   * 产品成本 = SUM(shipment_item.totalCost) — CNY（FIFO 写入时已转 CNY）
+   * 额外成本 = SUM(cost.base_amount) — 预存 CNY
+   * 博主佣金 = receivedBaseAmount × 佣金比例 / 100（CNY）
+   * 实收金额 = receivedBaseAmount - 博主佣金（CNY）
+   * 销售利润 = 实收CNY - 产品成本CNY - 额外成本CNY
+   * 利润率 = 销售利润 / 实收CNY × 100%
    *
-   * 所有金额统一返回 USD 和 CNY 两种币种
-   * 产品成本 / 额外成本：先算 CNY，再除汇率得 USD
-   * 博主佣金 / 净收款：先算 USD（订单币种），再乘汇率得 CNY
-   * 销售利润：CNY 和 USD 各算各的
+   * USD 列由 CNY ÷ exchangeRate 反算
    */
   async getProfitSummary(orderId: string) {
     const order = await this.orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
-    const exchangeRate = parseFloat(order.exchangeRate || '0');
+    const exchangeRate = parseFloat(order.exchangeRate || '1');
     const isCNY = order.currency === 'CNY';
 
-    // ── 产品成本（CNY，来自 FIFO）──
+    // ── 产品成本（CNY，来自 FIFO，shipment_item.total_cost 已是 CNY）──
     const costResult = await this.shipmentItemRepo
       .createQueryBuilder('si')
       .innerJoin('shipment', 's', 's.id = si.shipment_id')
@@ -554,21 +583,22 @@ export class SalesOrderService {
     const productCostCny = parseFloat(costResult?.totalCost || '0');
     const productCostUsd = isCNY ? productCostCny : (exchangeRate > 0 ? productCostCny / exchangeRate : 0);
 
-    // ── 额外成本（逐条折算 CNY 再汇总）──
-    const costItems = await this.costRepo.find({ where: { orderId } });
-    let extraCostCny = 0;
-    for (const c of costItems) {
-      extraCostCny += parseFloat(c.amount) * parseFloat(c.exchangeRate || '1');
-    }
+    // ── 额外成本（预存 base_amount，直接 SUM）──
+    const extraCostResult = await this.costRepo
+      .createQueryBuilder('c')
+      .select('COALESCE(SUM(c.base_amount), 0)', 'totalBase')
+      .where('c.order_id = :orderId', { orderId })
+      .getRawOne();
+    const extraCostCny = parseFloat(extraCostResult?.totalBase || '0');
     const extraCostUsd = isCNY ? extraCostCny : (exchangeRate > 0 ? extraCostCny / exchangeRate : 0);
 
-    // ── 博主佣金 & 净收款（订单币种 = USD）──
-    const receivedAmount = parseFloat(order.receivedAmount);
+    // ── 博主佣金 & 净收款（使用预存 receivedBaseAmount）──
+    const receivedBaseAmount = parseFloat(order.receivedBaseAmount || '0');
     const commissionRate = parseFloat(order.bloggerCommissionRate || '0');
-    const bloggerCommissionUsd = receivedAmount * commissionRate / 100;
-    const netReceivedUsd = receivedAmount - bloggerCommissionUsd;
-    const bloggerCommissionCny = isCNY ? bloggerCommissionUsd : bloggerCommissionUsd * exchangeRate;
-    const netReceivedCny = isCNY ? netReceivedUsd : netReceivedUsd * exchangeRate;
+    const bloggerCommissionCny = receivedBaseAmount * commissionRate / 100;
+    const netReceivedCny = receivedBaseAmount - bloggerCommissionCny;
+    const bloggerCommissionUsd = isCNY ? bloggerCommissionCny : (exchangeRate > 0 ? bloggerCommissionCny / exchangeRate : 0);
+    const netReceivedUsd = isCNY ? netReceivedCny : (exchangeRate > 0 ? netReceivedCny / exchangeRate : 0);
 
     // ── 销售利润 & 利润率 ──
     const salesProfitCny = netReceivedCny - productCostCny - extraCostCny;

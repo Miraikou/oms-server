@@ -58,19 +58,23 @@ export class SalesOrderCostService {
 			throw new BadRequestException('该成本类型已存在，请直接修改金额');
 		}
 
-		const exchangeRate = await this.rateService.getRate({
-			date: new Date().toISOString().slice(0, 10),
-			base: 'USD',
-			quotes: 'CNY',
-		});
+		const currency = dto.currency || 'CNY';
+		const exchangeRate = await this.rateService.getRate(
+			new Date().toISOString().slice(0, 10),
+			currency,
+		);
+
+		const amount = dto.amount;
+		const baseAmount = (parseFloat(amount) * parseFloat(exchangeRate)).toFixed(2);
 
 		const cost = this.costRepo.create({
 			id: snowflake.nextId(),
 			orderId,
 			costTypeId: dto.costTypeId,
-			amount: dto.amount,
-			currency: dto.currency,
+			amount,
+			currency,
 			exchangeRate,
+			baseAmount,
 			remark: dto.remark || null,
 		});
 
@@ -95,15 +99,21 @@ export class SalesOrderCostService {
 		// 币种变更 → 重新查汇率
 		if (dto.currency !== undefined && dto.currency !== cost.currency) {
 			cost.currency = dto.currency || 'CNY';
-			cost.exchangeRate = await this.rateService.getRate({
-				date: new Date().toISOString().slice(0, 10),
-				base: 'USD',
-				quotes: 'CNY',
-			});
+			cost.exchangeRate = await this.rateService.getRate(
+				new Date().toISOString().slice(0, 10),
+				cost.currency,
+			);
+		}
+
+		// 金额或汇率变化时重算 baseAmount
+		if (dto.amount !== undefined || dto.currency !== undefined) {
+			cost.baseAmount = (
+				parseFloat(cost.amount) * parseFloat(cost.exchangeRate)
+			).toFixed(2);
 		}
 
 		if (dto.remark !== undefined) {
-			cost.remark = dto.remark;
+			cost.remark = dto.remark === '' ? null : dto.remark;
 		}
 
 		return this.costRepo.save(cost);

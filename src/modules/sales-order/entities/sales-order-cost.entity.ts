@@ -20,9 +20,12 @@ export class SalesOrderCost extends BaseEntity {
   @Column({ type: 'decimal', precision: 18, scale: 2, comment: '成本金额（原币种）' })
   amount: string;
 
+  @Column({ name: 'base_amount', type: 'decimal', precision: 18, scale: 2, default: 0, comment: '成本金额（CNY）= amount × exchangeRate' })
+  baseAmount: string = '0';
+
   @Column({ type: 'varchar', length: 3, default: 'CNY', comment: '成本币种' })
   currency: string = 'CNY';
 
-  @Column({ name: 'exchange_rate', type: 'decimal', precision: 18, scale: 6, default: 1, comment: '汇率（原币种→CNY）' })
-  exchangeRate: string = '1.000000';
+  @Column({ name: 'exchange_rate', type: 'decimal', precision: 18, scale: 4, default: 1, comment: '汇率（原币种→CNY）' })
+  exchangeRate: string = '1.0000';
 }
