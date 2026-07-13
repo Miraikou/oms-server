@@ -88,3 +88,11 @@ export class QueryInventoryFlowDto extends PaginationParamsDto {
   @IsOptional()
   businessType?: number;
 }
+
+/** 查询库存树形列表 DTO */
+export class QueryInventoryTreeDto extends PaginationParamsDto {
+  @ApiPropertyOptional({ description: '商品 ID（精确筛选）' })
+  @IsString()
+  @IsOptional()
+  productId?: string;
+}

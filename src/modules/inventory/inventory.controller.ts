@@ -9,12 +9,12 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Inventory } from './entities/inventory.entity';
 import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
-import { QueryInventoryDto } from './dto/inventory-adjustment.dto';
+import { QueryInventoryDto, QueryInventoryTreeDto } from './dto/inventory-adjustment.dto';
 
 @ApiTags('库存管理')
 @ApiBearerAuth()
@@ -98,6 +98,164 @@ export class InventoryController {
     return { list, total, page, pageSize };
   }
 
+  @Get('tree')
+  @ApiOperation({ summary: '库存树形列表（按商品分组，展开查看型号明细）' })
+  async findTree(@Query() query: QueryInventoryTreeDto) {
+    const page = query.page || 1;
+    const pageSize = query.pageSize || 20;
+
+    // 1. 查询去重的商品列表（分页）
+    const productQb = this.inventoryRepo
+      .createQueryBuilder('inv')
+      .select('inv.productId', 'productId')
+      .addSelect('MAX(inv.updatedTime)', 'maxUpdatedTime')
+      .groupBy('inv.productId')
+      .orderBy('maxUpdatedTime', 'DESC');
+
+    if (query.productId) {
+      productQb.andWhere('inv.productId = :productId', { productId: query.productId });
+    }
+
+    const productResult = await productQb
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getRawMany<{ productId: string }>();
+
+    const productIds = productResult.map((r) => r.productId);
+    if (productIds.length === 0) {
+      return { list: [], total: 0, page, pageSize };
+    }
+
+    // 统计商品总数
+    const countQb = this.inventoryRepo
+      .createQueryBuilder('inv')
+      .select('COUNT(DISTINCT inv.productId)', 'count');
+    if (query.productId) {
+      countQb.andWhere('inv.productId = :productId', { productId: query.productId });
+    }
+    const countResult = await countQb.getRawOne<{ count: string }>();
+    const total = parseInt(countResult?.count || '0', 10);
+
+    // 2. 查询这些商品下的所有库存记录（含型号）
+    const invQb = this.inventoryRepo
+      .createQueryBuilder('inv')
+      .where('inv.productId IN (:...productIds)', { productIds });
+    if (query.productId) {
+      invQb.andWhere('inv.productId = :productId', { productId: query.productId });
+    }
+    const inventories = await invQb.getMany();
+
+    // 3. 从批次表实时汇总（按 productId + productModelId）
+    const batchSums = await this.batchRepo
+      .createQueryBuilder('b')
+      .select('b.productId', 'productId')
+      .addSelect('b.productModelId', 'productModelId')
+      .addSelect('COALESCE(SUM(b.availableQuantity), 0)', 'availableQuantity')
+      .addSelect('COALESCE(SUM(b.frozenQuantity), 0)', 'frozenQuantity')
+      .addSelect('COALESCE(SUM(b.stockQuantity), 0)', 'stockQuantity')
+      .where('b.productId IN (:...productIds)', { productIds })
+      .andWhere('b.status = 1')
+      .groupBy('b.productId')
+      .addGroupBy('b.productModelId')
+      .getRawMany<{
+        productId: string;
+        productModelId: string | null;
+        availableQuantity: string;
+        frozenQuantity: string;
+        stockQuantity: string;
+      }>();
+
+    // 构建汇总 Map
+    const sumMap = new Map<string, { availableQuantity: string; frozenQuantity: string; stockQuantity: string }>();
+    for (const row of batchSums) {
+      const key = row.productModelId
+        ? `${row.productId}::${row.productModelId}`
+        : `${row.productId}::`;
+      sumMap.set(key, {
+        availableQuantity: row.availableQuantity,
+        frozenQuantity: row.frozenQuantity,
+        stockQuantity: row.stockQuantity,
+      });
+    }
+
+    // 4. 按商品分组构建树形结构
+    const productMap = new Map<string, {
+      productId: string;
+      availableQuantity: string;
+      frozenQuantity: string;
+      stockQuantity: string;
+      updatedTime: string;
+      children: Array<{
+        productId: string;
+        productModelId: string | null;
+        availableQuantity: string;
+        frozenQuantity: string;
+        stockQuantity: string;
+        updatedTime: string;
+      }>;
+    }>();
+
+    for (const inv of inventories) {
+      const key = inv.productModelId
+        ? `${inv.productId}::${inv.productModelId}`
+        : `${inv.productId}::`;
+      const sum = sumMap.get(key);
+
+      const availableQuantity = sum?.availableQuantity || '0';
+      const frozenQuantity = sum?.frozenQuantity || '0';
+      const stockQuantity = sum?.stockQuantity || '0';
+      const updatedTime = inv.updatedTime instanceof Date
+        ? inv.updatedTime.toISOString()
+        : inv.updatedTime;
+
+      const child = {
+        productId: inv.productId,
+        productModelId: inv.productModelId || null,
+        availableQuantity,
+        frozenQuantity,
+        stockQuantity,
+        updatedTime,
+      };
+
+      if (!productMap.has(inv.productId)) {
+        productMap.set(inv.productId, {
+          productId: inv.productId,
+          availableQuantity: '0',
+          frozenQuantity: '0',
+          stockQuantity: '0',
+          updatedTime,
+          children: [],
+        });
+      }
+
+      const product = productMap.get(inv.productId)!;
+      product.children.push(child);
+
+      // 累加商品级别的汇总
+      product.availableQuantity = (
+        parseFloat(product.availableQuantity) + parseFloat(availableQuantity)
+      ).toFixed(4);
+      product.frozenQuantity = (
+        parseFloat(product.frozenQuantity) + parseFloat(frozenQuantity)
+      ).toFixed(4);
+      product.stockQuantity = (
+        parseFloat(product.stockQuantity) + parseFloat(stockQuantity)
+      ).toFixed(4);
+
+      // 取最新的更新时间
+      if (updatedTime > product.updatedTime) {
+        product.updatedTime = updatedTime;
+      }
+    }
+
+    // 按更新时间倒序排列
+    const list = Array.from(productMap.values()).sort((a, b) =>
+      b.updatedTime.localeCompare(a.updatedTime),
+    );
+
+    return { list, total, page, pageSize };
+  }
+
   @Get('warnings')
   @ApiOperation({ summary: '库存预警（低库存商品）' })
   async getWarnings() {
@@ -118,9 +276,16 @@ export class InventoryController {
 
   @Get('product/:productId/batches')
   @ApiOperation({ summary: '商品批次列表' })
-  async getBatches(@Param('productId') productId: string) {
+  async getBatches(
+    @Param('productId') productId: string,
+    @Query('productModelId') productModelId?: string,
+  ) {
+    const where: Record<string, unknown> = { productId };
+    if (productModelId) {
+      where.productModelId = productModelId;
+    }
     const batches = await this.batchRepo.find({
-      where: { productId },
+      where,
       order: { inboundTime: 'ASC' },
     });
 
@@ -148,6 +313,114 @@ export class InventoryController {
       ...b,
       currency: (b.receiptItemId && currencies[b.receiptItemId]) || undefined,
     }));
+  }
+
+  @Get('product/:productId/batches-by-receipt')
+  @ApiOperation({ summary: '按入库单分组的批次树形列表' })
+  async getBatchesByReceipt(
+    @Param('productId') productId: string,
+    @Query('productModelId') productModelId?: string,
+    @Query('page') pageStr?: string,
+    @Query('pageSize') pageSizeStr?: string,
+  ) {
+    const page = Number(pageStr) || 1;
+    const pageSize = Number(pageSizeStr) || 10;
+
+    // 1. 查询去重的 receipt_id 列表（分页）
+    const receiptQb = this.batchRepo
+      .createQueryBuilder('b')
+      .select('b.receiptItemId', 'receiptItemId')
+      .where('b.productId = :productId', { productId });
+    if (productModelId) {
+      receiptQb.andWhere('b.productModelId = :productModelId', { productModelId });
+    }
+    receiptQb
+      .andWhere('b.receiptItemId IS NOT NULL')
+      .groupBy('b.receiptItemId')
+      .orderBy('MIN(b.inboundTime)', 'DESC');
+
+    const receiptResult = await receiptQb
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getRawMany<{ receiptItemId: string }>();
+
+    const receiptItemIds = receiptResult.map((r) => r.receiptItemId);
+
+    // 统计有入库单的总数
+    const countQb = this.batchRepo
+      .createQueryBuilder('b')
+      .select('COUNT(DISTINCT b.receiptItemId)', 'cnt')
+      .where('b.productId = :productId', { productId })
+      .andWhere('b.receiptItemId IS NOT NULL');
+    if (productModelId) {
+      countQb.andWhere('b.productModelId = :productModelId', { productModelId });
+    }
+    const countResult = await countQb.getRawOne<{ cnt: string }>();
+    const total = parseInt(countResult?.cnt || '0', 10);
+
+    // 2. 查询这些 receiptItemId 对应的所有批次
+    let batches: InventoryBatch[] = [];
+    if (receiptItemIds.length > 0) {
+      batches = await this.batchRepo.find({
+        where: { productId, receiptItemId: In(receiptItemIds) },
+        order: { inboundTime: 'ASC' },
+      });
+      if (productModelId) {
+        batches = batches.filter((b) => b.productModelId === productModelId);
+      }
+    }
+
+    // 3. 查询入库单信息 + 币种（receipt_item → receipt → order）
+    interface ReceiptInfo {
+      receiptItemId: string;
+      receiptId: string;
+      receiptNo: string;
+      receiptDate: string;
+      currency: string;
+    }
+    let receiptInfoMap: ReceiptInfo[] = [];
+    if (receiptItemIds.length > 0) {
+      receiptInfoMap = await this.batchRepo.manager
+        .createQueryBuilder()
+        .select('pri.id', 'receiptItemId')
+        .addSelect('pr.id', 'receiptId')
+        .addSelect('pr.receipt_no', 'receiptNo')
+        .addSelect('pr.receipt_date', 'receiptDate')
+        .addSelect('po.currency', 'currency')
+        .from('purchase_receipt_item', 'pri')
+        .leftJoin('purchase_receipt', 'pr', 'pr.id = pri.receipt_id')
+        .leftJoin('purchase_order', 'po', 'po.id = pr.purchase_order_id')
+        .where('pri.id IN (:...ids)', { ids: receiptItemIds })
+        .getRawMany<ReceiptInfo>();
+    }
+
+    // 4. 按 receiptItemId 分组
+    const infoByRiId = new Map(receiptInfoMap.map((r) => [r.receiptItemId, r]));
+    const groupMap = new Map<string, { info: ReceiptInfo; batches: InventoryBatch[] }>();
+    for (const riId of receiptItemIds) {
+      const info = infoByRiId.get(riId);
+      if (info) {
+        groupMap.set(riId, { info, batches: [] });
+      }
+    }
+    for (const b of batches) {
+      const g = b.receiptItemId ? groupMap.get(b.receiptItemId) : undefined;
+      if (g) g.batches.push(b);
+    }
+
+    const list = Array.from(groupMap.values()).map(({ info, batches: bList }) => ({
+      receiptId: info.receiptId,
+      receiptNo: info.receiptNo,
+      receiptDate: info.receiptDate,
+      currency: info.currency || 'CNY',
+      batchCount: bList.length,
+      totalAvailable: bList.reduce((s, b) => s + parseFloat(b.availableQuantity), 0).toFixed(4),
+      totalFrozen: bList.reduce((s, b) => s + parseFloat(b.frozenQuantity), 0).toFixed(4),
+      totalStock: bList.reduce((s, b) => s + parseFloat(b.stockQuantity), 0).toFixed(4),
+      children: bList,
+    }));
+
+    return { list, total, page, pageSize };
   }
 
   @Get('product/:productId/flows')
