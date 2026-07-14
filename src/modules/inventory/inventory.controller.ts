@@ -368,7 +368,7 @@ export class InventoryController {
       if (productModelId === 'empty') {
         countQb.andWhere('b.productModelId IS NULL');
       } else {
-        receiptQb.andWhere(
+        countQb.andWhere(
           'b.productModelId = :productModelId',
           { productModelId },
         );
@@ -454,7 +454,7 @@ export class InventoryController {
       if (g) g.batches.push(b);
     }
 
-    const list = Array.from(groupMap.entries()).map(([rId, { info, batches: bList }]) => ({
+    let list = Array.from(groupMap.entries()).map(([rId, { info, batches: bList }]) => ({
       receiptId: rId,
       receiptNo: info.receiptNo,
       receiptDate: info.receiptDate,
@@ -466,7 +466,39 @@ export class InventoryController {
       children: bList,
     }));
 
-    return { list, total, page, pageSize };
+    // 5. 查询无 receiptItemId 的批次（库存调整/退货恢复产生的批次）
+    const noReceiptQb = this.batchRepo.createQueryBuilder('b')
+      .where('b.productId = :productId', { productId })
+      .andWhere('b.receiptItemId IS NULL');
+
+    if (productModelId) {
+      if (productModelId === 'empty') {
+        noReceiptQb.andWhere('b.productModelId IS NULL');
+      } else {
+        noReceiptQb.andWhere('b.productModelId = :productModelId', { productModelId });
+      }
+    }
+
+    const noReceiptBatches = await noReceiptQb.orderBy('b.inboundTime', 'DESC').getMany();
+
+    if (noReceiptBatches.length > 0) {
+      list.push({
+        receiptId: 'no-receipt',
+        receiptNo: '其他入库（调整/退货）',
+        receiptDate: '',
+        currency: 'CNY',
+        batchCount: noReceiptBatches.length,
+        totalAvailable: noReceiptBatches.reduce((s, b) => s + parseFloat(b.availableQuantity), 0).toFixed(4),
+        totalFrozen: noReceiptBatches.reduce((s, b) => s + parseFloat(b.frozenQuantity), 0).toFixed(4),
+        totalStock: noReceiptBatches.reduce((s, b) => s + parseFloat(b.stockQuantity), 0).toFixed(4),
+        children: noReceiptBatches,
+      });
+    }
+
+    // 总数加上无 receipt 的分组
+    const adjustedTotal = total + (noReceiptBatches.length > 0 ? 1 : 0);
+
+    return { list, total: adjustedTotal, page, pageSize };
   }
 
   @Get('product/:productId/flows')

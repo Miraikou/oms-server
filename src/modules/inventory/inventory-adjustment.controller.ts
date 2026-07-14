@@ -14,6 +14,7 @@ import { InventoryAdjustmentService } from './inventory-adjustment.service';
 import {
   CreateInventoryAdjustmentDto,
   QueryInventoryAdjustmentDto,
+  EstimateCostDto,
 } from './dto/inventory-adjustment.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
@@ -28,6 +29,12 @@ export class InventoryAdjustmentController {
   @ApiOperation({ summary: '库存调整列表（分页）' })
   findAll(@Query() query: QueryInventoryAdjustmentDto) {
     return this.service.findAll(query);
+  }
+
+  @Get('estimate-cost')
+  @ApiOperation({ summary: '估算成本（根据成本来源类型计算）' })
+  estimateCost(@Query() dto: EstimateCostDto) {
+    return this.service.estimateCost(dto);
   }
 
   @Get(':id')

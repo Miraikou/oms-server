@@ -41,4 +41,31 @@ export class InventoryAdjustmentItem extends BaseEntity {
     comment: '调整数量（正=增加，负=减少）',
   })
   changeQuantity: string;
+
+  @Column({
+    name: 'cost_source_type',
+    type: 'tinyint',
+    nullable: true,
+    comment: '成本来源：1=近一年加权平均 2=剩余库存加权平均 3=最新采购记录成本 4=手动输入',
+  })
+  costSourceType: number | null = null;
+
+  @Column({
+    name: 'unit_price',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    nullable: true,
+    comment: '使用的单价（币种为单位）',
+  })
+  unitPrice: string | null = null;
+
+  @Column({
+    name: 'adjust_currency',
+    type: 'varchar',
+    length: 10,
+    nullable: true,
+    comment: '成本币种',
+  })
+  currency: string | null = null;
 }

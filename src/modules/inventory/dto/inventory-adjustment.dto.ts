@@ -3,6 +3,9 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  IsInt,
+  Min,
+  Max,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -30,6 +33,25 @@ export class CreateAdjustmentItemDto {
   @IsString()
   @IsNotEmpty({ message: '调整数量不能为空' })
   changeQuantity: string;
+
+  @ApiPropertyOptional({
+    description: '成本来源：1=近一年加权平均 2=剩余库存加权平均 3=最新采购记录成本 4=手动输入（仅增加+未指定批次时必填）',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  @IsOptional()
+  costSourceType?: number;
+
+  @ApiPropertyOptional({ description: '手动输入单价（costSourceType=4 时必填）' })
+  @IsString()
+  @IsOptional()
+  unitPrice?: string;
+
+  @ApiPropertyOptional({ description: '成本币种（costSourceType=4 时必填，默认 CNY）' })
+  @IsString()
+  @IsOptional()
+  currency?: string;
 }
 
 /** 创建库存调整 DTO */
@@ -95,4 +117,23 @@ export class QueryInventoryTreeDto extends PaginationParamsDto {
   @IsString()
   @IsOptional()
   productId?: string;
+}
+
+/** 成本估算请求 DTO */
+export class EstimateCostDto {
+  @ApiProperty({ description: '商品 ID' })
+  @IsString()
+  @IsNotEmpty()
+  productId: string;
+
+  @ApiPropertyOptional({ description: '商品型号 ID（为空则匹配型号为空的批次）' })
+  @IsString()
+  @IsOptional()
+  productModelId?: string;
+
+  @ApiProperty({ description: '成本来源类型：1=近一年加权平均 2=剩余库存加权平均 3=最新采购记录成本' })
+  @IsInt()
+  @Min(1)
+  @Max(3)
+  costSourceType: number;
 }

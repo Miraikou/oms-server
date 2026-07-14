@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
+import { Repository, DataSource, EntityManager, MoreThan } from 'typeorm';
 import { InventoryAdjustment } from './entities/inventory-adjustment.entity';
 import { InventoryAdjustmentItem } from './entities/inventory-adjustment-item.entity';
 import { Inventory } from './entities/inventory.entity';
@@ -8,10 +8,12 @@ import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from './services/fifo.service';
+import { RateService } from '@/common/rate/rate.service';
 import { snowflake } from '@/common/utils/snowflake';
 import type {
   CreateInventoryAdjustmentDto,
   QueryInventoryAdjustmentDto,
+  EstimateCostDto,
 } from './dto/inventory-adjustment.dto';
 
 /**
@@ -36,6 +38,7 @@ export class InventoryAdjustmentService {
     private readonly dataSource: DataSource,
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
+    private readonly rateService: RateService,
   ) {}
 
   /** 创建库存调整 */
@@ -122,6 +125,42 @@ export class InventoryAdjustmentService {
             );
           } else {
             // 未指定批次：生成新调整批次
+            // 验证成本信息
+            if (!item.costSourceType) {
+              throw new BadRequestException('增加库存未指定批次时，必须提供成本来源类型');
+            }
+
+            let unitCost: string;
+            let currency: string;
+            let exchangeRate: string;
+            let unitCostBase: string;
+
+            if (item.costSourceType === 4) {
+              // 手动输入
+              if (!item.unitPrice) {
+                throw new BadRequestException('手动输入成本时必须提供单价');
+              }
+              currency = item.currency || 'CNY';
+              unitCost = item.unitPrice;
+              exchangeRate = await this.rateService.getRate(
+                new Date().toISOString().split('T')[0],
+                currency,
+                'CNY',
+              );
+              unitCostBase = (parseFloat(unitCost) * parseFloat(exchangeRate)).toFixed(2);
+            } else {
+              // 自动估算
+              const estimate = await this.estimateCostInternal(
+                item.productId,
+                item.productModelId || null,
+                item.costSourceType,
+              );
+              currency = 'CNY';
+              unitCost = estimate.costCNY;
+              exchangeRate = '1';
+              unitCostBase = estimate.costCNY;
+            }
+
             const batchNo = await this.sequenceService.generate('BT');
             const batch = manager.create(InventoryBatch, {
               id: snowflake.nextId(),
@@ -130,10 +169,10 @@ export class InventoryAdjustmentService {
               receiptItemId: null,
               batchSource: 3, // 库存调整
               batchNo,
-              unitCost: '0',
-              unitCostBase: '0',
-              currency: 'CNY',
-              exchangeRate: '1',
+              unitCost,
+              unitCostBase,
+              currency,
+              exchangeRate,
               originalQuantity: item.changeQuantity,
               availableQuantity: item.changeQuantity,
               frozenQuantity: '0',
@@ -144,6 +183,12 @@ export class InventoryAdjustmentService {
             });
             const savedBatch = await manager.save(InventoryBatch, batch);
 
+            // 保存成本来源信息到调整明细
+            adjItem.costSourceType = item.costSourceType;
+            adjItem.unitPrice = unitCost;
+            adjItem.currency = currency;
+            await manager.save(InventoryAdjustmentItem, adjItem);
+
             await this.addToInventory(item.productId, item.productModelId, changeQty, manager);
 
             await this.writeAdjustmentFlow(
@@ -152,10 +197,10 @@ export class InventoryAdjustmentService {
               item.productModelId,
               saved.id,
               item.changeQuantity,
-              '0',
-              '0',
-              'CNY',
-              '1',
+              unitCost,
+              unitCostBase,
+              currency,
+              exchangeRate,
               '0',
               item.changeQuantity,
               manager,
@@ -341,5 +386,156 @@ export class InventoryAdjustmentService {
         afterFrozen: inv?.frozenQuantity || '0',
       }),
     );
+  }
+
+  /**
+   * 估算成本（供前端调用）
+   * @param dto 估算请求参数
+   * @returns 估算结果：CNY成本、目标币种成本、汇率
+   */
+  async estimateCost(dto: EstimateCostDto) {
+    const { productId, productModelId, costSourceType } = dto;
+
+    if (costSourceType < 1 || costSourceType > 3) {
+      throw new BadRequestException('成本来源类型无效，必须为 1-3');
+    }
+
+    const result = await this.estimateCostInternal(productId, productModelId || null, costSourceType);
+    return result;
+  }
+
+  /**
+   * 内部成本估算方法
+   * @param productId 商品ID
+   * @param productModelId 型号ID（null表示匹配型号为空的批次）
+   * @param costSourceType 成本来源类型 1=近一年加权平均 2=剩余库存加权平均 3=最新采购记录成本
+   * @returns { costCNY: string }
+   */
+  private async estimateCostInternal(
+    productId: string,
+    productModelId: string | null,
+    costSourceType: number,
+  ): Promise<{ costCNY: string }> {
+    switch (costSourceType) {
+      case 1:
+        return this.calcYearlyWeightedAvg(productId, productModelId);
+      case 2:
+        return this.calcRemainingWeightedAvg(productId, productModelId);
+      case 3:
+        return this.calcLatestPurchaseCost(productId, productModelId);
+      default:
+        throw new BadRequestException('无效的成本来源类型');
+    }
+  }
+
+  /**
+   * 近一年加权平均成本
+   * 使用 originalQuantity 作为权重，包含已消耗/冻结的批次
+   */
+  private async calcYearlyWeightedAvg(
+    productId: string,
+    productModelId: string | null,
+  ): Promise<{ costCNY: string }> {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    const qb = this.batchRepo.createQueryBuilder('b')
+      .where('b.productId = :productId', { productId })
+      .andWhere('b.inboundTime >= :oneYearAgo', { oneYearAgo });
+
+    if (productModelId) {
+      qb.andWhere('b.productModelId = :productModelId', { productModelId });
+    } else {
+      qb.andWhere('b.productModelId IS NULL');
+    }
+
+    const batches = await qb.getMany();
+
+    if (batches.length === 0) {
+      throw new BadRequestException('该商品近一年无入库记录');
+    }
+
+    let totalCostCNY = 0;
+    let totalQty = 0;
+    for (const b of batches) {
+      const qty = parseFloat(b.originalQuantity);
+      const costBase = parseFloat(b.unitCostBase);
+      totalCostCNY += costBase * qty;
+      totalQty += qty;
+    }
+
+    if (totalQty <= 0) {
+      throw new BadRequestException('该商品近一年无入库记录');
+    }
+
+    return { costCNY: (totalCostCNY / totalQty).toFixed(4) };
+  }
+
+  /**
+   * 剩余库存加权平均成本
+   * 只考虑 availableQuantity > 0 的批次
+   */
+  private async calcRemainingWeightedAvg(
+    productId: string,
+    productModelId: string | null,
+  ): Promise<{ costCNY: string }> {
+    const qb = this.batchRepo.createQueryBuilder('b')
+      .where('b.productId = :productId', { productId })
+      .andWhere('b.availableQuantity > 0');
+
+    if (productModelId) {
+      qb.andWhere('b.productModelId = :productModelId', { productModelId });
+    } else {
+      qb.andWhere('b.productModelId IS NULL');
+    }
+
+    const batches = await qb.getMany();
+
+    if (batches.length === 0) {
+      throw new BadRequestException('该商品无库存');
+    }
+
+    let totalCostCNY = 0;
+    let totalQty = 0;
+    for (const b of batches) {
+      const qty = parseFloat(b.availableQuantity);
+      const costBase = parseFloat(b.unitCostBase);
+      totalCostCNY += costBase * qty;
+      totalQty += qty;
+    }
+
+    if (totalQty <= 0) {
+      throw new BadRequestException('该商品无库存');
+    }
+
+    return { costCNY: (totalCostCNY / totalQty).toFixed(4) };
+  }
+
+  /**
+   * 最新采购记录成本
+   * 取最近入库批次的 unitCostBase
+   */
+  private async calcLatestPurchaseCost(
+    productId: string,
+    productModelId: string | null,
+  ): Promise<{ costCNY: string }> {
+    const qb = this.batchRepo.createQueryBuilder('b')
+      .where('b.productId = :productId', { productId });
+
+    if (productModelId) {
+      qb.andWhere('b.productModelId = :productModelId', { productModelId });
+    } else {
+      qb.andWhere('b.productModelId IS NULL');
+    }
+
+    qb.orderBy('b.inboundTime', 'DESC').limit(1);
+
+    const batch = await qb.getOne();
+
+    if (!batch) {
+      throw new BadRequestException('该商品无采购记录');
+    }
+
+    return { costCNY: parseFloat(batch.unitCostBase).toFixed(4) };
   }
 }
