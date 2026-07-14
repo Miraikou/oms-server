@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { Inventory } from './entities/inventory.entity';
 import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
@@ -73,7 +73,7 @@ export class InventoryService {
     if (productModelId) {
       where.productModelId = productModelId;
     } else {
-      where.productModelId = undefined as any; // IS NULL
+      where.productModelId = IsNull(); // IS NULL
     }
 
     let inventory = await this.inventoryRepo.findOne({ where });

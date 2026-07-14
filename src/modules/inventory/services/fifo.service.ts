@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
+import { Repository, DataSource, EntityManager, IsNull } from 'typeorm';
 import { InventoryBatch } from '../entities/inventory-batch.entity';
 import { Inventory } from '../entities/inventory.entity';
 import { InventoryFlow } from '../entities/inventory-flow.entity';
@@ -82,7 +82,7 @@ export class FifoService {
 
     const modelWhere = productModelId
       ? { productId, productModelId }
-      : { productId, productModelId: undefined as any };
+      : { productId, productModelId: IsNull() };
 
     const doConsume = async (manager: EntityManager): Promise<FifoConsumeResult> => {
       // 1. 按 FIFO 顺序获取可用批次
@@ -246,7 +246,7 @@ export class FifoService {
 
     const modelWhere = productModelId
       ? { productId, productModelId }
-      : { productId, productModelId: undefined as any };
+      : { productId, productModelId: IsNull() };
 
     const doFreeze = async (manager: EntityManager): Promise<FreezeResult> => {
       let batchQb = manager
@@ -379,7 +379,7 @@ export class FifoService {
 
     const modelWhere = productModelId
       ? { productId, productModelId }
-      : { productId, productModelId: undefined as any };
+      : { productId, productModelId: IsNull() };
 
     const doUnfreeze = async (manager: EntityManager): Promise<FreezeResult> => {
       // 获取有冻结的批次
@@ -516,7 +516,7 @@ export class FifoService {
 
     const modelWhere = productModelId
       ? { productId, productModelId }
-      : { productId, productModelId: undefined as any };
+      : { productId, productModelId: IsNull() };
 
     const doDeduct = async (manager: EntityManager): Promise<FifoConsumeResult> => {
         // 获取有冻结的批次

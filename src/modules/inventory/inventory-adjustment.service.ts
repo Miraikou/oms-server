@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager, MoreThan } from 'typeorm';
+import { Repository, DataSource, EntityManager, MoreThan, IsNull } from 'typeorm';
 import { InventoryAdjustment } from './entities/inventory-adjustment.entity';
 import { InventoryAdjustmentItem } from './entities/inventory-adjustment-item.entity';
 import { Inventory } from './entities/inventory.entity';
@@ -359,7 +359,7 @@ export class InventoryAdjustmentService {
   ): Promise<void> {
     const modelWhere = productModelId
       ? { productId, productModelId }
-      : { productId, productModelId: undefined as any };
+      : { productId, productModelId: IsNull() };
     const inv = await manager.findOne(Inventory, { where: modelWhere });
     const totalCost = (Math.abs(parseFloat(quantity)) * parseFloat(unitCost)).toFixed(2);
     const totalCostBase = (Math.abs(parseFloat(quantity)) * parseFloat(unitCostBase)).toFixed(2);
