@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type {
+import {
   CreateExchangeRateDto,
   UpdateExchangeRateDto,
   QueryExchangeRateDto,

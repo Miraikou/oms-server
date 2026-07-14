@@ -92,6 +92,17 @@ export class SalesOrderCostService {
 		const cost = await this.costRepo.findOne({ where: { id } });
 		if (!cost) throw new BadRequestException('成本记录不存在');
 
+		// 成本类型变更 → 校验唯一约束
+		if (dto.costTypeId !== undefined && dto.costTypeId !== cost.costTypeId) {
+			const conflict = await this.costRepo.findOne({
+				where: { orderId: cost.orderId, costTypeId: dto.costTypeId },
+			});
+			if (conflict) {
+				throw new BadRequestException('该订单下已存在相同成本类型');
+			}
+			cost.costTypeId = dto.costTypeId;
+		}
+
 		if (dto.amount !== undefined) {
 			cost.amount = dto.amount;
 		}

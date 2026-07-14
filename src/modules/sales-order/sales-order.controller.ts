@@ -17,7 +17,7 @@ import { SalesOrderCostService } from './sales-order-cost.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { PermissionGuard } from '@/common/guards/permission.guard';
 import { RequirePermission } from '@/common/decorators/require-permission.decorator';
-import type {
+import {
   CreateSalesOrderDto,
   UpdateSalesOrderDto,
   QuerySalesOrderDto,

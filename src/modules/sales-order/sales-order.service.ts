@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
+import { Repository, DataSource, EntityManager, IsNull } from 'typeorm';
 import { SalesOrder } from './entities/sales-order.entity';
 import { SalesOrderItem } from './entities/sales-order-item.entity';
 import { SequenceService } from '@/common/services/sequence.service';
@@ -88,7 +88,7 @@ export class SalesOrderService {
         if (item.productModelId) {
           invWhere.productModelId = item.productModelId;
         } else {
-          invWhere.productModelId = undefined as any;
+          invWhere.productModelId = IsNull();
         }
         const inventory = await manager.findOne(Inventory, {
           where: invWhere,
@@ -246,7 +246,7 @@ export class SalesOrderService {
           if (item.productModelId) {
             invWhere.productModelId = item.productModelId;
           } else {
-            invWhere.productModelId = undefined as any;
+            invWhere.productModelId = IsNull();
           }
           const inventory = await manager.findOne(Inventory, {
             where: invWhere,

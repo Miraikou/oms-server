@@ -213,6 +213,11 @@ export class CreateSalesOrderCostDto {
 
 /** 修改订单成本 DTO */
 export class UpdateSalesOrderCostDto {
+  @ApiPropertyOptional({ description: '成本类型 ID（不可与同订单下已有类型冲突）' })
+  @IsString()
+  @IsOptional()
+  costTypeId?: string;
+
   @ApiPropertyOptional({ description: '金额（原币种）' })
   @IsString()
   @IsOptional()
