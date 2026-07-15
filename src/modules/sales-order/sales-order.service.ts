@@ -219,6 +219,12 @@ export class SalesOrderService {
 
       // 8. 同步创建收款记录（可选）
       if (dto.payment) {
+        const paymentAmount = parseFloat(dto.payment.amount);
+        if (paymentAmount > totalAmount + 0.01) {
+          throw new BadRequestException(
+            `收款金额（${paymentAmount.toFixed(2)}）不能超过货物总金额（${totalAmount.toFixed(2)}）`,
+          );
+        }
         const paymentRepoTx = manager.getRepository(Payment);
         const paymentCurrency = currency; // 收款币种 = 订单币种
         const paymentRate = await this.rateService.getRate(
