@@ -7,9 +7,6 @@ import { BaseEntity } from '@/common/entities/base.entity';
  * 发货单创建后不可修改、不可撤销
  */
 @Entity('shipment')
-@Index('uk_express_tracking', ['expressCompanyId', 'trackingNo'], {
-  unique: true,
-})
 export class Shipment extends BaseEntity {
   @Index('uk_shipment_no', { unique: true })
   @Column({
