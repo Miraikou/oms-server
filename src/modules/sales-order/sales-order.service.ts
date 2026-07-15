@@ -300,7 +300,9 @@ export class SalesOrderService {
       order.exchangeRate = exchangeRate;
 
       // 如果提供了新的明细，整体替换
+      let itemsChanged = false;
       if (dto.items && dto.items.length > 0) {
+        itemsChanged = true;
         // 获取旧明细用于解冻
         const oldItems = await manager.find(SalesOrderItem, { where: { orderId: id } });
 
@@ -383,8 +385,17 @@ export class SalesOrderService {
           );
         }
 
-        order.totalAmount = totalAmount.toFixed(2);
-        order.totalBaseAmount = (totalAmount * parseFloat(exchangeRate)).toFixed(2);
+        // 商品总价变更后，校验已收金额不能超出新总价
+        const newTotal = parseFloat(totalAmount.toFixed(2));
+        const received = parseFloat(order.receivedAmount);
+        if (received > newTotal + 0.01 && newTotal > 0) {
+          throw new BadRequestException(
+            `修改后货物总金额为 ${newTotal.toFixed(2)}，但已收款 ${received.toFixed(2)}，请先退款后再修改订单`,
+          );
+        }
+
+        order.totalAmount = newTotal.toFixed(2);
+        order.totalBaseAmount = (newTotal * parseFloat(exchangeRate)).toFixed(2);
       }
 
       // 同步成本记录（整体替换）
@@ -442,7 +453,14 @@ export class SalesOrderService {
         await this.upsertContact(dto.customerName, manager);
       }
 
-      return manager.save(order);
+      const saved = await manager.save(order);
+
+      // 商品明细变更后，重算收款/发货状态
+      if (itemsChanged) {
+        await this.recalculateStatus(id, manager);
+      }
+
+      return saved;
     });
   }
 
