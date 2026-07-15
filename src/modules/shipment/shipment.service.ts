@@ -1,12 +1,13 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
+import { Repository, DataSource, EntityManager, In } from 'typeorm';
 import { Shipment } from './entities/shipment.entity';
 import { ShipmentItem } from './entities/shipment-item.entity';
 import { ShipmentItemBatch } from './entities/shipment-item-batch.entity';
 import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
 import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
@@ -34,6 +35,8 @@ export class ShipmentService {
     private readonly orderItemRepo: Repository<SalesOrderItem>,
     @InjectRepository(InventoryBatch)
     private readonly inventoryBatchRepo: Repository<InventoryBatch>,
+    @InjectRepository(ProductModel)
+    private readonly productModelRepo: Repository<ProductModel>,
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
     private readonly salesOrderService: SalesOrderService,
@@ -200,17 +203,41 @@ export class ShipmentService {
       where: { orderId },
     });
 
+    // 批量查询型号名称
+    const modelIds = orderItems
+      .map((i) => i.productModelId)
+      .filter((id): id is string => !!id);
+    const modelNameMap = new Map<string, string>();
+    if (modelIds.length > 0) {
+      const models = await this.productModelRepo.find({
+        where: { id: In(modelIds) },
+      });
+      for (const m of models) {
+        modelNameMap.set(m.id, m.modelName);
+      }
+    }
+
     const previewItems = [];
     for (const item of orderItems) {
       const remaining =
         parseFloat(item.quantity) - parseFloat(item.shippedQuantity);
       if (remaining <= 0) continue;
 
-      // 查询预估 FIFO 批次
-      const batches = await this.inventoryBatchRepo
+      // 查询预估 FIFO 批次（按 productModelId 过滤，null 也算独立型号）
+      const batchQb = this.inventoryBatchRepo
         .createQueryBuilder('b')
         .where('b.productId = :productId', { productId: item.productId })
-        .andWhere('b.frozenQuantity > 0')
+        .andWhere('b.frozenQuantity > 0');
+
+      if (item.productModelId) {
+        batchQb.andWhere('b.productModelId = :productModelId', {
+          productModelId: item.productModelId,
+        });
+      } else {
+        batchQb.andWhere('b.productModelId IS NULL');
+      }
+
+      const batches = await batchQb
         .orderBy('b.inboundTime', 'ASC')
         .getMany();
 
@@ -231,10 +258,12 @@ export class ShipmentService {
       }
 
       previewItems.push({
+        ...item,
         orderItemId: item.id,
-        productId: item.productId,
-        unitPrice: item.unitPrice,
         remainingQuantity: remaining,
+        modelName: item.productModelId
+          ? modelNameMap.get(item.productModelId)
+          : undefined,
         batches: batchPreview,
         estimatedCost: batchPreview
           .reduce((s, b) => s + parseFloat(b.totalCost), 0)
@@ -243,8 +272,7 @@ export class ShipmentService {
     }
 
     return {
-      orderId,
-      orderNo: order.orderNo,
+      ...order,
       customerName: order.customerName,
       items: previewItems,
     };
@@ -259,13 +287,33 @@ export class ShipmentService {
 
     const items = await this.itemRepo.find({ where: { shipmentId: id } });
 
+    // 批量查询型号名称
+    const modelIds = items
+      .map((i) => i.productModelId)
+      .filter((id): id is string => !!id);
+    const modelNameMap = new Map<string, string>();
+    if (modelIds.length > 0) {
+      const models = await this.productModelRepo.find({
+        where: { id: In(modelIds) },
+      });
+      for (const m of models) {
+        modelNameMap.set(m.id, m.modelName);
+      }
+    }
+
     // 查询每个明细的批次
     const itemsWithBatches = await Promise.all(
       items.map(async (item) => {
         const batches = await this.batchRepo.find({
           where: { shipmentItemId: item.id },
         });
-        return { ...item, batches };
+        return {
+          ...item,
+          modelName: item.productModelId
+            ? modelNameMap.get(item.productModelId)
+            : undefined,
+          batches,
+        };
       }),
     );
 

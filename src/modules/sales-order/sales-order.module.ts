@@ -11,6 +11,7 @@ import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
 import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
 import { Payment } from '@/modules/payment/entities/payment.entity';
 import { Product } from '@/modules/product/entities/product.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { SalesOrderService } from './sales-order.service';
 import { SalesOrderCostService } from './sales-order-cost.service';
 import { SalesOrderController } from './sales-order.controller';
@@ -35,6 +36,7 @@ import { RateModule as CommonRateModule } from '@/common/rate/rate.module';
       CostType,
       Payment,
       Product,
+      ProductModel,
     ]),
     InventoryModule,
     CommonRateModule,

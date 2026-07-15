@@ -12,6 +12,7 @@ import { SalesOrderCost } from './entities/sales-order-cost.entity';
 import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
 import { Payment } from '@/modules/payment/entities/payment.entity';
 import { Product } from '@/modules/product/entities/product.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { snowflake } from '@/common/utils/snowflake';
 import type {
   CreateSalesOrderDto,
@@ -47,6 +48,8 @@ export class SalesOrderService {
     private readonly paymentRepo: Repository<Payment>,
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
+    @InjectRepository(ProductModel)
+    private readonly productModelRepo: Repository<ProductModel>,
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
@@ -472,7 +475,29 @@ export class SalesOrderService {
     if (!order) throw new BadRequestException('订单不存在');
 
     const items = await this.itemRepo.find({ where: { orderId: id } });
-    return { ...order, items };
+
+    // 批量查询型号名称
+    const modelIds = items
+      .map((i) => i.productModelId)
+      .filter((id): id is string => !!id);
+    const modelNameMap = new Map<string, string>();
+    if (modelIds.length > 0) {
+      const models = await this.productModelRepo.find({
+        where: { id: In(modelIds) },
+      });
+      for (const m of models) {
+        modelNameMap.set(m.id, m.modelName);
+      }
+    }
+
+    const itemsWithModel = items.map((item) => ({
+      ...item,
+      modelName: item.productModelId
+        ? modelNameMap.get(item.productModelId)
+        : undefined,
+    }));
+
+    return { ...order, items: itemsWithModel as any };
   }
 
   /**

@@ -6,6 +6,7 @@ import { ShipmentItemBatch } from './entities/shipment-item-batch.entity';
 import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
 import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { ShipmentService } from './shipment.service';
 import { ShipmentController } from './shipment.controller';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
@@ -24,6 +25,7 @@ import { SalesOrderModule } from '@/modules/sales-order/sales-order.module';
       SalesOrder,
       SalesOrderItem,
       InventoryBatch,
+      ProductModel,
     ]),
     InventoryModule,
     SalesOrderModule,

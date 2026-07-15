@@ -7,6 +7,7 @@ import { PurchaseReceiptItem } from './entities/purchase-receipt-item.entity';
 import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseReceiptService } from './purchase-receipt.service';
 import { PurchaseOrderController } from './purchase-order.controller';
@@ -27,6 +28,7 @@ import { RateModule as CommonRateModule } from '@/common/rate/rate.module';
       Inventory,
       InventoryBatch,
       InventoryFlow,
+      ProductModel,
     ]),
     CommonRateModule,
   ],

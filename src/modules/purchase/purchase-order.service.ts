@@ -1,8 +1,9 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository, In } from 'typeorm';
 import { PurchaseOrder } from './entities/purchase-order.entity';
 import { PurchaseOrderItem } from './entities/purchase-order-item.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { snowflake } from '@/common/utils/snowflake';
 import type {
@@ -23,6 +24,8 @@ export class PurchaseOrderService {
 		private readonly orderRepo: Repository<PurchaseOrder>,
 		@InjectRepository(PurchaseOrderItem)
 		private readonly itemRepo: Repository<PurchaseOrderItem>,
+		@InjectRepository(ProductModel)
+		private readonly productModelRepo: Repository<ProductModel>,
 		private readonly sequenceService: SequenceService,
 		private readonly rateService: RateService,
 		private readonly dataSource: DataSource,
@@ -193,7 +196,28 @@ export class PurchaseOrderService {
 		const items = await this.itemRepo.find({
 			where: { purchaseOrderId: id },
 		});
-		return { ...order, items };
+
+		// 批量查询型号名称
+		const modelIds = items
+			.map((i) => i.productModelId)
+			.filter((id): id is string => !!id);
+		const modelNameMap = new Map<string, string>();
+		if (modelIds.length > 0) {
+			const models = await this.productModelRepo.find({
+				where: { id: In(modelIds) },
+			});
+			for (const m of models) {
+				modelNameMap.set(m.id, m.modelName);
+			}
+		}
+		const itemsWithModel = items.map((item) => ({
+			...item,
+			modelName: item.productModelId
+				? modelNameMap.get(item.productModelId)
+				: undefined,
+		}));
+
+		return { ...order, items: itemsWithModel as any };
 	}
 
 	/**
