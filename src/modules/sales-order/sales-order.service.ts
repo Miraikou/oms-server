@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager, IsNull } from 'typeorm';
+import { Repository, DataSource, EntityManager, IsNull, In } from 'typeorm';
 import { SalesOrder } from './entities/sales-order.entity';
 import { SalesOrderItem } from './entities/sales-order-item.entity';
 import { SequenceService } from '@/common/services/sequence.service';
@@ -10,6 +10,8 @@ import { CommonContact } from '@/modules/common-contact/entities/common-contact.
 import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
 import { SalesOrderCost } from './entities/sales-order-cost.entity';
 import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
+import { Payment } from '@/modules/payment/entities/payment.entity';
+import { Product } from '@/modules/product/entities/product.entity';
 import { snowflake } from '@/common/utils/snowflake';
 import type {
   CreateSalesOrderDto,
@@ -41,6 +43,10 @@ export class SalesOrderService {
     private readonly costRepo: Repository<SalesOrderCost>,
     @InjectRepository(CostType)
     private readonly costTypeRepo: Repository<CostType>,
+    @InjectRepository(Payment)
+    private readonly paymentRepo: Repository<Payment>,
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
@@ -83,6 +89,15 @@ export class SalesOrderService {
       });
 
       // 3. 检查库存并对每个商品冻结
+      // 获取商品名称用于错误提示
+      const productIds = [...new Set(items.map((i) => i.productId))];
+      const products = await this.productRepo.find({
+        where: { id: In(productIds) },
+      });
+      const productNameMap = new Map(
+        products.map((p) => [p.id, p.productName]),
+      );
+
       for (const item of items) {
         const invWhere: any = { productId: item.productId };
         if (item.productModelId) {
@@ -93,14 +108,15 @@ export class SalesOrderService {
         const inventory = await manager.findOne(Inventory, {
           where: invWhere,
         });
+        const productName = productNameMap.get(item.productId) || item.productId;
         if (!inventory) {
-          throw new BadRequestException(`商品 ${item.productId} 无库存记录`);
+          throw new BadRequestException(`商品 ${productName} 无库存记录`);
         }
         const available = parseFloat(inventory.availableQuantity);
         const needed = parseFloat(item.quantity);
         if (available < needed) {
           throw new BadRequestException(
-            `商品 ${item.productId} 库存不足：需要 ${needed}，可用 ${available}`,
+            `商品 ${productName} 库存不足：需要 ${needed}，可用 ${available}`,
           );
         }
       }
@@ -158,7 +174,83 @@ export class SalesOrderService {
         );
       }
 
-      // 7. Upsert 常用联系人
+      // 7. 同步创建成本记录（可选）
+      if (dto.costs && dto.costs.length > 0) {
+        // 校验成本类型是否重复
+        const costTypeIds = dto.costs.map((c) => c.costTypeId);
+        const duplicateIds = costTypeIds.filter(
+          (id, index) => costTypeIds.indexOf(id) !== index,
+        );
+        if (duplicateIds.length > 0) {
+          const uniqueDuplicates = [...new Set(duplicateIds)];
+          const costTypes = await this.costTypeRepo.find({
+            where: { id: uniqueDuplicates as any },
+          });
+          const duplicateNames = costTypes.map((ct) => ct.costName).join('、');
+          throw new BadRequestException(
+            `成本类型重复：${duplicateNames}，每个订单同一成本类型只能添加一次`,
+          );
+        }
+
+        const costRepoTx = manager.getRepository(SalesOrderCost);
+        for (const costDto of dto.costs) {
+          const costCurrency = costDto.currency || 'CNY';
+          const costRate = await this.rateService.getRate(
+            dto.orderDate || new Date().toISOString().slice(0, 10),
+            costCurrency,
+          );
+          const costBaseAmount = (
+            parseFloat(costDto.amount) * parseFloat(costRate)
+          ).toFixed(2);
+
+          const cost = costRepoTx.create({
+            id: snowflake.nextId(),
+            orderId: savedOrder.id,
+            costTypeId: costDto.costTypeId,
+            amount: costDto.amount,
+            currency: costCurrency,
+            exchangeRate: costRate,
+            baseAmount: costBaseAmount,
+            remark: costDto.remark || null,
+          });
+          await costRepoTx.save(cost);
+        }
+      }
+
+      // 8. 同步创建收款记录（可选）
+      if (dto.payment) {
+        const paymentRepoTx = manager.getRepository(Payment);
+        const paymentCurrency = currency; // 收款币种 = 订单币种
+        const paymentRate = await this.rateService.getRate(
+          dto.payment.paymentDate,
+          paymentCurrency,
+        );
+        const paymentBaseAmount = (
+          parseFloat(dto.payment.amount) * parseFloat(paymentRate)
+        ).toFixed(2);
+
+        const paymentNo = await this.sequenceService.generate('SK');
+        const payment = paymentRepoTx.create({
+          id: snowflake.nextId(),
+          paymentNo,
+          type: 1,
+          orderId: savedOrder.id,
+          paymentDate: new Date(dto.payment.paymentDate),
+          amount: dto.payment.amount,
+          currency: paymentCurrency,
+          exchangeRate: paymentRate,
+          baseAmount: paymentBaseAmount,
+          paymentMethod: dto.payment.paymentMethod || null,
+          payer: dto.payment.payer || null,
+          remark: dto.payment.remark || null,
+        });
+        await paymentRepoTx.save(payment);
+
+        // 更新订单已收金额 + 重算三维状态
+        await this.updateReceivedAmount(savedOrder.id, dto.payment.amount, manager);
+      }
+
+      // 9. Upsert 常用联系人
       await this.upsertContact(dto.customerName, manager);
 
       this.logger.log(`订单创建成功: ${orderNo}`);
@@ -241,6 +333,14 @@ export class SalesOrderService {
         });
 
         // 检查库存
+        const productIds = [...new Set(newItems.map((i) => i.productId))];
+        const products = await this.productRepo.find({
+          where: { id: In(productIds) },
+        });
+        const productNameMap = new Map(
+          products.map((p) => [p.id, p.productName]),
+        );
+
         for (const item of newItems) {
           const invWhere: any = { productId: item.productId };
           if (item.productModelId) {
@@ -251,14 +351,15 @@ export class SalesOrderService {
           const inventory = await manager.findOne(Inventory, {
             where: invWhere,
           });
+          const productName = productNameMap.get(item.productId) || item.productId;
           if (!inventory) {
-            throw new BadRequestException(`商品 ${item.productId} 无库存记录`);
+            throw new BadRequestException(`商品 ${productName} 无库存记录`);
           }
           const available = parseFloat(inventory.availableQuantity);
           const needed = parseFloat(item.quantity);
           if (available < needed) {
             throw new BadRequestException(
-              `商品 ${item.productId} 库存不足：需要 ${needed}，可用 ${available}`,
+              `商品 ${productName} 库存不足：需要 ${needed}，可用 ${available}`,
             );
           }
         }
@@ -278,6 +379,56 @@ export class SalesOrderService {
 
         order.totalAmount = totalAmount.toFixed(2);
         order.totalBaseAmount = (totalAmount * parseFloat(exchangeRate)).toFixed(2);
+      }
+
+      // 同步成本记录（整体替换）
+      if (dto.costs !== undefined) {
+        const costRepoTx = manager.getRepository(SalesOrderCost);
+        
+        // 校验成本类型是否重复
+        if (dto.costs.length > 0) {
+          const costTypeIds = dto.costs.map((c) => c.costTypeId);
+          const duplicateIds = costTypeIds.filter(
+            (id, index) => costTypeIds.indexOf(id) !== index,
+          );
+          if (duplicateIds.length > 0) {
+            const uniqueDuplicates = [...new Set(duplicateIds)];
+            const costTypes = await this.costTypeRepo.find({
+              where: { id: uniqueDuplicates as any },
+            });
+            const duplicateNames = costTypes.map((ct) => ct.costName).join('、');
+            throw new BadRequestException(
+              `成本类型重复：${duplicateNames}，每个订单同一成本类型只能添加一次`,
+            );
+          }
+        }
+        
+        // 删除旧成本
+        await costRepoTx.delete({ orderId: id });
+        
+        // 创建新成本
+        const orderDateStr = dto.orderDate || (order.orderDate instanceof Date
+          ? order.orderDate.toISOString().slice(0, 10)
+          : order.orderDate);
+        for (const costDto of dto.costs) {
+          const costCurrency = costDto.currency || 'CNY';
+          const costRate = await this.rateService.getRate(orderDateStr, costCurrency);
+          const costBaseAmount = (
+            parseFloat(costDto.amount) * parseFloat(costRate)
+          ).toFixed(2);
+
+          const cost = costRepoTx.create({
+            id: snowflake.nextId(),
+            orderId: id,
+            costTypeId: costDto.costTypeId,
+            amount: costDto.amount,
+            currency: costCurrency,
+            exchangeRate: costRate,
+            baseAmount: costBaseAmount,
+            remark: costDto.remark || null,
+          });
+          await costRepoTx.save(cost);
+        }
       }
 
       // 客户名称变更时同步常用联系人
@@ -349,8 +500,7 @@ export class SalesOrderService {
   /**
    * 取消订单（含库存解冻）
    * - 待发货：释放全部冻结库存 → 取消订单
-   * - 部分发货：释放未发货部分 → 取消
-   * - 全部发货：拒绝取消，引导退货
+   * - 已发货：拒绝取消，引导退货
    * - 已收款/部分收款：提示需先退款
    * 整个操作在事务中完成，保证原子性
    */
@@ -366,8 +516,8 @@ export class SalesOrderService {
       throw new BadRequestException('订单已完成，无法取消');
     if (order.status === 3)
       throw new BadRequestException('订单已取消，请勿重复操作');
-    if (order.shipmentStatus === 3) {
-      throw new BadRequestException('订单已全部发货，无法取消，请走退货流程');
+    if (order.shipmentStatus === 2 || order.shipmentStatus === 3) {
+      throw new BadRequestException('订单已发货，无法取消，请走退货流程');
     }
     if (parseFloat(order.receivedAmount) > 0) {
       throw new BadRequestException('订单已有收款，请先完成退款后再取消');

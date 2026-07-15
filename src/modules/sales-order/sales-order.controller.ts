@@ -11,12 +11,15 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SalesOrderService } from './sales-order.service';
 import { SalesOrderCostService } from './sales-order-cost.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { PermissionGuard } from '@/common/guards/permission.guard';
 import { RequirePermission } from '@/common/decorators/require-permission.decorator';
+import { Payment } from '@/modules/payment/entities/payment.entity';
 import {
   CreateSalesOrderDto,
   UpdateSalesOrderDto,
@@ -33,6 +36,8 @@ export class SalesOrderController {
   constructor(
     private readonly orderService: SalesOrderService,
     private readonly costService: SalesOrderCostService,
+    @InjectRepository(Payment)
+    private readonly paymentRepo: Repository<Payment>,
   ) {}
 
   @Get()
@@ -42,12 +47,20 @@ export class SalesOrderController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '订单详情（含明细 + 成本 + 利润摘要）' })
+  @ApiOperation({ summary: '订单详情（含明细 + 成本 + 利润摘要 + 收退款）' })
   async findOne(@Param('id') id: string) {
     const order = await this.orderService.findOne(id);
     const costs = await this.costService.findByOrderId(id);
     const profitSummary = await this.orderService.getProfitSummary(id);
-    return { ...order, costs, profitSummary };
+    const payments = await this.paymentRepo.find({
+      where: { orderId: id, type: 1 },
+      order: { paymentDate: 'ASC' },
+    });
+    const refunds = await this.paymentRepo.find({
+      where: { orderId: id, type: 2 },
+      order: { paymentDate: 'ASC' },
+    });
+    return { ...order, items: order.items, costs, profitSummary, payments, refunds };
   }
 
   @Post()

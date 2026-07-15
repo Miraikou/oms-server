@@ -35,6 +35,57 @@ export class CreateSalesOrderItemDto {
   unitPrice: string;
 }
 
+/** 创建订单成本 DTO */
+export class CreateSalesOrderCostDto {
+  @ApiProperty({ description: '成本类型 ID' })
+  @IsString()
+  @IsNotEmpty({ message: '成本类型不能为空' })
+  costTypeId: string;
+
+  @ApiProperty({ description: '金额（原币种）' })
+  @IsString()
+  @IsNotEmpty({ message: '金额不能为空' })
+  amount: string;
+
+  @ApiPropertyOptional({ description: '币种，默认 CNY' })
+  @IsString()
+  @IsOptional()
+  currency?: string;
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
+  remark?: string;
+}
+
+/** 内联收款 DTO（随订单创建一起提交，orderId 从订单获取） */
+export class CreatePaymentInlineDto {
+  @ApiProperty({ description: '收款金额（订单币种）' })
+  @IsString()
+  @IsNotEmpty({ message: '收款金额不能为空' })
+  amount: string;
+
+  @ApiProperty({ description: '收款日期' })
+  @IsString()
+  @IsNotEmpty({ message: '收款日期不能为空' })
+  paymentDate: string;
+
+  @ApiPropertyOptional({ description: '收款方式' })
+  @IsString()
+  @IsOptional()
+  paymentMethod?: string;
+
+  @ApiPropertyOptional({ description: '付款方' })
+  @IsString()
+  @IsOptional()
+  payer?: string;
+
+  @ApiPropertyOptional({ description: '备注' })
+  @IsString()
+  @IsOptional()
+  remark?: string;
+}
+
 /** 创建订单 DTO */
 export class CreateSalesOrderDto {
   @ApiProperty({ description: '销售员 ID' })
@@ -90,6 +141,19 @@ export class CreateSalesOrderDto {
   @ValidateNested({ each: true })
   @Type(() => CreateSalesOrderItemDto)
   items: CreateSalesOrderItemDto[];
+
+  @ApiPropertyOptional({ description: '同步收款（可选）', type: CreatePaymentInlineDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreatePaymentInlineDto)
+  payment?: CreatePaymentInlineDto;
+
+  @ApiPropertyOptional({ description: '同步成本（可选）', type: [CreateSalesOrderCostDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSalesOrderCostDto)
+  costs?: CreateSalesOrderCostDto[];
 }
 
 /** 修改订单 DTO（仅待发货状态可修改） */
@@ -145,6 +209,13 @@ export class UpdateSalesOrderDto {
   @Type(() => CreateSalesOrderItemDto)
   @IsOptional()
   items?: CreateSalesOrderItemDto[];
+
+  @ApiPropertyOptional({ description: '同步新增成本（可选）', type: [CreateSalesOrderCostDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSalesOrderCostDto)
+  costs?: CreateSalesOrderCostDto[];
 }
 
 /** 订单查询 DTO */
@@ -186,29 +257,6 @@ export class QuerySalesOrderDto extends PaginationParamsDto {
   @IsString()
   @IsOptional()
   endDate?: string;
-}
-
-/** 创建订单成本 DTO */
-export class CreateSalesOrderCostDto {
-  @ApiProperty({ description: '成本类型 ID' })
-  @IsString()
-  @IsNotEmpty({ message: '成本类型不能为空' })
-  costTypeId: string;
-
-  @ApiProperty({ description: '金额（原币种）' })
-  @IsString()
-  @IsNotEmpty({ message: '金额不能为空' })
-  amount: string;
-
-  @ApiPropertyOptional({ description: '币种，默认 CNY' })
-  @IsString()
-  @IsOptional()
-  currency?: string;
-
-  @ApiPropertyOptional({ description: '备注' })
-  @IsString()
-  @IsOptional()
-  remark?: string;
 }
 
 /** 修改订单成本 DTO */
