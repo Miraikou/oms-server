@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  IsBoolean,
   ValidateNested,
   IsIn,
 } from 'class-validator';
@@ -48,6 +49,25 @@ export class CreateSalesReturnDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @ApiPropertyOptional({ description: '是否退款', default: false })
+  @IsBoolean()
+  refund: boolean = false;
+
+  @ApiPropertyOptional({ description: '退款方式' })
+  @IsString()
+  @IsOptional()
+  paymentMethod?: string;
+
+  @ApiPropertyOptional({ description: '退货成本（可为 0）', default: '0' })
+  @IsString()
+  @IsOptional()
+  returnCost?: string;
+
+  @ApiPropertyOptional({ description: '退货成本币种', default: 'CNY' })
+  @IsString()
+  @IsOptional()
+  returnCostCurrency?: string;
 
   @ApiProperty({ description: '退货明细', type: [CreateSalesReturnItemDto] })
   @IsArray({ message: '退货明细不能为空' })

@@ -10,9 +10,13 @@ import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity';
 import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
+import { Payment } from '@/modules/payment/entities/payment.entity';
+import { SalesOrderCost } from '@/modules/sales-order/entities/sales-order-cost.entity';
+import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { RateService } from '@/common/rate/rate.service';
 import type {
   CreateSalesReturnDto,
   QuerySalesReturnDto,
@@ -45,8 +49,15 @@ export class SalesReturnService {
     private readonly orderRepo: Repository<SalesOrder>,
     @InjectRepository(SalesOrderItem)
     private readonly orderItemRepo: Repository<SalesOrderItem>,
+    @InjectRepository(Payment)
+    private readonly paymentRepo: Repository<Payment>,
+    @InjectRepository(SalesOrderCost)
+    private readonly costRepo: Repository<SalesOrderCost>,
+    @InjectRepository(CostType)
+    private readonly costTypeRepo: Repository<CostType>,
     private readonly sequenceService: SequenceService,
     private readonly salesOrderService: SalesOrderService,
+    private readonly rateService: RateService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -132,12 +143,16 @@ export class SalesReturnService {
           });
           const returnQty = parseFloat(dtoItem.quantity);
           let remaining = returnQty;
+          let costReduction = 0;
 
           // 按原批次比例恢复
           for (const sb of shipBatches) {
             if (remaining <= 0) break;
             const batchQty = parseFloat(sb.quantity);
             const toRestore = Math.min(batchQty, remaining);
+
+            // 按该批次实际成本累加扣减
+            costReduction += toRestore * parseFloat(sb.unitCostBase || '0');
 
             // 恢复库存批次
             const batch = await manager.findOne(InventoryBatch, {
@@ -209,6 +224,18 @@ export class SalesReturnService {
 
             remaining -= toRestore;
           }
+
+          // 扣减该发货明细的产品成本（CNY）
+          if (costReduction > 0 && shipItem) {
+            shipItem.totalCost = (
+              parseFloat(shipItem.totalCost) - costReduction
+            ).toFixed(2);
+            shipItem.grossProfit = (
+              parseFloat(shipItem.salesBaseAmount) -
+              parseFloat(shipItem.totalCost)
+            ).toFixed(2);
+            await manager.save(shipItem);
+          }
         }
 
         // 5. 更新订单明细 returnedQuantity（精确到发货明细对应的 orderItemId）
@@ -224,8 +251,132 @@ export class SalesReturnService {
         }
       }
 
-      // 6. 重算订单发货状态（退货减少净发货量，可能改变 shipmentStatus）
+      // 6. 退款处理 + 退货成本
+      let refundAmountStr: string | null = null;
+      let refundPaymentId: string | null = null;
+
+      if (dto.refund) {
+        // 计算退款金额 = SUM(退货数量 × 发货明细销售单价)
+        let refundTotal = 0;
+        for (const dtoItem of dto.items) {
+          const shipItem = await manager.findOne(ShipmentItem, {
+            where: { id: dtoItem.shipmentItemId },
+          });
+          if (shipItem) {
+            refundTotal +=
+              parseFloat(dtoItem.quantity) *
+              parseFloat(shipItem.salesUnitPrice);
+          }
+        }
+
+        // 校验退款金额不超过已收金额
+        const received = parseFloat(order.receivedAmount);
+        if (refundTotal > received + 0.01) {
+          throw new BadRequestException(
+            `退款金额（${refundTotal.toFixed(2)}）超过已收金额（${received.toFixed(2)}）`,
+          );
+        }
+
+        // 创建退款记录
+        const paymentNo = await this.sequenceService.generate('TK');
+        const rate = parseFloat(order.exchangeRate || '1');
+        const payment = manager.create(Payment, {
+          id: snowflake.nextId(),
+          paymentNo,
+          type: 2, // 退款
+          orderId: dto.orderId,
+          paymentDate: new Date(dto.returnDate),
+          amount: refundTotal.toFixed(2),
+          exchangeRate: order.exchangeRate,
+          baseAmount: (refundTotal * rate).toFixed(2),
+          currency: order.currency || 'USD',
+          paymentMethod: dto.paymentMethod || null,
+          remark: '客户退货',
+        });
+        const savedPayment = await manager.save(payment);
+
+        // 扣减已收金额
+        await this.salesOrderService.decreaseReceivedAmount(
+          dto.orderId,
+          refundTotal.toFixed(2),
+          manager,
+        );
+
+        refundAmountStr = refundTotal.toFixed(2);
+        refundPaymentId = savedPayment.id;
+      }
+
+      // 7. 退货成本累加到 SalesOrderCost
+      const returnCostVal = parseFloat(dto.returnCost || '0');
+      if (returnCostVal > 0) {
+        const costCurrency = dto.returnCostCurrency || 'CNY';
+        // 通过 RateService 查询实际汇率（不信任前端）
+        const costRate =
+          costCurrency === 'CNY'
+            ? '1'
+            : await this.rateService.getRate(
+                new Date(order.orderDate).toISOString().slice(0, 10),
+                costCurrency,
+              );
+        const costRateNum = parseFloat(costRate);
+        const costBaseAmount = returnCostVal * costRateNum;
+
+        // 查找或创建"客户退货成本"成本类型
+        let costType = await this.costTypeRepo.findOne({
+          where: { costName: '客户退货成本' },
+        });
+        if (!costType) {
+          costType = await manager.save(
+            this.costTypeRepo.create({
+              id: snowflake.nextId(),
+              costName: '客户退货成本',
+              sortNo: 999,
+              status: 1,
+            }),
+          );
+        }
+
+        const existingCost = await manager.findOne(SalesOrderCost, {
+          where: { orderId: dto.orderId, costTypeId: costType.id },
+        });
+
+        if (existingCost) {
+          const existAmt = parseFloat(existingCost.amount);
+          // 同币种直接累加，跨币种才需要折算
+          const addAmt =
+            costCurrency === existingCost.currency
+              ? returnCostVal
+              : costBaseAmount / parseFloat(existingCost.exchangeRate);
+
+          const newAmt = existAmt + addAmt;
+          const newBase = parseFloat(existingCost.baseAmount) + costBaseAmount;
+          existingCost.amount = newAmt.toFixed(2);
+          existingCost.baseAmount = newBase.toFixed(2);
+          existingCost.exchangeRate =
+            newAmt > 0 ? (newBase / newAmt).toFixed(4) : '1';
+          await manager.save(existingCost);
+        } else {
+          // 新建成本记录
+          const cost = manager.create(SalesOrderCost, {
+            id: snowflake.nextId(),
+            orderId: dto.orderId,
+            costTypeId: costType.id,
+            amount: returnCostVal.toFixed(2),
+            baseAmount: costBaseAmount.toFixed(2),
+            currency: costCurrency,
+            exchangeRate: costRate,
+          });
+          await manager.save(cost);
+        }
+      }
+
+      // 8. 重算订单发货状态（退货减少净发货量，可能改变 shipmentStatus）
       await this.salesOrderService.recalculateStatus(dto.orderId, manager);
+
+      // 回写退款信息到退货单
+      savedReturn.refundAmount = refundAmountStr;
+      savedReturn.refundPaymentId = refundPaymentId;
+      await manager.save(savedReturn);
 
       this.logger.log(`客户退货完成: ${returnNo}, 订单: ${order.orderNo}`);
       return savedReturn;
@@ -251,7 +402,10 @@ export class SalesReturnService {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
 
-    const qb = this.returnRepo.createQueryBuilder('r');
+    const qb = this.returnRepo
+      .createQueryBuilder('r')
+      .leftJoin(SalesOrder, 'o', 'o.id = r.order_id')
+      .addSelect('o.order_no', 'orderNo');
 
     if (query.returnNo) {
       qb.andWhere('r.returnNo LIKE :no', { no: `%${query.returnNo}%` });
@@ -272,7 +426,13 @@ export class SalesReturnService {
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
-    const [list, total] = await qb.getManyAndCount();
-    return { list, total, page, pageSize };
+    const { entities, raw: rawResults } = await qb.getRawAndEntities();
+
+    const list = entities.map((entity, index) => ({
+      ...entity,
+      orderNo: rawResults[index]?.orderNo || null,
+    }));
+
+    return { list, total: await qb.getCount(), page, pageSize };
   }
 }

@@ -35,4 +35,22 @@ export class SalesReturn extends BaseEntity {
 
   @Column({ type: 'varchar', length: 200, nullable: true, comment: '退货原因' })
   reason: string | null = null;
+
+  @Column({
+    name: 'refund_amount',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '退款金额（原币种），null 表示未退款',
+  })
+  refundAmount: string | null = null;
+
+  @Column({
+    name: 'refund_payment_id',
+    type: 'bigint',
+    nullable: true,
+    comment: '关联的退款 Payment ID',
+  })
+  refundPaymentId: string | null = null;
 }

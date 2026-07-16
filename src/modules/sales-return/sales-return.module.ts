@@ -9,9 +9,14 @@ import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity';
 import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
+import { Payment } from '@/modules/payment/entities/payment.entity';
+import { SalesOrderCost } from '@/modules/sales-order/entities/sales-order-cost.entity';
+import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
 import { SalesReturnService } from './sales-return.service';
 import { SalesReturnController } from './sales-return.controller';
 import { SalesOrderModule } from '@/modules/sales-order/sales-order.module';
+import { PaymentModule } from '@/modules/payment/payment.module';
+import { RateModule } from '@/common/rate/rate.module';
 
 /**
  * 客户退货模块
@@ -28,8 +33,13 @@ import { SalesOrderModule } from '@/modules/sales-order/sales-order.module';
       InventoryFlow,
       SalesOrder,
       SalesOrderItem,
+      Payment,
+      SalesOrderCost,
+      CostType,
     ]),
     SalesOrderModule,
+    PaymentModule,
+    RateModule,
   ],
   controllers: [SalesReturnController],
   providers: [SalesReturnService],

@@ -12,8 +12,12 @@ import { Inventory } from '@/modules/inventory/entities/inventory.entity'
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity'
 import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity'
 import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity'
+import { Payment } from '@/modules/payment/entities/payment.entity'
+import { SalesOrderCost } from '@/modules/sales-order/entities/sales-order-cost.entity'
+import { CostType } from '@/modules/cost-type/entities/cost-type.entity'
 import { SequenceService } from '@/common/services/sequence.service'
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service'
+import { RateService } from '@/common/rate/rate.service'
 import type { CreateSalesReturnDto, QuerySalesReturnDto } from '../dto/sales-return.dto'
 
 // Mock snowflake
@@ -71,6 +75,10 @@ const mockSequenceService = {
 
 const mockSalesOrderService = {}
 
+const mockRateService = {
+  getRate: jest.fn().mockResolvedValue('1'),
+}
+
 // ========== 测试数据 ==========
 const mockOrder = {
   id: '202601010001',
@@ -121,6 +129,7 @@ const validDto: CreateSalesReturnDto = {
   restoreInventory: 1,
   reason: '质量问题',
   remark: undefined,
+  refund: false,
   items: [{ shipmentItemId: 'SI001', quantity: '5' }],
 }
 
@@ -140,8 +149,12 @@ describe('SalesReturnService', () => {
         { provide: getRepositoryToken(InventoryFlow), useValue: mockFlowRepo },
         { provide: getRepositoryToken(SalesOrder), useValue: mockOrderRepo },
         { provide: getRepositoryToken(SalesOrderItem), useValue: mockOrderItemRepo },
+        { provide: getRepositoryToken(Payment), useValue: {} },
+        { provide: getRepositoryToken(SalesOrderCost), useValue: {} },
+        { provide: getRepositoryToken(CostType), useValue: {} },
         { provide: SequenceService, useValue: mockSequenceService },
         { provide: SalesOrderService, useValue: mockSalesOrderService },
+        { provide: RateService, useValue: mockRateService },
         { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile()
