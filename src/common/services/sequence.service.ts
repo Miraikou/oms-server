@@ -21,7 +21,8 @@ export type BizType =
   | 'BT' // 库存批次
   | 'CP' // 商品编码
   | 'SP' // 销售员编码
-  | 'GYS'; // 供应商编码
+  | 'GYS' // 供应商编码
+  | 'TK'; // 退款单
 
 /** 永久流水类型（不含日期） */
 const PERMANENT_TYPES: Set<string> = new Set(['CP', 'SP', 'GYS']);

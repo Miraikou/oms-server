@@ -8,6 +8,8 @@ import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.
 import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
 import { ProductModel } from '@/modules/product/entities/product-model.entity';
+import { Product } from '@/modules/product/entities/product.entity';
+import { SalesReturnItem } from '@/modules/sales-return/entities/sales-return-item.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
@@ -301,21 +303,79 @@ export class ShipmentService {
       }
     }
 
-    // 查询每个明细的批次
-    const itemsWithBatches = await Promise.all(
-      items.map(async (item) => {
-        const batches = await this.batchRepo.find({
-          where: { shipmentItemId: item.id },
-        });
-        return {
-          ...item,
-          modelName: item.productModelId
-            ? modelNameMap.get(item.productModelId)
-            : undefined,
-          batches,
-        };
-      }),
-    );
+    // 批量查询商品名称
+    const productIds = items
+      .map((i) => i.productId)
+      .filter((id): id is string => !!id);
+    const productNameMap = new Map<string, string>();
+    if (productIds.length > 0) {
+      const products = await this.dataSource
+        .createQueryBuilder()
+        .select('p.id, p.product_name')
+        .from(Product, 'p')
+        .whereInIds(productIds)
+        .getRawMany();
+      for (const p of products) {
+        productNameMap.set(p.id, p.product_name);
+      }
+    }
+
+    // 批量查询所有明细的批次
+    const itemIds = items.map((i) => i.id);
+    const allBatches = itemIds.length > 0
+      ? await this.batchRepo.find({
+          where: { shipmentItemId: In(itemIds) },
+        })
+      : [];
+
+    // 批量查询批次号
+    const batchIds = [...new Set(allBatches.map((b) => b.inventoryBatchId))];
+    const batchNoMap = new Map<string, string>();
+    if (batchIds.length > 0) {
+      const invBatches = await this.inventoryBatchRepo.find({
+        where: { id: In(batchIds) },
+        select: { id: true, batchNo: true },
+      });
+      for (const ib of invBatches) {
+        batchNoMap.set(ib.id, ib.batchNo);
+      }
+    }
+
+    // 按 shipmentItemId 分组，附加 batchNo
+    const batchMap = new Map<string, any[]>();
+    for (const b of allBatches) {
+      if (!batchMap.has(b.shipmentItemId)) batchMap.set(b.shipmentItemId, []);
+      batchMap.get(b.shipmentItemId)!.push({
+        ...b,
+        batchNo: batchNoMap.get(b.inventoryBatchId),
+      });
+    }
+
+    // 联表查询每个明细的已退数量
+    const returnedQtyMap = new Map<string, number>();
+    if (itemIds.length > 0) {
+      const returnAgg = await this.dataSource
+        .createQueryBuilder()
+        .select('ri.shipment_item_id', 'shipmentItemId')
+        .addSelect('SUM(ri.quantity)', 'totalReturned')
+        .from(SalesReturnItem, 'ri')
+        .where('ri.shipment_item_id IN (:...itemIds)', { itemIds })
+        .groupBy('ri.shipment_item_id')
+        .getRawMany();
+      for (const r of returnAgg) {
+        returnedQtyMap.set(r.shipmentItemId, parseFloat(r.totalReturned));
+      }
+    }
+
+    const itemsWithBatches = items.map((item) => ({
+      ...item,
+      productName: productNameMap.get(item.productId) || undefined,
+      modelName: item.productModelId
+        ? modelNameMap.get(item.productModelId)
+        : undefined,
+      returnedQty: returnedQtyMap.get(item.id) || 0,
+      batches: batchMap.get(item.id) || [],
+    }));
 
     return { ...shipment, items: itemsWithBatches };
   }

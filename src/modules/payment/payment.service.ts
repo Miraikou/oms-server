@@ -138,7 +138,7 @@ export class PaymentService {
 			}
 
 			// 3. 生成退款单号（复用 SK 前缀）
-			const paymentNo = await this.sequenceService.generate('SK');
+			const paymentNo = await this.sequenceService.generate('TK');
 
 			const currency = order.currency || 'USD';
 			const exchangeRate = await this.rateService.getRate(
