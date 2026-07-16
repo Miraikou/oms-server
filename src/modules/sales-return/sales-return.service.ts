@@ -1,10 +1,11 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { SalesReturn } from './entities/sales-return.entity';
 import { SalesReturnItem } from './entities/sales-return-item.entity';
 import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
 import { ShipmentItemBatch } from '@/modules/shipment/entities/shipment-item-batch.entity';
+import { Shipment } from '@/modules/shipment/entities/shipment.entity';
 import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
 import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity';
@@ -13,6 +14,8 @@ import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.
 import { Payment } from '@/modules/payment/entities/payment.entity';
 import { SalesOrderCost } from '@/modules/sales-order/entities/sales-order-cost.entity';
 import { CostType } from '@/modules/cost-type/entities/cost-type.entity';
+import { Product } from '@/modules/product/entities/product.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { snowflake } from '@/common/utils/snowflake';
@@ -389,10 +392,122 @@ export class SalesReturnService {
   async findOne(id: string) {
     const ret = await this.returnRepo.findOne({ where: { id } });
     if (!ret) throw new BadRequestException('退货单不存在');
+
     const items = await this.returnItemRepo.find({
       where: { salesReturnId: id },
     });
-    return { ...ret, items };
+
+    // 联表查 orderNo + currency
+    const order = await this.dataSource
+      .createQueryBuilder()
+      .select('o.id, o.order_no, o.currency')
+      .from(SalesOrder, 'o')
+      .where('o.id = :orderId', { orderId: ret.orderId })
+      .getRawOne();
+    const orderNo = order?.order_no || null;
+    const currency = order?.currency || null;
+
+    // 查退货产生额外成本
+    const returnCostRow = await this.dataSource
+      .createQueryBuilder()
+      .select('c.amount', 'amount')
+      .addSelect('c.currency', 'currency')
+      .from(SalesOrderCost, 'c')
+      .innerJoin(CostType, 'ct', 'ct.id = c.cost_type_id')
+      .where('c.order_id = :orderId', { orderId: ret.orderId })
+      .andWhere("ct.cost_name = '客户退货成本'")
+      .getRawOne();
+    const returnCost = returnCostRow?.amount || null;
+    const returnCostCurrency = returnCostRow?.currency || null;
+
+    // 批量查商品名称
+    const productIds = items
+      .map((i) => i.productId)
+      .filter((id): id is string => !!id);
+    const productNameMap = new Map<string, string>();
+    if (productIds.length > 0) {
+      const products = await this.dataSource
+        .createQueryBuilder()
+        .select('p.id, p.product_name')
+        .from(Product, 'p')
+        .where('p.id IN (:...ids)', { ids: productIds })
+        .getRawMany();
+      for (const p of products) productNameMap.set(p.id, p.product_name);
+    }
+
+    // 批量查型号名称
+    const modelIds = items
+      .map((i) => i.productModelId)
+      .filter((id): id is string => !!id);
+    const modelNameMap = new Map<string, string>();
+    if (modelIds.length > 0) {
+      const models = await this.dataSource
+        .createQueryBuilder()
+        .select('m.id, m.model_name')
+        .from(ProductModel, 'm')
+        .where('m.id IN (:...ids)', { ids: modelIds })
+        .getRawMany();
+      for (const m of models) modelNameMap.set(m.id, m.model_name);
+    }
+
+    // 批量查发货明细（salesUnitPrice + currency + shipmentId）
+    const shipItemIds = items
+      .map((i) => i.shipmentItemId)
+      .filter((id): id is string => !!id);
+    const shipItemMap = new Map<string, { salesUnitPrice: string; currency: string; shipmentId: string }>();
+    if (shipItemIds.length > 0) {
+      const shipItems = await this.dataSource
+        .createQueryBuilder()
+        .select('si.id, si.sales_unit_price, si.currency, si.shipment_id')
+        .from(ShipmentItem, 'si')
+        .where('si.id IN (:...ids)', { ids: shipItemIds })
+        .getRawMany();
+      for (const si of shipItems) {
+        shipItemMap.set(si.id, {
+          salesUnitPrice: si.sales_unit_price,
+          currency: si.currency,
+          shipmentId: si.shipment_id,
+        });
+      }
+    }
+
+    // 批量查发货单号
+    const shipmentIds = [...new Set(
+      [...shipItemMap.values()].map((v) => v.shipmentId),
+    )];
+    const shipmentNoMap = new Map<string, string>();
+    if (shipmentIds.length > 0) {
+      const shipments = await this.dataSource
+        .createQueryBuilder()
+        .select('s.id, s.shipment_no')
+        .from(Shipment, 's')
+        .where('s.id IN (:...ids)', { ids: shipmentIds })
+        .getRawMany();
+      for (const s of shipments) shipmentNoMap.set(s.id, s.shipment_no);
+    }
+
+    const enrichedItems = items.map((item) => {
+      const si = shipItemMap.get(item.shipmentItemId);
+      return {
+        ...item,
+        productName: productNameMap.get(item.productId) || undefined,
+        modelName: item.productModelId
+          ? modelNameMap.get(item.productModelId)
+          : undefined,
+        salesUnitPrice: si?.salesUnitPrice || undefined,
+        currency: si?.currency || undefined,
+        shipmentNo: si ? shipmentNoMap.get(si.shipmentId) : undefined,
+      };
+    });
+
+    return {
+      ...ret,
+      orderNo,
+      currency,
+      returnCost,
+      returnCostCurrency,
+      items: enrichedItems,
+    };
   }
 
   /**
@@ -405,7 +520,8 @@ export class SalesReturnService {
     const qb = this.returnRepo
       .createQueryBuilder('r')
       .leftJoin(SalesOrder, 'o', 'o.id = r.order_id')
-      .addSelect('o.order_no', 'orderNo');
+      .addSelect('o.order_no', 'orderNo')
+      .addSelect('o.currency', 'currency');
 
     if (query.returnNo) {
       qb.andWhere('r.returnNo LIKE :no', { no: `%${query.returnNo}%` });
@@ -428,10 +544,38 @@ export class SalesReturnService {
 
     const { entities, raw: rawResults } = await qb.getRawAndEntities();
 
-    const list = entities.map((entity, index) => ({
-      ...entity,
-      orderNo: rawResults[index]?.orderNo || null,
-    }));
+    // 批量查询"客户退货成本"
+    const orderIds = [...new Set(entities.map((e) => e.orderId))];
+    const returnCostMap = new Map<string, { amount: string; currency: string }>();
+    if (orderIds.length > 0) {
+      const costs = await this.dataSource
+        .createQueryBuilder()
+        .select('c.order_id', 'orderId')
+        .addSelect('c.amount', 'amount')
+        .addSelect('c.currency', 'currency')
+        .from(SalesOrderCost, 'c')
+        .innerJoin(CostType, 'ct', 'ct.id = c.cost_type_id')
+        .where('c.order_id IN (:...orderIds)', { orderIds })
+        .andWhere("ct.cost_name = '客户退货成本'")
+        .getRawMany();
+      for (const c of costs) {
+        returnCostMap.set(c.orderId, {
+          amount: c.amount,
+          currency: c.currency,
+        });
+      }
+    }
+
+    const list = entities.map((entity, index) => {
+      const rc = returnCostMap.get(entity.orderId);
+      return {
+        ...entity,
+        orderNo: rawResults[index]?.orderNo || null,
+        currency: rawResults[index]?.currency || null,
+        returnCost: rc?.amount || null,
+        returnCostCurrency: rc?.currency || null,
+      };
+    });
 
     return { list, total: await qb.getCount(), page, pageSize };
   }
