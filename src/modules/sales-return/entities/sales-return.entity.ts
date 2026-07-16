@@ -53,4 +53,23 @@ export class SalesReturn extends BaseEntity {
     comment: '关联的退款 Payment ID',
   })
   refundPaymentId: string | null = null;
+
+  @Column({
+    name: 'return_cost',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '本次退货产生额外成本，null 表示无',
+  })
+  returnCost: string | null = null;
+
+  @Column({
+    name: 'return_cost_currency',
+    type: 'varchar',
+    length: 10,
+    nullable: true,
+    comment: '退货成本币种',
+  })
+  returnCostCurrency: string | null = null;
 }

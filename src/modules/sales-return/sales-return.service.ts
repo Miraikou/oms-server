@@ -113,6 +113,7 @@ export class SalesReturnService {
 
       // 3. 创建退货单 + 明细
       const returnNo = await this.sequenceService.generate('TH');
+      const returnCostVal = parseFloat(dto.returnCost || '0');
       const salesReturn = manager.create(SalesReturn, {
         id: snowflake.nextId(),
         returnNo,
@@ -121,6 +122,9 @@ export class SalesReturnService {
         restoreInventory: dto.restoreInventory,
         reason: dto.reason || null,
         remark: dto.remark || null,
+        returnCost: returnCostVal > 0 ? returnCostVal.toFixed(2) : null,
+        returnCostCurrency:
+          returnCostVal > 0 ? (dto.returnCostCurrency || 'CNY') : null,
       });
       const savedReturn = await manager.save(salesReturn);
 
@@ -310,7 +314,6 @@ export class SalesReturnService {
       }
 
       // 7. 退货成本累加到 SalesOrderCost
-      const returnCostVal = parseFloat(dto.returnCost || '0');
       if (returnCostVal > 0) {
         const costCurrency = dto.returnCostCurrency || 'CNY';
         // 通过 RateService 查询实际汇率（不信任前端）
@@ -407,19 +410,6 @@ export class SalesReturnService {
     const orderNo = order?.order_no || null;
     const currency = order?.currency || null;
 
-    // 查退货产生额外成本
-    const returnCostRow = await this.dataSource
-      .createQueryBuilder()
-      .select('c.amount', 'amount')
-      .addSelect('c.currency', 'currency')
-      .from(SalesOrderCost, 'c')
-      .innerJoin(CostType, 'ct', 'ct.id = c.cost_type_id')
-      .where('c.order_id = :orderId', { orderId: ret.orderId })
-      .andWhere("ct.cost_name = '客户退货成本'")
-      .getRawOne();
-    const returnCost = returnCostRow?.amount || null;
-    const returnCostCurrency = returnCostRow?.currency || null;
-
     // 批量查商品名称
     const productIds = items
       .map((i) => i.productId)
@@ -504,8 +494,6 @@ export class SalesReturnService {
       ...ret,
       orderNo,
       currency,
-      returnCost,
-      returnCostCurrency,
       items: enrichedItems,
     };
   }
@@ -544,38 +532,11 @@ export class SalesReturnService {
 
     const { entities, raw: rawResults } = await qb.getRawAndEntities();
 
-    // 批量查询"客户退货成本"
-    const orderIds = [...new Set(entities.map((e) => e.orderId))];
-    const returnCostMap = new Map<string, { amount: string; currency: string }>();
-    if (orderIds.length > 0) {
-      const costs = await this.dataSource
-        .createQueryBuilder()
-        .select('c.order_id', 'orderId')
-        .addSelect('c.amount', 'amount')
-        .addSelect('c.currency', 'currency')
-        .from(SalesOrderCost, 'c')
-        .innerJoin(CostType, 'ct', 'ct.id = c.cost_type_id')
-        .where('c.order_id IN (:...orderIds)', { orderIds })
-        .andWhere("ct.cost_name = '客户退货成本'")
-        .getRawMany();
-      for (const c of costs) {
-        returnCostMap.set(c.orderId, {
-          amount: c.amount,
-          currency: c.currency,
-        });
-      }
-    }
-
-    const list = entities.map((entity, index) => {
-      const rc = returnCostMap.get(entity.orderId);
-      return {
-        ...entity,
-        orderNo: rawResults[index]?.orderNo || null,
-        currency: rawResults[index]?.currency || null,
-        returnCost: rc?.amount || null,
-        returnCostCurrency: rc?.currency || null,
-      };
-    });
+    const list = entities.map((entity, index) => ({
+      ...entity,
+      orderNo: rawResults[index]?.orderNo || null,
+      currency: rawResults[index]?.currency || null,
+    }));
 
     return { list, total: await qb.getCount(), page, pageSize };
   }
