@@ -6,6 +6,7 @@ import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { computeDualAmounts } from '@/common/utils/dual-currency';
 import type {
 	CreatePaymentDto,
 	CreateRefundDto,
@@ -61,11 +62,11 @@ export class PaymentService {
 			}
 
 			// 2. 校验不超额（微元整数运算，避免浮点精度问题）
-			const totalMicro = toMicroUnits(order.totalAmount);
-			const receivedMicro = toMicroUnits(order.receivedAmount);
+			const totalMicro = toMicroUnits(order.totalAmountUsd);
+			const receivedMicro = toMicroUnits(order.receivedAmountUsd);
 			if (receivedMicro + amountMicro > totalMicro) {
 				throw new BadRequestException(
-					`收款金额超出订单金额：订单 ${order.totalAmount}，已收 ${order.receivedAmount}，本次 ${dto.amount}`,
+					`收款金额超出订单金额：订单 ${order.totalAmountUsd}，已收 ${order.receivedAmountUsd}，本次 ${dto.amount}`,
 				);
 			}
 
@@ -77,7 +78,7 @@ export class PaymentService {
 				dto.paymentDate,
 				currency,
 			);
-			const baseAmount = (parseFloat(dto.amount) * parseFloat(exchangeRate)).toFixed(2);
+			const dualAmounts = computeDualAmounts(dto.amount, currency, exchangeRate);
 
 			// 4. 创建 Payment 记录
 			const payment = paymentRepo.create({
@@ -86,10 +87,10 @@ export class PaymentService {
 				type: 1,
 				orderId: dto.orderId,
 				paymentDate: new Date(dto.paymentDate),
-				amount: dto.amount,
+				amountUsd: dualAmounts.amountUsd,
 				currency,
 				exchangeRate,
-				baseAmount,
+				amountCny: dualAmounts.amountCny,
 				paymentMethod: dto.paymentMethod || null,
 				payer: dto.payer || null,
 				remark: dto.remark || null,
@@ -110,9 +111,10 @@ export class PaymentService {
 						salesOrderId: order.id,
 						paymentId: savedPayment.id,
 						salespersonId: order.salespersonId,
-						orderAmount: order.totalAmount,
-						receivedAmount: dto.amount,
-						receivedBaseAmount: baseAmount,
+						orderAmountUsd: order.totalAmountUsd,
+						orderAmountCny: order.totalAmountCny,
+						receivedAmountUsd: dualAmounts.amountUsd,
+						receivedAmountCny: dualAmounts.amountCny,
 						currency,
 						exchangeRate,
 					},
@@ -146,13 +148,13 @@ export class PaymentService {
 			if (!order) throw new BadRequestException('订单不存在');
 
 			// 2. 校验可退金额（已收金额 > 0）
-			const receivedMicro = toMicroUnits(order.receivedAmount);
+			const receivedMicro = toMicroUnits(order.receivedAmountUsd);
 			if (receivedMicro <= 0) {
 				throw new BadRequestException('该订单无已收款，无法退款');
 			}
 			if (amountMicro > receivedMicro) {
 				throw new BadRequestException(
-					`退款金额超出已收金额：已收 ${order.receivedAmount}，本次退 ${dto.amount}`,
+					`退款金额超出已收金额：已收 ${order.receivedAmountUsd}，本次退 ${dto.amount}`,
 				);
 			}
 
@@ -164,7 +166,7 @@ export class PaymentService {
 				dto.paymentDate,
 				currency,
 			);
-			const baseAmount = (parseFloat(dto.amount) * parseFloat(exchangeRate)).toFixed(2);
+			const dualAmounts = computeDualAmounts(dto.amount, currency, exchangeRate);
 
 			// 4. 创建退款记录
 			const payment = paymentRepo.create({
@@ -173,10 +175,10 @@ export class PaymentService {
 				type: 2,
 				orderId: dto.orderId,
 				paymentDate: new Date(dto.paymentDate),
-				amount: dto.amount,
+				amountUsd: dualAmounts.amountUsd,
 				currency,
 				exchangeRate,
-				baseAmount,
+				amountCny: dualAmounts.amountCny,
 				paymentMethod: dto.paymentMethod || null,
 				payer: dto.payer || null,
 				remark: dto.remark || null,
@@ -198,9 +200,10 @@ export class PaymentService {
 						paymentId: savedPayment.id,
 						salesReturnId: '',
 						salespersonId: order.salespersonId,
-						orderAmount: order.totalAmount,
-						refundAmount: dto.amount,
-						refundBaseAmount: baseAmount,
+						orderAmountUsd: order.totalAmountUsd,
+						orderAmountCny: order.totalAmountCny,
+						refundAmountUsd: dualAmounts.amountUsd,
+						refundAmountCny: dualAmounts.amountCny,
 						currency,
 						exchangeRate,
 					},
@@ -255,7 +258,7 @@ export class PaymentService {
 			});
 		}
 
-		const allowedSortFields = ['createdTime', 'paymentDate', 'amount', 'paymentNo'];
+		const allowedSortFields = ['createdTime', 'paymentDate', 'amountUsd', 'paymentNo'];
 		if (!allowedSortFields.includes(sortField)) {
 			throw new BadRequestException(`不支持的排序字段: ${sortField}`);
 		}

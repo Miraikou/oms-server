@@ -32,7 +32,7 @@ export class InventoryService {
     receiptItemId: string | null;
     batchSource: number;
     batchNo: string;
-    unitCost: string;
+    unitCostUsd: string;
     quantity: string;
     inboundTime: Date;
     createdBy?: string | null;
@@ -44,7 +44,7 @@ export class InventoryService {
       receiptItemId: data.receiptItemId,
       batchSource: data.batchSource,
       batchNo: data.batchNo,
-      unitCost: data.unitCost,
+      unitCostUsd: data.unitCostUsd,
       originalQuantity: data.quantity,
       availableQuantity: data.quantity,
       frozenQuantity: '0',
@@ -115,8 +115,11 @@ export class InventoryService {
     businessId: string;
     changeType: number;
     quantity: string;
-    unitCost?: string | null;
-    totalCost?: string | null;
+    unitCostUsd?: string | null;
+    unitCostCny?: string | null;
+    totalCostUsd?: string | null;
+    totalCostCny?: string | null;
+    exchangeRate?: string | null;
     beforeAvailable: string;
     afterAvailable: string;
     beforeFrozen: string;

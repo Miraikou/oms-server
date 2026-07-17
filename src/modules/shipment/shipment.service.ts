@@ -14,6 +14,7 @@ import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { computeDualUnitPrice, computeDualAmounts } from '@/common/utils/dual-currency';
 import type { CreateShipmentDto, QueryShipmentDto } from './dto/shipment.dto';
 
 /**
@@ -120,9 +121,15 @@ export class ShipmentService {
       for (const dtoItem of dto.items) {
         const orderItem = orderItemMap.get(dtoItem.orderItemId)!;
         const shipQty = parseFloat(dtoItem.quantity);
-        const salesAmount = shipQty * parseFloat(orderItem.unitPrice);
-        const orderRate = parseFloat(order.exchangeRate || '1');
-        const salesBaseAmount = (salesAmount * orderRate).toFixed(2);
+        const orderCurrency = order.currency || 'USD';
+        const orderRate = order.exchangeRate || '1';
+
+        const unitPrices = computeDualUnitPrice(orderItem.unitPriceUsd, orderCurrency, orderRate);
+        const salesAmounts = computeDualAmounts(
+          shipQty * parseFloat(orderItem.unitPriceUsd),
+          orderCurrency,
+          orderRate,
+        );
 
         // 创建发货明细
         const shipmentItem = itemRepo.create({
@@ -132,13 +139,14 @@ export class ShipmentService {
           productId: orderItem.productId,
           productModelId: orderItem.productModelId,
           quantity: dtoItem.quantity,
-          salesUnitPrice: orderItem.unitPrice,
-          salesAmount: salesAmount.toFixed(2),
-          salesBaseAmount,
-          totalCost: '0',
-          grossProfit: '0',
-          currency: order.currency || 'USD',
-          exchangeRate: order.exchangeRate || '1',
+          salesUnitPriceUsd: unitPrices.unitPriceUsd,
+          salesUnitPriceCny: unitPrices.unitPriceCny,
+          salesAmountUsd: salesAmounts.amountUsd,
+          salesAmountCny: salesAmounts.amountCny,
+          totalCostCny: '0',
+          grossProfitCny: '0',
+          currency: orderCurrency,
+          exchangeRate: orderRate,
         });
         const savedItem = await itemRepo.save(shipmentItem);
 
@@ -160,10 +168,10 @@ export class ShipmentService {
             shipmentItemId: savedItem.id,
             inventoryBatchId: batch.batchId,
             quantity: String(batch.quantity),
-            unitCost: batch.unitCost,
-            totalCost: batch.totalCost,
-            unitCostBase: batch.unitCostBase,
-            totalCostBase: batch.totalCostBase,
+            unitCostUsd: batch.unitCostUsd,
+            totalCostUsd: batch.totalCostUsd,
+            unitCostCny: batch.unitCostCny,
+            totalCostCny: batch.totalCostCny,
             currency: batch.currency,
             exchangeRate: batch.exchangeRate,
           });
@@ -171,9 +179,9 @@ export class ShipmentService {
         }
 
         // 6. 汇总成本、计算毛利(CNY)
-        savedItem.totalCost = fifoResult.totalCostBase;
-        savedItem.grossProfit = (
-          parseFloat(salesBaseAmount) - parseFloat(fifoResult.totalCostBase)
+        savedItem.totalCostCny = fifoResult.totalCostCny;
+        savedItem.grossProfitCny = (
+          parseFloat(salesAmounts.amountCny) - parseFloat(fifoResult.totalCostCny)
         ).toFixed(2);
         await itemRepo.save(savedItem);
       }
@@ -253,8 +261,8 @@ export class ShipmentService {
           batchId: batch.id,
           batchNo: batch.batchNo,
           quantity: qty,
-          unitCost: batch.unitCost,
-          totalCost: (qty * parseFloat(batch.unitCost)).toFixed(2),
+          unitCost: batch.unitCostUsd,
+          totalCost: (qty * parseFloat(batch.unitCostUsd)).toFixed(2),
         });
         need -= qty;
       }

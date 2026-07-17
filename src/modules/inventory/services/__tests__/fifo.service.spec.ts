@@ -31,7 +31,7 @@ function makeBatch(overrides: Partial<any> = {}) {
     id: 'batch-1',
     batchNo: 'BT001',
     productId: 'prod-1',
-    unitCost: '50.00',
+    unitCostUsd: '50.00',
     availableQuantity: '100.0000',
     frozenQuantity: '0.0000',
     stockQuantity: '100.0000',
@@ -121,9 +121,9 @@ describe('FifoService', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(50);
-      expect(result.items[0].unitCost).toBe('50.00');
-      expect(result.items[0].totalCost).toBe('2500.00');
-      expect(result.totalCost).toBe('2500.00');
+      expect(result.items[0].unitCostUsd).toBe('50.00');
+      expect(result.items[0].totalCostUsd).toBe('2500.00');
+      expect(result.totalCostUsd).toBe('2500.00');
     });
 
     it('应跨批次扣减（FIFO 顺序）', async () => {
@@ -132,7 +132,7 @@ describe('FifoService', () => {
         batchNo: 'BT001',
         availableQuantity: '30.0000',
         stockQuantity: '30.0000',
-        unitCost: '40.00',
+        unitCostUsd: '40.00',
         inboundTime: new Date('2026-01-01'),
       });
       const batch2 = makeBatch({
@@ -140,7 +140,7 @@ describe('FifoService', () => {
         batchNo: 'BT002',
         availableQuantity: '70.0000',
         stockQuantity: '70.0000',
-        unitCost: '60.00',
+        unitCostUsd: '60.00',
         inboundTime: new Date('2026-02-01'),
       });
       const inventory = makeInventory({
@@ -157,13 +157,13 @@ describe('FifoService', () => {
       // 第一批扣 30
       expect(result.items[0].batchId).toBe('batch-1');
       expect(result.items[0].quantity).toBe(30);
-      expect(result.items[0].totalCost).toBe('1200.00'); // 30 * 40
+      expect(result.items[0].totalCostUsd).toBe('1200.00'); // 30 * 40
       // 第二批扣 20
       expect(result.items[1].batchId).toBe('batch-2');
       expect(result.items[1].quantity).toBe(20);
-      expect(result.items[1].totalCost).toBe('1200.00'); // 20 * 60
+      expect(result.items[1].totalCostUsd).toBe('1200.00'); // 20 * 60
       // 总成本 = 1200 + 1200 = 2400
-      expect(result.totalCost).toBe('2400.00');
+      expect(result.totalCostUsd).toBe('2400.00');
     });
 
     it('库存不足时应抛出 BadRequestException', async () => {
@@ -353,7 +353,7 @@ describe('FifoService', () => {
         availableQuantity: '70.0000',
         frozenQuantity: '30.0000',
         stockQuantity: '100.0000',
-        unitCost: '50.00',
+        unitCostUsd: '50.00',
       });
       const inventory = makeInventory({
         availableQuantity: '70.0000',
@@ -368,8 +368,8 @@ describe('FifoService', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(30);
-      expect(result.items[0].totalCost).toBe('1500.00'); // 30 * 50
-      expect(result.totalCost).toBe('1500.00');
+      expect(result.items[0].totalCostUsd).toBe('1500.00'); // 30 * 50
+      expect(result.totalCostUsd).toBe('1500.00');
 
       // 验证批次 frozen 减少，stock 减少，available 不变
       const batchSave = savedEntities.find((e) => e.id === 'batch-1');

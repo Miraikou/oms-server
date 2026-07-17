@@ -272,7 +272,7 @@ describe('SalesOrderService', () => {
       orderNo: 'SO202601010001',
       customerName: '旧客户',
       shipmentStatus: 1,
-      totalAmount: '500',
+      totalAmountUsd: '500',
       remark: '备注',
     }
 
@@ -313,7 +313,7 @@ describe('SalesOrderService', () => {
       expect(mockFifoService.freeze).toHaveBeenCalledWith('P002', 5, 'O001')
       // 保存新明细
       expect(mockItemRepo.save).toHaveBeenCalled()
-      expect(result.totalAmount).toBe('500.00')
+      expect(result.totalAmountUsd).toBe('500.00')
     })
 
     it('订单不存在应抛出 BadRequestException', async () => {
@@ -351,7 +351,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         remark: '普通订单',
-        receivedAmount: '0',
+        receivedAmountUsd: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
@@ -371,7 +371,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 2,
         remark: '部分发货',
-        receivedAmount: '0',
+        receivedAmountUsd: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '4' },
@@ -418,7 +418,7 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         remark: '已收款订单',
-        receivedAmount: '500',
+        receivedAmountUsd: '500',
       })
       mockItemRepo.find.mockResolvedValue([
         { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
@@ -438,8 +438,8 @@ describe('SalesOrderService', () => {
     it('更新金额成功并重新计算状态', async () => {
       mockOrderRepo.findOne.mockResolvedValue({
         id: 'O001',
-        totalAmount: '1000',
-        receivedAmount: '200',
+        totalAmountUsd: '1000',
+        receivedAmountUsd: '200',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '10' },
@@ -449,7 +449,7 @@ describe('SalesOrderService', () => {
 
       expect(mockOrderRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          receivedAmount: '500.00',
+          receivedAmountUsd: '500.00',
         }),
       )
     })
@@ -474,8 +474,8 @@ describe('SalesOrderService', () => {
         id: 'O001',
         status: 1,
         shipmentStatus: 2,
-        totalAmount: '1000',
-        receivedAmount: '1000',
+        totalAmountUsd: '1000',
+        receivedAmountUsd: '1000',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '10' },
@@ -507,8 +507,8 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 2,
         paymentStatus: 2,
-        totalAmount: '1000',
-        receivedAmount: '1000',
+        totalAmountUsd: '1000',
+        receivedAmountUsd: '1000',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '10' },
@@ -531,8 +531,8 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         paymentStatus: 1,
-        totalAmount: '1000',
-        receivedAmount: '0',
+        totalAmountUsd: '1000',
+        receivedAmountUsd: '0',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '3' },
@@ -551,8 +551,8 @@ describe('SalesOrderService', () => {
         status: 1,
         shipmentStatus: 1,
         paymentStatus: 1,
-        totalAmount: '1000',
-        receivedAmount: '500',
+        totalAmountUsd: '1000',
+        receivedAmountUsd: '500',
       })
       mockItemRepo.find.mockResolvedValue([
         { quantity: '10', shippedQuantity: '0' },
@@ -571,8 +571,8 @@ describe('SalesOrderService', () => {
         status: 2,
         shipmentStatus: 3,
         paymentStatus: 3,
-        totalAmount: '1000',
-        receivedAmount: '1000',
+        totalAmountUsd: '1000',
+        receivedAmountUsd: '1000',
       })
 
       await service.recalculateStatus('O001')

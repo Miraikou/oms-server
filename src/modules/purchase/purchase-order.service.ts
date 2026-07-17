@@ -8,6 +8,7 @@ import { Product } from '@/modules/product/entities/product.entity';
 import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { computeDualAmounts, computeDualUnitPrice } from '@/common/utils/dual-currency';
 import type {
 	CreatePurchaseOrderDto,
 	UpdatePurchaseOrderDto,
@@ -46,40 +47,38 @@ export class PurchaseOrderService {
 
 		const purchaseNo = await this.sequenceService.generate('CG');
 
-		// 计算总金额
-		let totalAmount = 0;
+		const currency = dto.currency || 'CNY';
+		const exchangeRate = await this.rateService.getRate(
+			dto.purchaseDate || new Date().toISOString().slice(0, 10),
+			'USD',
+		);
+
+		// 计算每条明细的双币种金额
+		let totalAmountUsd = 0;
+		let totalAmountCny = 0;
 		const items = dto.items.map((item) => {
 			const qty = parseFloat(item.quantity);
 			const price = parseFloat(item.unitPrice);
 			if (qty <= 0) throw new BadRequestException('采购数量必须大于零');
 			if (price <= 0) throw new BadRequestException('采购单价必须大于零');
 			const amount = qty * price;
-			totalAmount += amount;
+			const dualPrice = computeDualUnitPrice(item.unitPrice, currency, exchangeRate);
+			const dualAmounts = computeDualAmounts(amount, currency, exchangeRate);
+			totalAmountUsd += parseFloat(dualAmounts.amountUsd);
+			totalAmountCny += parseFloat(dualAmounts.amountCny);
 			return {
 				id: snowflake.nextId(),
 				productId: item.productId,
 				productModelId: item.productModelId || null,
 				quantity: item.quantity,
-				unitPrice: item.unitPrice,
-				amount: amount.toFixed(2),
-				baseAmount: '0',
+				unitPriceUsd: dualPrice.unitPriceUsd,
+				unitPriceCny: dualPrice.unitPriceCny,
+				amountUsd: dualAmounts.amountUsd,
+				amountCny: dualAmounts.amountCny,
 				receivedQuantity: '0',
 				returnedQuantity: '0',
 			};
 		});
-
-		const currency = dto.currency || 'CNY';
-		const exchangeRate = await this.rateService.getRate(
-			dto.purchaseDate || new Date().toISOString().slice(0, 10),
-			currency,
-		);
-
-		// 计算每条明细的 baseAmount
-		const rateNum = parseFloat(exchangeRate);
-		for (const item of items) {
-			item.baseAmount = (parseFloat(item.amount) * rateNum).toFixed(2);
-		}
-		const totalBaseAmount = (totalAmount * rateNum).toFixed(2);
 
 		return this.dataSource.transaction(async (manager: EntityManager) => {
 			const orderRepo = manager.getRepository(PurchaseOrder);
@@ -92,8 +91,8 @@ export class PurchaseOrderService {
 				supplierId: dto.supplierId,
 				currency,
 				exchangeRate,
-				totalAmount: totalAmount.toFixed(2),
-				totalBaseAmount,
+				totalAmountUsd: totalAmountUsd.toFixed(2),
+				totalAmountCny: totalAmountCny.toFixed(2),
 				purchaseDate: new Date(dto.purchaseDate),
 				status: 1,
 				remark: dto.remark || null,
@@ -128,7 +127,7 @@ export class PurchaseOrderService {
 			: order.purchaseDate);
 		const exchangeRate = await this.rateService.getRate(
 			purchaseDate,
-			currency,
+			'USD',
 		);
 
 		// 显式挑选可修改字段，忽略系统管理字段（status/totalAmount/receivedAmount 等）
@@ -148,9 +147,9 @@ export class PurchaseOrderService {
 				// 删除旧明细
 				await itemRepo.delete({ purchaseOrderId: id });
 
-				// 重新计算总金额
-				let totalAmount = 0;
-				const rateNum = parseFloat(exchangeRate);
+				// 重新计算双币种总金额
+				let totalAmountUsd = 0;
+				let totalAmountCny = 0;
 				const items = dto.items.map((item) => {
 					const qty = parseFloat(item.quantity);
 					const price = parseFloat(item.unitPrice);
@@ -161,7 +160,10 @@ export class PurchaseOrderService {
 						throw new BadRequestException('采购单价必须大于零');
 
 					const amount = qty * price;
-					totalAmount += amount;
+					const dualPrice = computeDualUnitPrice(item.unitPrice, currency, exchangeRate);
+					const dualAmounts = computeDualAmounts(amount, currency, exchangeRate);
+					totalAmountUsd += parseFloat(dualAmounts.amountUsd);
+					totalAmountCny += parseFloat(dualAmounts.amountCny);
 
 					return itemRepo.create({
 						id: snowflake.nextId(),
@@ -169,16 +171,17 @@ export class PurchaseOrderService {
 						productId: item.productId,
 						productModelId: item.productModelId || null,
 						quantity: item.quantity,
-						unitPrice: item.unitPrice,
-						amount: amount.toFixed(2),
-						baseAmount: (amount * rateNum).toFixed(2),
+						unitPriceUsd: dualPrice.unitPriceUsd,
+						unitPriceCny: dualPrice.unitPriceCny,
+						amountUsd: dualAmounts.amountUsd,
+						amountCny: dualAmounts.amountCny,
 						receivedQuantity: '0',
 						returnedQuantity: '0',
 					});
 				});
 
-				order.totalAmount = totalAmount.toFixed(2);
-				order.totalBaseAmount = (totalAmount * rateNum).toFixed(2);
+				order.totalAmountUsd = totalAmountUsd.toFixed(2);
+				order.totalAmountCny = totalAmountCny.toFixed(2);
 
 				await itemRepo.save(items);
 			}

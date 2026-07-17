@@ -19,6 +19,7 @@ import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { computeDualAmounts } from '@/common/utils/dual-currency';
 import { RateService } from '@/common/rate/rate.service';
 import { CommissionService } from '@/modules/commission/commission.service';
 import type {
@@ -116,6 +117,10 @@ export class SalesReturnService {
       // 3. 创建退货单 + 明细
       const returnNo = await this.sequenceService.generate('TH');
       const returnCostVal = parseFloat(dto.returnCost || '0');
+      const returnCostCurrency = returnCostVal > 0 ? (dto.returnCostCurrency || 'CNY') : null;
+      const returnCostDual = returnCostVal > 0
+        ? computeDualAmounts(returnCostVal, returnCostCurrency!, order.exchangeRate || '1')
+        : null;
       const salesReturn = manager.create(SalesReturn, {
         id: snowflake.nextId(),
         returnNo,
@@ -124,9 +129,10 @@ export class SalesReturnService {
         restoreInventory: dto.restoreInventory,
         reason: dto.reason || null,
         remark: dto.remark || null,
-        returnCost: returnCostVal > 0 ? returnCostVal.toFixed(2) : null,
-        returnCostCurrency:
-          returnCostVal > 0 ? (dto.returnCostCurrency || 'CNY') : null,
+        returnCostUsd: returnCostDual ? returnCostDual.amountUsd : null,
+        returnCostCny: returnCostDual ? returnCostDual.amountCny : null,
+        returnCostCurrency,
+        exchangeRate: order.exchangeRate || '1',
       });
       const savedReturn = await manager.save(salesReturn);
 
@@ -161,7 +167,7 @@ export class SalesReturnService {
             const toRestore = Math.min(batchQty, remaining);
 
             // 按该批次实际成本累加扣减
-            costReduction += toRestore * parseFloat(sb.unitCostBase || '0');
+            costReduction += toRestore * parseFloat(sb.unitCostCny || '0');
 
             // 恢复库存批次
             const batch = await manager.findOne(InventoryBatch, {
@@ -217,11 +223,12 @@ export class SalesReturnService {
                   businessId: savedReturn.id,
                   changeType: 1, // 入库
                   quantity: String(toRestore),
-                  unitCost: sb.unitCost,
-                  totalCost: (toRestore * parseFloat(sb.unitCost)).toFixed(2),
-                  totalCostBase: (toRestore * parseFloat(sb.unitCostBase || '0')).toFixed(2),
+                  unitCostUsd: sb.unitCostUsd,
+                  unitCostCny: sb.unitCostCny || null,
+                  totalCostUsd: (toRestore * parseFloat(sb.unitCostUsd)).toFixed(2),
+                  totalCostCny: (toRestore * parseFloat(sb.unitCostCny || '0')).toFixed(2),
                   flowCurrency: sb.currency || 'CNY',
-                  flowExchangeRate: sb.exchangeRate || '1',
+                  exchangeRate: sb.exchangeRate || '7',
                   beforeAvailable: beforeAvailable.toFixed(4),
                   afterAvailable: (beforeAvailable + toRestore).toFixed(4),
                   beforeFrozen: beforeFrozen.toFixed(4),
@@ -236,12 +243,12 @@ export class SalesReturnService {
 
           // 扣减该发货明细的产品成本（CNY）
           if (costReduction > 0 && shipItem) {
-            shipItem.totalCost = (
-              parseFloat(shipItem.totalCost) - costReduction
+            shipItem.totalCostCny = (
+              parseFloat(shipItem.totalCostCny) - costReduction
             ).toFixed(2);
-            shipItem.grossProfit = (
-              parseFloat(shipItem.salesBaseAmount) -
-              parseFloat(shipItem.totalCost)
+            shipItem.grossProfitCny = (
+              parseFloat(shipItem.salesAmountCny) -
+              parseFloat(shipItem.totalCostCny)
             ).toFixed(2);
             await manager.save(shipItem);
           }
@@ -261,7 +268,8 @@ export class SalesReturnService {
       }
 
       // 6. 退款处理 + 退货成本
-      let refundAmountStr: string | null = null;
+      let refundAmountUsdStr: string | null = null;
+      let refundAmountCnyStr: string | null = null;
       let refundPaymentId: string | null = null;
 
       if (dto.refund) {
@@ -274,12 +282,12 @@ export class SalesReturnService {
           if (shipItem) {
             refundTotal +=
               parseFloat(dtoItem.quantity) *
-              parseFloat(shipItem.salesUnitPrice);
+              parseFloat(shipItem.salesUnitPriceUsd);
           }
         }
 
         // 校验退款金额不超过已收金额
-        const received = parseFloat(order.receivedAmount);
+        const received = parseFloat(order.receivedAmountUsd);
         if (refundTotal > received + 0.01) {
           throw new BadRequestException(
             `退款金额（${refundTotal.toFixed(2)}）超过已收金额（${received.toFixed(2)}）`,
@@ -288,16 +296,16 @@ export class SalesReturnService {
 
         // 创建退款记录
         const paymentNo = await this.sequenceService.generate('TK');
-        const rate = parseFloat(order.exchangeRate || '1');
+        const refundDual = computeDualAmounts(refundTotal, order.currency || 'USD', order.exchangeRate || '1');
         const payment = manager.create(Payment, {
           id: snowflake.nextId(),
           paymentNo,
           type: 2, // 退款
           orderId: dto.orderId,
           paymentDate: new Date(dto.returnDate),
-          amount: refundTotal.toFixed(2),
+          amountUsd: refundDual.amountUsd,
           exchangeRate: order.exchangeRate,
-          baseAmount: (refundTotal * rate).toFixed(2),
+          amountCny: refundDual.amountCny,
           currency: order.currency || 'USD',
           paymentMethod: dto.paymentMethod || null,
           remark: '客户退货',
@@ -319,9 +327,10 @@ export class SalesReturnService {
               paymentId: savedPayment.id,
               salesReturnId: savedReturn.id,
               salespersonId: order.salespersonId,
-              orderAmount: order.totalAmount,
-              refundAmount: refundTotal.toFixed(2),
-              refundBaseAmount: (refundTotal * rate).toFixed(2),
+              orderAmountUsd: order.totalAmountUsd,
+              orderAmountCny: order.totalAmountCny,
+              refundAmountUsd: refundDual.amountUsd,
+              refundAmountCny: refundDual.amountCny,
               currency: order.currency || 'USD',
               exchangeRate: order.exchangeRate,
             },
@@ -329,7 +338,8 @@ export class SalesReturnService {
           );
         }
 
-        refundAmountStr = refundTotal.toFixed(2);
+        refundAmountUsdStr = refundDual.amountUsd;
+        refundAmountCnyStr = refundDual.amountCny;
         refundPaymentId = savedPayment.id;
       }
 
@@ -367,19 +377,16 @@ export class SalesReturnService {
         });
 
         if (existingCost) {
-          const existAmt = parseFloat(existingCost.amount);
-          // 同币种直接累加，跨币种才需要折算
-          const addAmt =
-            costCurrency === existingCost.currency
-              ? returnCostVal
-              : costBaseAmount / parseFloat(existingCost.exchangeRate);
+          const existAmt = parseFloat(existingCost.amountCny);
+          // 跨币种统一用 CNY 金额累加
+          const addAmt = costBaseAmount;
 
           const newAmt = existAmt + addAmt;
-          const newBase = parseFloat(existingCost.baseAmount) + costBaseAmount;
-          existingCost.amount = newAmt.toFixed(2);
-          existingCost.baseAmount = newBase.toFixed(2);
+          const newUsdAmt = parseFloat(existingCost.amountUsd) + costBaseAmount / parseFloat(existingCost.exchangeRate);
+          existingCost.amountCny = newAmt.toFixed(2);
+          existingCost.amountUsd = newUsdAmt.toFixed(2);
           existingCost.exchangeRate =
-            newAmt > 0 ? (newBase / newAmt).toFixed(4) : '1';
+            newUsdAmt > 0 ? (newAmt / newUsdAmt).toFixed(4) : '7';
           await manager.save(existingCost);
         } else {
           // 新建成本记录
@@ -400,7 +407,8 @@ export class SalesReturnService {
       await this.salesOrderService.recalculateStatus(dto.orderId, manager);
 
       // 回写退款信息到退货单
-      savedReturn.refundAmount = refundAmountStr;
+      savedReturn.refundAmountUsd = refundAmountUsdStr;
+      savedReturn.refundAmountCny = refundAmountCnyStr;
       savedReturn.refundPaymentId = refundPaymentId;
       await manager.save(savedReturn);
 

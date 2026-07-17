@@ -37,9 +37,10 @@ export class CommissionService {
 			salesOrderId: string;
 			paymentId: string;
 			salespersonId: string;
-			orderAmount: string;
-			receivedAmount: string;
-			receivedBaseAmount: string;
+			orderAmountUsd: string;
+			orderAmountCny: string;
+			receivedAmountUsd: string;
+			receivedAmountCny: string;
 			currency: string;
 			exchangeRate: string;
 		},
@@ -60,12 +61,12 @@ export class CommissionService {
 		const rate = parseFloat(salesperson.commissionRate || '0');
 		if (rate <= 0) return null;
 
-		const commissionAmount = this.calcCommission(
-			params.receivedAmount,
+		const commissionAmountUsd = this.calcCommission(
+			params.receivedAmountUsd,
 			rate,
 		);
-		const commissionBaseAmount = this.calcCommission(
-			params.receivedBaseAmount,
+		const commissionAmountCny = this.calcCommission(
+			params.receivedAmountCny,
 			rate,
 		);
 
@@ -80,12 +81,13 @@ export class CommissionService {
 			paymentId: params.paymentId,
 			type: 1, // 计提
 			status: 1, // 待结算
-			orderAmount: params.orderAmount,
-			receivedAmount: params.receivedAmount,
-			receivedBaseAmount: params.receivedBaseAmount,
+			orderAmountUsd: params.orderAmountUsd,
+			orderAmountCny: params.orderAmountCny,
+			receivedAmountUsd: params.receivedAmountUsd,
+			receivedAmountCny: params.receivedAmountCny,
 			commissionRate: salesperson.commissionRate,
-			commissionAmount,
-			commissionBaseAmount, // 正数
+			commissionAmountUsd,
+			commissionAmountCny,
 			currency: params.currency,
 			exchangeRate: params.exchangeRate,
 			remark: '收款计提',
@@ -93,7 +95,7 @@ export class CommissionService {
 
 		const saved = await ledgerRepo.save(ledger);
 		this.logger.log(
-			`提成计提: 销售员 ${salesperson.name}, 订单 ${params.salesOrderId}, ${commissionBaseAmount} CNY`,
+			`提成计提: 销售员 ${salesperson.name}, 订单 ${params.salesOrderId}, ${commissionAmountCny} CNY`,
 		);
 		return saved;
 	}
@@ -108,9 +110,10 @@ export class CommissionService {
 			paymentId: string;
 			salesReturnId: string;
 			salespersonId: string;
-			orderAmount: string;
-			refundAmount: string;
-			refundBaseAmount: string;
+			orderAmountUsd: string;
+			orderAmountCny: string;
+			refundAmountUsd: string;
+			refundAmountCny: string;
 			currency: string;
 			exchangeRate: string;
 		},
@@ -133,12 +136,12 @@ export class CommissionService {
 
 		if (rate <= 0) return null;
 
-		const commissionAmount = this.calcCommission(
-			params.refundAmount,
+		const commissionAmountUsd = this.calcCommission(
+			params.refundAmountUsd,
 			rate,
 		);
-		const commissionBaseAmount = this.calcCommission(
-			params.refundBaseAmount,
+		const commissionAmountCny = this.calcCommission(
+			params.refundAmountCny,
 			rate,
 		);
 
@@ -154,12 +157,13 @@ export class CommissionService {
 			salesReturnId: params.salesReturnId,
 			type: 2, // 冲回
 			status: 1, // 待结算
-			orderAmount: params.orderAmount,
-			receivedAmount: `-${params.refundAmount}`,
-			receivedBaseAmount: `-${params.refundBaseAmount}`,
+			orderAmountUsd: params.orderAmountUsd,
+			orderAmountCny: params.orderAmountCny,
+			receivedAmountUsd: `-${params.refundAmountUsd}`,
+			receivedAmountCny: `-${params.refundAmountCny}`,
 			commissionRate: commissionRateStr,
-			commissionAmount: `-${commissionAmount}`,
-			commissionBaseAmount: `-${commissionBaseAmount}`, // 负数
+			commissionAmountUsd: `-${commissionAmountUsd}`,
+			commissionAmountCny: `-${commissionAmountCny}`,
 			currency: params.currency,
 			exchangeRate: params.exchangeRate,
 			remark: '退款冲回',
@@ -167,7 +171,7 @@ export class CommissionService {
 
 		const saved = await ledgerRepo.save(ledger);
 		this.logger.log(
-			`提成冲回: 销售员 ${params.salespersonId}, 订单 ${params.salesOrderId}, -${commissionBaseAmount} CNY`,
+			`提成冲回: 销售员 ${params.salespersonId}, 订单 ${params.salesOrderId}, -${commissionAmountCny} CNY`,
 		);
 		return saved;
 	}
@@ -194,7 +198,7 @@ export class CommissionService {
 		for (const { salesperson_id } of salespersons) {
 			// 计提总额（type=1）
 			const earnedResult = await this.dataSource.query(
-				`SELECT COALESCE(SUM(commission_base_amount), 0) AS total,
+				`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
 				        COUNT(DISTINCT sales_order_id) AS order_count
 				 FROM commission_ledger 
 				 WHERE salesperson_id = ? AND status = 1 AND type = 1
@@ -204,7 +208,7 @@ export class CommissionService {
 
 			// 冲回总额（type=2，取绝对值）
 			const clawbackResult = await this.dataSource.query(
-				`SELECT COALESCE(SUM(ABS(commission_base_amount)), 0) AS total,
+				`SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total,
 				        COUNT(*) AS clawback_count
 				 FROM commission_ledger 
 				 WHERE salesperson_id = ? AND status = 1 AND type = 2
@@ -404,19 +408,19 @@ export class CommissionService {
 
 		// 当月计提总额
 		const earned = await this.dataSource.query(
-			`SELECT COALESCE(SUM(commission_base_amount), 0) AS total
+			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
 			 FROM commission_ledger WHERE type = 1 ${dateFilter}`,
 		);
 
 		// 当月冲回总额
 		const clawback = await this.dataSource.query(
-			`SELECT COALESCE(SUM(ABS(commission_base_amount)), 0) AS total
+			`SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total
 			 FROM commission_ledger WHERE type = 2 ${dateFilter}`,
 		);
 
 		// 待结算总额（所有未结算的）
 		const pending = await this.dataSource.query(
-			`SELECT COALESCE(SUM(commission_base_amount), 0) AS total
+			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
 			 FROM commission_ledger WHERE status = 1`,
 		);
 
@@ -448,9 +452,9 @@ export class CommissionService {
 				l.salesperson_id AS salespersonId,
 				sp.name AS salespersonName,
 				sp.commission_rate AS commissionRate,
-				COALESCE(SUM(CASE WHEN l.type = 1 THEN l.commission_base_amount ELSE 0 END), 0) AS totalEarned,
-				COALESCE(SUM(CASE WHEN l.type = 2 THEN ABS(l.commission_base_amount) ELSE 0 END), 0) AS totalClawback,
-				COALESCE(SUM(l.commission_base_amount), 0) AS netCommission
+				COALESCE(SUM(CASE WHEN l.type = 1 THEN l.commission_amount_cny ELSE 0 END), 0) AS totalEarned,
+				COALESCE(SUM(CASE WHEN l.type = 2 THEN ABS(l.commission_amount_cny) ELSE 0 END), 0) AS totalClawback,
+				COALESCE(SUM(l.commission_amount_cny), 0) AS netCommission
 			 FROM commission_ledger l
 			 LEFT JOIN salesperson sp ON sp.id = l.salesperson_id
 			 WHERE 1=1 ${dateFilter}

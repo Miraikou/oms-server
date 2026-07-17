@@ -2,7 +2,7 @@ import { Entity, Column, Index } from 'typeorm';
 import { BaseEntity } from '@/common/entities/base.entity';
 
 /**
- * 提成分录实体 ⭐
+ * 提成分录实体
  * 每笔收款/退款生成一条记录，形成完整提成流水
  * type=1 计提（收款时），type=2 冲回（退款时）
  */
@@ -53,34 +53,44 @@ export class CommissionLedger extends BaseEntity {
 	status: number = 1;
 
 	@Column({
-		name: 'order_amount',
+		name: 'order_amount_usd',
 		type: 'decimal',
 		precision: 18,
 		scale: 2,
 		default: 0,
-		comment: '订单原始金额',
+		comment: '订单原始金额（USD）',
 	})
-	orderAmount: string = '0';
+	orderAmountUsd: string = '0';
 
 	@Column({
-		name: 'received_amount',
+		name: 'order_amount_cny',
 		type: 'decimal',
 		precision: 18,
 		scale: 2,
 		default: 0,
-		comment: '本次收/退款金额（原币）',
+		comment: '订单原始金额（CNY）',
 	})
-	receivedAmount: string = '0';
+	orderAmountCny: string = '0';
 
 	@Column({
-		name: 'received_base_amount',
+		name: 'received_amount_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		default: 0,
+		comment: '本次收/退款金额（USD）',
+	})
+	receivedAmountUsd: string = '0';
+
+	@Column({
+		name: 'received_amount_cny',
 		type: 'decimal',
 		precision: 18,
 		scale: 2,
 		default: 0,
 		comment: '本次收/退款金额（CNY）',
 	})
-	receivedBaseAmount: string = '0';
+	receivedAmountCny: string = '0';
 
 	@Column({
 		name: 'commission_rate',
@@ -92,24 +102,24 @@ export class CommissionLedger extends BaseEntity {
 	commissionRate: string;
 
 	@Column({
-		name: 'commission_amount',
+		name: 'commission_amount_usd',
 		type: 'decimal',
 		precision: 18,
 		scale: 2,
 		default: 0,
-		comment: '提成金额（原币，冲回时为负数）',
+		comment: '提成金额（USD，冲回时为负数）',
 	})
-	commissionAmount: string = '0';
+	commissionAmountUsd: string = '0';
 
 	@Column({
-		name: 'commission_base_amount',
+		name: 'commission_amount_cny',
 		type: 'decimal',
 		precision: 18,
 		scale: 2,
 		default: 0,
 		comment: '提成金额（CNY，正数=计提，负数=冲回）',
 	})
-	commissionBaseAmount: string = '0';
+	commissionAmountCny: string = '0';
 
 	@Column({
 		name: 'currency',
@@ -125,10 +135,10 @@ export class CommissionLedger extends BaseEntity {
 		type: 'decimal',
 		precision: 18,
 		scale: 4,
-		default: 1,
-		comment: '汇率',
+		default: 7.0,
+		comment: 'USD→CNY汇率',
 	})
-	exchangeRate: string = '1';
+	exchangeRate: string = '7.0000';
 
 	@Index('idx_settle_month')
 	@Column({

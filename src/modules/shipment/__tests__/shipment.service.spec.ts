@@ -128,15 +128,15 @@ describe('ShipmentService', () => {
         productId: 'prod-1',
         quantity: '20',
         shippedQuantity: '0',
-        unitPrice: '100.00',
+        unitPriceUsd: '100.00',
       },
     ]
 
     const mockFifoResult = {
       items: [
-        { batchId: 'b1', quantity: 10, unitCost: '50.00', totalCost: '500.00' },
+        { batchId: 'b1', quantity: 10, unitCostUsd: '50.00', totalCostUsd: '500.00' },
       ],
-      totalCost: '500.00',
+      totalCostUsd: '500.00',
     }
 
     const savedShipment = {
@@ -190,10 +190,10 @@ describe('ShipmentService', () => {
         orderItemId: 'orderItem-1',
         productId: 'prod-1',
         quantity: '10',
-        salesUnitPrice: '100.00',
-        salesAmount: '1000.00',
-        totalCost: '0',
-        grossProfit: '0',
+        salesUnitPriceUsd: '100.00',
+        salesAmountUsd: '1000.00',
+        totalCostCny: '0',
+        grossProfitCny: '0',
       })
 
       // 校验 save 调用 2 次（创建 + 更新成本/利润）
@@ -208,15 +208,15 @@ describe('ShipmentService', () => {
         shipmentItemId: '9999999999999999',
         inventoryBatchId: 'b1',
         quantity: '10',
-        unitCost: '50.00',
-        totalCost: '500.00',
+        unitCostUsd: '50.00',
+        totalCostUsd: '500.00',
       })
 
       // 校验成本/利润更新（第二次 save）
       expect(mockItemRepo.save).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          totalCost: '500.00',
-          grossProfit: '500.00',
+          totalCostCny: '500.00',
+          grossProfitCny: '500.00',
         }),
       )
 
@@ -301,14 +301,14 @@ describe('ShipmentService', () => {
         productId: 'prod-1',
         quantity: '20',
         shippedQuantity: '5',
-        unitPrice: '100.00',
+        unitPriceUsd: '100.00',
       },
       {
         id: 'orderItem-2',
         productId: 'prod-2',
         quantity: '10',
         shippedQuantity: '10',
-        unitPrice: '50.00',
+        unitPriceUsd: '50.00',
       },
     ]
 
@@ -322,7 +322,7 @@ describe('ShipmentService', () => {
           id: 'b1',
           batchNo: 'BT001',
           productId: 'prod-1',
-          unitCost: '50.00',
+          unitCostUsd: '50.00',
           frozenQuantity: '20',
           inboundTime: new Date('2026-01-01'),
         },
@@ -349,7 +349,7 @@ describe('ShipmentService', () => {
     it('所有明细无剩余数量时应跳过', async () => {
       mockOrderRepo.findOne.mockResolvedValue(mockOrder)
       mockOrderItemRepo.find.mockResolvedValue([
-        { id: 'item-1', productId: 'prod-1', quantity: '10', shippedQuantity: '10', unitPrice: '100.00' },
+        { id: 'item-1', productId: 'prod-1', quantity: '10', shippedQuantity: '10', unitPriceUsd: '100.00' },
       ])
 
       const result = await service.preview('order-1')
@@ -381,7 +381,7 @@ describe('ShipmentService', () => {
     ]
 
     const mockBatchesForItem1 = [
-      { id: 'batch-1', shipmentItemId: 'item-1', inventoryBatchId: 'b1', quantity: '10', unitCost: '50.00', totalCost: '500.00' },
+      { id: 'batch-1', shipmentItemId: 'item-1', inventoryBatchId: 'b1', quantity: '10', unitCostUsd: '50.00', totalCostUsd: '500.00' },
     ]
 
     const mockBatchesForItem2: any[] = []

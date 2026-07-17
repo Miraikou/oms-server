@@ -11,10 +11,10 @@ export interface FifoConsumeItem {
   batchId: string;
   batchNo: string;
   quantity: number;
-  unitCost: string;
-  totalCost: string;
-  unitCostBase: string;
-  totalCostBase: string;
+  unitCostUsd: string;
+  totalCostUsd: string;
+  unitCostCny: string;
+  totalCostCny: string;
   currency: string;
   exchangeRate: string;
 }
@@ -22,8 +22,8 @@ export interface FifoConsumeItem {
 /** FIFO 扣减结果 */
 export interface FifoConsumeResult {
   items: FifoConsumeItem[];
-  totalCost: string;
-  totalCostBase: string;
+  totalCostUsd: string;
+  totalCostCny: string;
 }
 
 /** 冻结/解冻结果 */
@@ -150,22 +150,22 @@ export class FifoService {
         batch.version += 1;
         await manager.save(batch);
 
-        const unitCost = parseFloat(batch.unitCost);
-        const cost = deduct * unitCost;
-        totalCostValue += cost;
+        const unitCostUsd = parseFloat(batch.unitCostUsd);
+        const costUsd = deduct * unitCostUsd;
+        totalCostValue += costUsd;
 
-        const unitCostBase = parseFloat(batch.unitCostBase);
-        const costBase = deduct * unitCostBase;
-        totalCostBaseValue += costBase;
+        const unitCostCny = parseFloat(batch.unitCostCny);
+        const costCny = deduct * unitCostCny;
+        totalCostBaseValue += costCny;
 
         consumeItems.push({
           batchId: batch.id,
           batchNo: batch.batchNo,
           quantity: deduct,
-          unitCost: batch.unitCost,
-          totalCost: cost.toFixed(2),
-          unitCostBase: batch.unitCostBase,
-          totalCostBase: costBase.toFixed(2),
+          unitCostUsd: batch.unitCostUsd,
+          totalCostUsd: costUsd.toFixed(2),
+          unitCostCny: batch.unitCostCny,
+          totalCostCny: costCny.toFixed(2),
           currency: batch.currency,
           exchangeRate: batch.exchangeRate,
         });
@@ -194,11 +194,12 @@ export class FifoService {
           businessId,
           changeType,
           quantity: String(item.quantity),
-          unitCost: item.unitCost,
-          totalCost: item.totalCost,
-          totalCostBase: item.totalCostBase,
+          unitCostUsd: item.unitCostUsd,
+          unitCostCny: item.unitCostCny,
+          totalCostUsd: item.totalCostUsd,
+          totalCostCny: item.totalCostCny,
           flowCurrency: item.currency,
-          flowExchangeRate: item.exchangeRate,
+          exchangeRate: item.exchangeRate,
           beforeAvailable: cumulativeAvailable.toFixed(4),
           afterAvailable: afterAvailable.toFixed(4),
           beforeFrozen: beforeFrozen.toFixed(4),
@@ -214,8 +215,8 @@ export class FifoService {
 
       return {
         items: consumeItems,
-        totalCost: totalCostValue.toFixed(2),
-        totalCostBase: totalCostBaseValue.toFixed(2),
+        totalCostUsd: totalCostValue.toFixed(2),
+        totalCostCny: totalCostBaseValue.toFixed(2),
       };
     };
 
@@ -591,22 +592,22 @@ export class FifoService {
           batch.version += 1;
           await manager.save(batch);
 
-          const unitCost = parseFloat(batch.unitCost);
-          const cost = toDeduct * unitCost;
-          totalCostValue += cost;
+          const unitCostUsd = parseFloat(batch.unitCostUsd);
+          const costUsd = toDeduct * unitCostUsd;
+          totalCostValue += costUsd;
 
-          const unitCostBase = parseFloat(batch.unitCostBase);
-          const costBase = toDeduct * unitCostBase;
-          totalCostBaseValue += costBase;
+          const unitCostCny = parseFloat(batch.unitCostCny);
+          const costCny = toDeduct * unitCostCny;
+          totalCostBaseValue += costCny;
 
           consumeItems.push({
             batchId: batch.id,
             batchNo: batch.batchNo,
             quantity: toDeduct,
-            unitCost: batch.unitCost,
-            totalCost: cost.toFixed(2),
-            unitCostBase: batch.unitCostBase,
-            totalCostBase: costBase.toFixed(2),
+            unitCostUsd: batch.unitCostUsd,
+            totalCostUsd: costUsd.toFixed(2),
+            unitCostCny: batch.unitCostCny,
+            totalCostCny: costCny.toFixed(2),
             currency: batch.currency,
             exchangeRate: batch.exchangeRate,
           });
@@ -623,11 +624,12 @@ export class FifoService {
             businessId,
             changeType,
             quantity: String(toDeduct),
-            unitCost: batch.unitCost,
-            totalCost: cost.toFixed(2),
-            totalCostBase: costBase.toFixed(2),
+            unitCostUsd: batch.unitCostUsd,
+            unitCostCny: batch.unitCostCny,
+            totalCostUsd: costUsd.toFixed(2),
+            totalCostCny: costCny.toFixed(2),
             flowCurrency: batch.currency,
-            flowExchangeRate: batch.exchangeRate,
+            exchangeRate: batch.exchangeRate,
             beforeAvailable: beforeAvailable.toFixed(4),
             afterAvailable: beforeAvailable.toFixed(4), // 可用不变（已在冻结时扣减）
             beforeFrozen: cumulativeFrozen.toFixed(4),
@@ -647,7 +649,7 @@ export class FifoService {
         await manager.save(inventory);
 
         this.logger.log(`冻结扣减完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);
-        return { items: consumeItems, totalCost: totalCostValue.toFixed(2), totalCostBase: totalCostBaseValue.toFixed(2) };
+        return { items: consumeItems, totalCostUsd: totalCostValue.toFixed(2), totalCostCny: totalCostBaseValue.toFixed(2) };
     };
 
     // 有外部事务 manager 时直接执行，不开新事务也不重试

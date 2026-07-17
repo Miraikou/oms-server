@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { SalesOrderCost } from './entities/sales-order-cost.entity';
 import { RateService } from '@/common/rate/rate.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { computeDualAmounts } from '@/common/utils/dual-currency';
 import type {
 	CreateSalesOrderCostDto,
 	UpdateSalesOrderCostDto,
@@ -61,20 +62,19 @@ export class SalesOrderCostService {
 		const currency = dto.currency || 'CNY';
 		const exchangeRate = await this.rateService.getRate(
 			new Date().toISOString().slice(0, 10),
-			currency,
+			'USD',
 		);
 
-		const amount = dto.amount;
-		const baseAmount = (parseFloat(amount) * parseFloat(exchangeRate)).toFixed(2);
+		const dual = computeDualAmounts(dto.amount, currency, exchangeRate);
 
 		const cost = this.costRepo.create({
 			id: snowflake.nextId(),
 			orderId,
 			costTypeId: dto.costTypeId,
-			amount,
+			amountUsd: dual.amountUsd,
+			amountCny: dual.amountCny,
 			currency,
 			exchangeRate,
-			baseAmount,
 			remark: dto.remark || null,
 		});
 
@@ -104,7 +104,7 @@ export class SalesOrderCostService {
 		}
 
 		if (dto.amount !== undefined) {
-			cost.amount = dto.amount;
+			cost.amountUsd = dto.amount; // temporary, will be recomputed below
 		}
 
 		// 币种变更 → 重新查汇率
@@ -112,15 +112,19 @@ export class SalesOrderCostService {
 			cost.currency = dto.currency || 'CNY';
 			cost.exchangeRate = await this.rateService.getRate(
 				new Date().toISOString().slice(0, 10),
-				cost.currency,
+				'USD',
 			);
 		}
 
-		// 金额或汇率变化时重算 baseAmount
+		// 金额或汇率变化时重算 amountUsd 和 amountCny
 		if (dto.amount !== undefined || dto.currency !== undefined) {
-			cost.baseAmount = (
-				parseFloat(cost.amount) * parseFloat(cost.exchangeRate)
-			).toFixed(2);
+			const dual = computeDualAmounts(
+				dto.amount !== undefined ? dto.amount : cost.amountUsd,
+				cost.currency,
+				cost.exchangeRate,
+			);
+			cost.amountUsd = dual.amountUsd;
+			cost.amountCny = dual.amountCny;
 		}
 
 		if (dto.remark !== undefined) {

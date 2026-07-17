@@ -10,6 +10,7 @@ import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.ent
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { computeDualAmounts } from '@/common/utils/dual-currency';
 import type {
   CreatePurchaseReceiptDto,
   QueryPurchaseReceiptDto,
@@ -108,8 +109,9 @@ export class PurchaseReceiptService {
           );
         }
 
-        const amount = qty * parseFloat(orderItem.unitPrice);
         const poRate = parseFloat(order.exchangeRate || '1');
+        const amount = qty * parseFloat(orderItem.unitPriceUsd);
+        const dualAmounts = computeDualAmounts(amount, order.currency || 'CNY', poRate);
         const receiptItem = manager.create(PurchaseReceiptItem, {
           id: snowflake.nextId(),
           receiptId: savedReceipt.id,
@@ -117,9 +119,10 @@ export class PurchaseReceiptService {
           productId: orderItem.productId,
           productModelId: orderItem.productModelId || null,
           quantity: item.quantity,
-          unitPrice: orderItem.unitPrice,
-          amount: amount.toFixed(2),
-          baseAmount: (amount * poRate).toFixed(2),
+          unitPriceUsd: orderItem.unitPriceUsd,
+          unitPriceCny: orderItem.unitPriceCny,
+          amountUsd: dualAmounts.amountUsd,
+          amountCny: dualAmounts.amountCny,
         });
         receiptItems.push(await manager.save(receiptItem));
       }
@@ -134,10 +137,10 @@ export class PurchaseReceiptService {
           receiptItemId: ri.id,
           batchSource: 1,
           batchNo,
-          unitCost: ri.unitPrice,
-          unitCostBase: ri.baseAmount
-            ? (parseFloat(ri.baseAmount) / parseFloat(ri.quantity)).toFixed(2)
-            : ri.unitPrice,
+          unitCostUsd: ri.unitPriceUsd,
+          unitCostCny: ri.amountCny
+            ? (parseFloat(ri.amountCny) / parseFloat(ri.quantity)).toFixed(2)
+            : ri.unitPriceUsd,
           currency: order.currency || 'CNY',
           exchangeRate: order.exchangeRate || '1',
           originalQuantity: ri.quantity,
@@ -204,11 +207,11 @@ export class PurchaseReceiptService {
             businessId: savedReceipt.id,
             changeType: 1,
             quantity: ri.quantity,
-            unitCost: ri.unitPrice,
-            totalCost: ri.amount,
-            totalCostBase: ri.baseAmount,
+            unitCostUsd: ri.unitPriceUsd,
+            totalCostUsd: ri.amountUsd,
+            totalCostCny: ri.amountCny,
             flowCurrency: order.currency || 'CNY',
-            flowExchangeRate: order.exchangeRate || '1',
+            exchangeRate: order.exchangeRate || '7',
             beforeAvailable,
             afterAvailable: savedInventory.availableQuantity,
             beforeFrozen: savedInventory.frozenQuantity,

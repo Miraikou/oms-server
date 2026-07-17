@@ -10,6 +10,7 @@ import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from './services/fifo.service';
 import { RateService } from '@/common/rate/rate.service';
 import { snowflake } from '@/common/utils/snowflake';
+import { computeDualUnitPrice } from '@/common/utils/dual-currency';
 import type {
   CreateInventoryAdjustmentDto,
   QueryInventoryAdjustmentDto,
@@ -115,10 +116,8 @@ export class InventoryAdjustmentService {
               item.productModelId,
               saved.id,
               item.changeQuantity,
-              batch.unitCost,
-              batch.unitCostBase || '0',
-              batch.currency || 'CNY',
-              batch.exchangeRate || '1',
+              batch.unitCostUsd,
+              batch.unitCostCny || '0',
               beforeAvailable,
               batch.availableQuantity,
               manager,
@@ -130,10 +129,10 @@ export class InventoryAdjustmentService {
               throw new BadRequestException('增加库存未指定批次时，必须提供成本来源类型');
             }
 
-            let unitCost: string;
+            let unitCostUsd: string;
+            let unitCostCny: string;
             let currency: string;
             let exchangeRate: string;
-            let unitCostBase: string;
 
             if (item.costSourceType === 4) {
               // 手动输入
@@ -141,13 +140,13 @@ export class InventoryAdjustmentService {
                 throw new BadRequestException('手动输入成本时必须提供单价');
               }
               currency = item.currency || 'CNY';
-              unitCost = item.unitPrice;
               exchangeRate = await this.rateService.getRate(
                 new Date().toISOString().split('T')[0],
-                currency,
-                'CNY',
+                'USD',
               );
-              unitCostBase = (parseFloat(unitCost) * parseFloat(exchangeRate)).toFixed(2);
+              const dualPrice = computeDualUnitPrice(item.unitPrice, currency, exchangeRate);
+              unitCostUsd = dualPrice.unitPriceUsd;
+              unitCostCny = dualPrice.unitPriceCny;
             } else {
               // 自动估算
               const estimate = await this.estimateCostInternal(
@@ -156,9 +155,10 @@ export class InventoryAdjustmentService {
                 item.costSourceType,
               );
               currency = 'CNY';
-              unitCost = estimate.costCNY;
               exchangeRate = '1';
-              unitCostBase = estimate.costCNY;
+              const dualPrice = computeDualUnitPrice(estimate.costCNY, 'CNY', '1');
+              unitCostUsd = dualPrice.unitPriceUsd;
+              unitCostCny = dualPrice.unitPriceCny;
             }
 
             const batchNo = await this.sequenceService.generate('BT');
@@ -169,8 +169,8 @@ export class InventoryAdjustmentService {
               receiptItemId: null,
               batchSource: 3, // 库存调整
               batchNo,
-              unitCost,
-              unitCostBase,
+              unitCostUsd,
+              unitCostCny,
               currency,
               exchangeRate,
               originalQuantity: item.changeQuantity,
@@ -185,7 +185,9 @@ export class InventoryAdjustmentService {
 
             // 保存成本来源信息到调整明细
             adjItem.costSourceType = item.costSourceType;
-            adjItem.unitPrice = unitCost;
+            adjItem.unitPriceUsd = unitCostUsd;
+            adjItem.unitPriceCny = unitCostCny;
+            adjItem.exchangeRate = exchangeRate;
             adjItem.currency = currency;
             await manager.save(InventoryAdjustmentItem, adjItem);
 
@@ -197,10 +199,8 @@ export class InventoryAdjustmentService {
               item.productModelId,
               saved.id,
               item.changeQuantity,
-              unitCost,
-              unitCostBase,
-              currency,
-              exchangeRate,
+              unitCostUsd,
+              unitCostCny,
               '0',
               item.changeQuantity,
               manager,
@@ -252,10 +252,8 @@ export class InventoryAdjustmentService {
               item.productModelId,
               saved.id,
               item.changeQuantity,
-              batch.unitCost,
-              batch.unitCostBase || '0',
-              batch.currency || 'CNY',
-              batch.exchangeRate || '1',
+              batch.unitCostUsd,
+              batch.unitCostCny || '0',
               beforeAvailable,
               batch.availableQuantity,
               manager,
@@ -349,10 +347,8 @@ export class InventoryAdjustmentService {
     productModelId: string | null | undefined,
     businessId: string,
     quantity: string,
-    unitCost: string,
-    unitCostBase: string,
-    currency: string,
-    exchangeRate: string,
+    unitCostUsd: string,
+    unitCostCny: string,
     beforeAvailable: string,
     afterAvailable: string,
     manager: EntityManager,
@@ -361,8 +357,9 @@ export class InventoryAdjustmentService {
       ? { productId, productModelId }
       : { productId, productModelId: IsNull() };
     const inv = await manager.findOne(Inventory, { where: modelWhere });
-    const totalCost = (Math.abs(parseFloat(quantity)) * parseFloat(unitCost)).toFixed(2);
-    const totalCostBase = (Math.abs(parseFloat(quantity)) * parseFloat(unitCostBase)).toFixed(2);
+    const absQty = Math.abs(parseFloat(quantity));
+    const totalCostUsd = (absQty * parseFloat(unitCostUsd)).toFixed(2);
+    const totalCostCny = (absQty * parseFloat(unitCostCny)).toFixed(2);
 
     await manager.save(
       InventoryFlow,
@@ -374,12 +371,11 @@ export class InventoryAdjustmentService {
         businessType: 5, // 库存调整
         businessId,
         changeType: 5, // 库存调整
-        quantity: String(Math.abs(parseFloat(quantity))),
-        unitCost,
-        totalCost,
-        totalCostBase,
-        flowCurrency: currency,
-        flowExchangeRate: exchangeRate,
+        quantity: String(absQty),
+        unitCostUsd,
+        unitCostCny,
+        totalCostUsd,
+        totalCostCny,
         beforeAvailable,
         afterAvailable,
         beforeFrozen: inv?.frozenQuantity || '0',
@@ -459,7 +455,7 @@ export class InventoryAdjustmentService {
     let totalQty = 0;
     for (const b of batches) {
       const qty = parseFloat(b.originalQuantity);
-      const costBase = parseFloat(b.unitCostBase);
+      const costBase = parseFloat(b.unitCostCny);
       totalCostCNY += costBase * qty;
       totalQty += qty;
     }
@@ -499,7 +495,7 @@ export class InventoryAdjustmentService {
     let totalQty = 0;
     for (const b of batches) {
       const qty = parseFloat(b.availableQuantity);
-      const costBase = parseFloat(b.unitCostBase);
+      const costBase = parseFloat(b.unitCostCny);
       totalCostCNY += costBase * qty;
       totalQty += qty;
     }
@@ -513,7 +509,7 @@ export class InventoryAdjustmentService {
 
   /**
    * 最新采购记录成本
-   * 取最近入库批次的 unitCostBase
+   * 取最近入库批次的 unitCostCny
    */
   private async calcLatestPurchaseCost(
     productId: string,
@@ -536,6 +532,6 @@ export class InventoryAdjustmentService {
       throw new BadRequestException('该商品无采购记录');
     }
 
-    return { costCNY: parseFloat(batch.unitCostBase).toFixed(4) };
+    return { costCNY: parseFloat(batch.unitCostCny).toFixed(4) };
   }
 }

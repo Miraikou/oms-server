@@ -80,7 +80,7 @@ describe('PurchaseOrderService', () => {
       expect(mockSequenceService.generate).toHaveBeenCalledWith('CG')
       expect(snowflake.nextId).toHaveBeenCalled()
       // 10*50 + 5*100 = 1000
-      expect(result.totalAmount).toBe('1000.00')
+      expect(result.totalAmountUsd).toBe('1000.00')
       expect(result.supplierId).toBe('S001')
       expect(result.currency).toBe('CNY')
     })
@@ -188,7 +188,7 @@ describe('PurchaseOrderService', () => {
       purchaseNo: 'CG202601010001',
       supplierId: 'S001',
       status: 1,
-      totalAmount: '500.00',
+      totalAmountUsd: '500.00',
       remark: '旧备注',
     }
 
@@ -220,7 +220,7 @@ describe('PurchaseOrderService', () => {
         purchaseOrderId: 'PO001',
       })
       // 3 * 200 = 600
-      expect(result.totalAmount).toBe('600.00')
+      expect(result.totalAmountUsd).toBe('600.00')
     })
 
     it('非待入库状态无法修改应抛出 BadRequestException', async () => {
