@@ -27,4 +27,13 @@ export class Salesperson extends BaseEntity {
   @Index('idx_status')
   @Column({ type: 'tinyint', default: 1, comment: '状态：1=启用，0=停用' })
   status: number = 1;
+
+  @Index('uk_user_id', { unique: true })
+  @Column({
+    name: 'user_id',
+    type: 'bigint',
+    nullable: true,
+    comment: '关联系统用户ID',
+  })
+  userId: string | null = null;
 }

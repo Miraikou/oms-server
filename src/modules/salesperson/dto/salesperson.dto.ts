@@ -27,6 +27,11 @@ export class CreateSalespersonDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @ApiPropertyOptional({ description: '关联系统用户ID' })
+  @IsString()
+  @IsOptional()
+  userId?: string;
 }
 
 export class UpdateSalespersonDto {
@@ -54,4 +59,9 @@ export class UpdateSalespersonDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @ApiPropertyOptional({ description: '关联系统用户ID' })
+  @IsString()
+  @IsOptional()
+  userId?: string;
 }
