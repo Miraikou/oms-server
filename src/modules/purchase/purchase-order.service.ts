@@ -308,6 +308,21 @@ export class PurchaseOrderService {
 		if (query.status !== undefined) {
 			qb.andWhere('po.status = :status', { status: query.status });
 		}
+		if (query.returnStatus !== undefined) {
+			qb.andWhere('po.returnStatus = :returnStatus', {
+				returnStatus: query.returnStatus,
+			});
+		}
+		if (query.startDate) {
+			qb.andWhere('po.purchaseDate >= :startDate', {
+				startDate: query.startDate,
+			});
+		}
+		if (query.endDate) {
+			qb.andWhere('po.purchaseDate <= :endDate', {
+				endDate: query.endDate,
+			});
+		}
 
 		qb.orderBy('po.createdTime', 'DESC')
 			.skip((page - 1) * pageSize)

@@ -119,4 +119,18 @@ export class QueryPurchaseOrderDto extends PaginationParamsDto {
 	@ApiPropertyOptional({ description: '状态' })
 	@IsOptional()
 	status?: number;
+
+	@ApiPropertyOptional({ description: '退货状态' })
+	@IsOptional()
+	returnStatus?: number;
+
+	@ApiPropertyOptional({ description: '采购开始日期' })
+	@IsString()
+	@IsOptional()
+	startDate?: string;
+
+	@ApiPropertyOptional({ description: '采购结束日期' })
+	@IsString()
+	@IsOptional()
+	endDate?: string;
 }
