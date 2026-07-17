@@ -33,31 +33,31 @@ export class Payment extends BaseEntity {
   paymentDate: Date;
 
   @Column({
-    name: 'amount',
+    name: 'amount_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '本次收/退款金额（原币）',
+    comment: '本次收/退款金额（USD）',
   })
-  amount: string;
+  amountUsd: string;
 
   @Column({
     name: 'exchange_rate',
     type: 'decimal',
     precision: 18,
     scale: 4,
-    comment: '实际汇率',
+    comment: 'USD→CNY汇率',
   })
   exchangeRate: string;
 
   @Column({
-    name: 'base_amount',
+    name: 'amount_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     comment: '到账人民币（CNY）',
   })
-  baseAmount: string;
+  amountCny: string;
 
   @Column({
     name: 'currency',
