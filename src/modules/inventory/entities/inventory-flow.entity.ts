@@ -63,53 +63,63 @@ export class InventoryFlow {
   quantity: string;
 
   @Column({
-    name: 'unit_cost',
+    name: 'unit_cost_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
     nullable: true,
-    comment: '本次单位成本',
+    comment: '本次单位成本（USD）',
   })
-  unitCost: string | null = null;
+  unitCostUsd: string | null = null;
 
   @Column({
-    name: 'total_cost',
+    name: 'unit_cost_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     nullable: true,
-    comment: '本次总成本',
+    comment: '本次单位成本（CNY）',
   })
-  totalCost: string | null = null;
+  unitCostCny: string | null = null;
 
   @Column({
-    name: 'total_cost_base',
+    name: 'total_cost_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '本次总成本（USD）',
+  })
+  totalCostUsd: string | null = null;
+
+  @Column({
+    name: 'total_cost_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     nullable: true,
     comment: '本次总成本（CNY）',
   })
-  totalCostBase: string | null = null;
+  totalCostCny: string | null = null;
 
   @Column({
     name: 'flow_currency',
     type: 'varchar',
     length: 10,
     nullable: true,
-    comment: '成本币种',
+    comment: '成本原始币种',
   })
   flowCurrency: string | null = null;
 
   @Column({
-    name: 'flow_exchange_rate',
+    name: 'exchange_rate',
     type: 'decimal',
     precision: 18,
     scale: 4,
     nullable: true,
-    comment: '成本币种→CNY 汇率',
+    comment: 'USD→CNY汇率',
   })
-  flowExchangeRate: string | null = null;
+  exchangeRate: string | null = null;
 
   @Column({
     name: 'before_available',

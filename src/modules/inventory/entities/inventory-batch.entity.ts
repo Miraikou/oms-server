@@ -56,23 +56,23 @@ export class InventoryBatch {
   batchNo: string;
 
   @Column({
-    name: 'unit_cost',
+    name: 'unit_cost_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '批次采购单价',
+    comment: '批次采购单价（USD）',
   })
-  unitCost: string;
+  unitCostUsd: string;
 
   @Column({
-    name: 'unit_cost_base',
+    name: 'unit_cost_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '批次采购单价（CNY）= unitCost × exchangeRate',
+    comment: '批次采购单价（CNY）= unitCostUsd × exchangeRate',
   })
-  unitCostBase: string = '0';
+  unitCostCny: string = '0';
 
   @Column({
     name: 'currency',
@@ -89,7 +89,7 @@ export class InventoryBatch {
     precision: 18,
     scale: 4,
     default: 1.0,
-    comment: '采购币种→CNY 汇率',
+    comment: 'USD→CNY汇率',
   })
   exchangeRate: string = '1.0000';
 

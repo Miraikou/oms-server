@@ -51,21 +51,41 @@ export class InventoryAdjustmentItem extends BaseEntity {
   costSourceType: number | null = null;
 
   @Column({
-    name: 'unit_price',
+    name: 'unit_price_usd',
     type: 'decimal',
     precision: 18,
     scale: 4,
     nullable: true,
-    comment: '使用的单价（币种为单位）',
+    comment: '使用的单价（USD）',
   })
-  unitPrice: string | null = null;
+  unitPriceUsd: string | null = null;
+
+  @Column({
+    name: 'unit_price_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    nullable: true,
+    comment: '使用的单价（CNY）',
+  })
+  unitPriceCny: string | null = null;
 
   @Column({
     name: 'adjust_currency',
     type: 'varchar',
     length: 10,
     nullable: true,
-    comment: '成本币种',
+    comment: '成本原始币种',
   })
   currency: string | null = null;
+
+  @Column({
+    name: 'exchange_rate',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    nullable: true,
+    comment: 'USD→CNY汇率',
+  })
+  exchangeRate: string | null = null;
 }
