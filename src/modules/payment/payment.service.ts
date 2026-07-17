@@ -12,6 +12,7 @@ import type {
 	QueryPaymentDto,
 } from './dto/payment.dto';
 import { RateService } from '@/common/rate/rate.service';
+import { CommissionService } from '@/modules/commission/commission.service';
 
 /** 金额转为微元整数避免浮点精度问题（USD 精度 6 位 → ×1,000,000） */
 const toMicroUnits = (s: string): number =>
@@ -35,6 +36,7 @@ export class PaymentService {
 		private readonly salesOrderService: SalesOrderService,
 		private readonly dataSource: DataSource,
     private readonly rateService: RateService,
+		private readonly commissionService: CommissionService,
 	) {}
 
 	/**
@@ -100,6 +102,23 @@ export class PaymentService {
 				dto.amount,
 				manager,
 			);
+
+			// 6. 记录提成（收款计提）
+			if (order.salespersonId) {
+				await this.commissionService.recordCommission(
+					{
+						salesOrderId: order.id,
+						paymentId: savedPayment.id,
+						salespersonId: order.salespersonId,
+						orderAmount: order.totalAmount,
+						receivedAmount: dto.amount,
+						receivedBaseAmount: baseAmount,
+						currency,
+						exchangeRate,
+					},
+					manager,
+				);
+			}
 
 			this.logger.log(
 				`收款成功: ${paymentNo}, 订单: ${order.orderNo}, ${dto.amount} ${currency}`,
@@ -170,6 +189,24 @@ export class PaymentService {
 				dto.amount,
 				manager,
 			);
+
+			// 6. 记录提成冲回（退款时）
+			if (order.salespersonId) {
+				await this.commissionService.recordClawback(
+					{
+						salesOrderId: order.id,
+						paymentId: savedPayment.id,
+						salesReturnId: '',
+						salespersonId: order.salespersonId,
+						orderAmount: order.totalAmount,
+						refundAmount: dto.amount,
+						refundBaseAmount: baseAmount,
+						currency,
+						exchangeRate,
+					},
+					manager,
+				);
+			}
 
 			this.logger.log(
 				`退款成功: ${paymentNo}, 订单: ${order.orderNo}, ${dto.amount} ${currency}`,

@@ -20,6 +20,7 @@ import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { snowflake } from '@/common/utils/snowflake';
 import { RateService } from '@/common/rate/rate.service';
+import { CommissionService } from '@/modules/commission/commission.service';
 import type {
   CreateSalesReturnDto,
   QuerySalesReturnDto,
@@ -61,6 +62,7 @@ export class SalesReturnService {
     private readonly sequenceService: SequenceService,
     private readonly salesOrderService: SalesOrderService,
     private readonly rateService: RateService,
+    private readonly commissionService: CommissionService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -308,6 +310,24 @@ export class SalesReturnService {
           refundTotal.toFixed(2),
           manager,
         );
+
+        // 记录提成冲回（退货退款时）
+        if (order.salespersonId) {
+          await this.commissionService.recordClawback(
+            {
+              salesOrderId: order.id,
+              paymentId: savedPayment.id,
+              salesReturnId: savedReturn.id,
+              salespersonId: order.salespersonId,
+              orderAmount: order.totalAmount,
+              refundAmount: refundTotal.toFixed(2),
+              refundBaseAmount: (refundTotal * rate).toFixed(2),
+              currency: order.currency || 'USD',
+              exchangeRate: order.exchangeRate,
+            },
+            manager,
+          );
+        }
 
         refundAmountStr = refundTotal.toFixed(2);
         refundPaymentId = savedPayment.id;

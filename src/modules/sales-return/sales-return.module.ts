@@ -17,6 +17,7 @@ import { SalesReturnController } from './sales-return.controller';
 import { SalesOrderModule } from '@/modules/sales-order/sales-order.module';
 import { PaymentModule } from '@/modules/payment/payment.module';
 import { RateModule } from '@/common/rate/rate.module';
+import { CommissionModule } from '@/modules/commission/commission.module';
 
 /**
  * 客户退货模块
@@ -40,6 +41,7 @@ import { RateModule } from '@/common/rate/rate.module';
     SalesOrderModule,
     PaymentModule,
     RateModule,
+    CommissionModule,
   ],
   controllers: [SalesReturnController],
   providers: [SalesReturnService],

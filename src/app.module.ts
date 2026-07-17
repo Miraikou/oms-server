@@ -33,6 +33,7 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { SalesReturnModule } from './modules/sales-return/sales-return.module';
 import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { CommissionModule } from './modules/commission/commission.module';
 import { RateModule } from './modules/rate/rate.module';
 import { AuditSubscriber } from './common/subscribers/audit.subscriber';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
@@ -113,6 +114,9 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
     PaymentModule,
     SalesReturnModule,
     PurchaseReturnModule,
+
+    // 提成管理
+    CommissionModule,
 
     // 驾驶舱
     DashboardModule,
