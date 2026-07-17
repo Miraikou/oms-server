@@ -4,7 +4,7 @@ import { BaseEntity } from '@/common/entities/base.entity';
 /**
  * 发货明细实体
  * 记录本次发货的商品，含销售金额和 FIFO 成本
- * gross_profit = sales_amount - total_cost
+ * gross_profit = sales_amount_cny - total_cost_cny
  */
 @Entity('shipment_item')
 export class ShipmentItem extends BaseEntity {
@@ -33,52 +33,61 @@ export class ShipmentItem extends BaseEntity {
   quantity: string;
 
   @Column({
-    name: 'sales_unit_price',
+    name: 'sales_unit_price_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售单价（原币）',
+    comment: '销售单价（USD）',
   })
-  salesUnitPrice: string;
+  salesUnitPriceUsd: string;
 
   @Column({
-    name: 'sales_amount',
+    name: 'sales_unit_price_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售金额（原币）',
+    comment: '销售单价（CNY）',
   })
-  salesAmount: string;
+  salesUnitPriceCny: string;
 
   @Column({
-    name: 'sales_base_amount',
+    name: 'sales_amount_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    comment: '销售金额（USD）',
+  })
+  salesAmountUsd: string;
+
+  @Column({
+    name: 'sales_amount_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '销售金额（CNY）= salesAmount × exchangeRate',
+    comment: '销售金额（CNY）= salesAmountUsd × exchangeRate',
   })
-  salesBaseAmount: string = '0';
+  salesAmountCny: string = '0';
 
   @Column({
-    name: 'total_cost',
+    name: 'total_cost_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
     comment: '产品总成本（FIFO 汇总，CNY）',
   })
-  totalCost: string = '0';
+  totalCostCny: string = '0';
 
   @Column({
-    name: 'gross_profit',
+    name: 'gross_profit_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
     comment: '产品毛利润（CNY）',
   })
-  grossProfit: string = '0';
+  grossProfitCny: string = '0';
 
   @Column({
     name: 'currency',
@@ -94,8 +103,8 @@ export class ShipmentItem extends BaseEntity {
     type: 'decimal',
     precision: 18,
     scale: 4,
-    default: 1.0,
-    comment: '订单汇率',
+    default: 7.0,
+    comment: 'USD→CNY汇率',
   })
-  exchangeRate: string = '1.0000';
+  exchangeRate: string = '7.0000';
 }

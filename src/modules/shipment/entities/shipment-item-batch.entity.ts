@@ -33,42 +33,42 @@ export class ShipmentItemBatch {
   quantity: string;
 
   @Column({
-    name: 'unit_cost',
+    name: 'unit_cost_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '批次成本单价',
+    comment: '批次成本单价（USD）',
   })
-  unitCost: string;
+  unitCostUsd: string;
 
   @Column({
-    name: 'total_cost',
-    type: 'decimal',
-    precision: 18,
-    scale: 2,
-    comment: '成本金额',
-  })
-  totalCost: string;
-
-  @Column({
-    name: 'unit_cost_base',
+    name: 'unit_cost_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
     comment: '成本单价（CNY）',
   })
-  unitCostBase: string = '0';
+  unitCostCny: string = '0';
 
   @Column({
-    name: 'total_cost_base',
+    name: 'total_cost_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    comment: '成本金额（USD）',
+  })
+  totalCostUsd: string;
+
+  @Column({
+    name: 'total_cost_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
     comment: '成本金额（CNY）',
   })
-  totalCostBase: string = '0';
+  totalCostCny: string = '0';
 
   @Column({
     name: 'currency',
@@ -85,7 +85,7 @@ export class ShipmentItemBatch {
     precision: 18,
     scale: 4,
     default: 1.0,
-    comment: '成本币种→CNY 汇率',
+    comment: 'USD→CNY汇率',
   })
   exchangeRate: string = '1.0000';
 
