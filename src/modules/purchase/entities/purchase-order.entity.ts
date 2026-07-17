@@ -29,30 +29,30 @@ export class PurchaseOrder extends BaseEntity {
     type: 'decimal',
     precision: 18,
     scale: 4,
-    default: 1.0,
-    comment: '汇率',
+    default: 7.0,
+    comment: 'USD→CNY汇率',
   })
-  exchangeRate: string = '1.0000';
+  exchangeRate: string = '7.0000';
 
   @Column({
-    name: 'total_amount',
+    name: 'total_amount_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '采购总金额',
+    comment: '采购总金额（USD）',
   })
-  totalAmount: string = '0';
+  totalAmountUsd: string = '0';
 
   @Column({
-    name: 'total_base_amount',
+    name: 'total_amount_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '采购总金额（CNY）= totalAmount × exchangeRate',
+    comment: '采购总金额（CNY）= totalAmountUsd × exchangeRate',
   })
-  totalBaseAmount: string = '0';
+  totalAmountCny: string = '0';
 
   @Index('idx_purchase_date')
   @Column({ name: 'purchase_date', type: 'date', comment: '采购日期' })

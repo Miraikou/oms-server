@@ -29,19 +29,41 @@ export class PurchaseOrderItem extends BaseEntity {
   quantity: string;
 
   @Column({
-    name: 'unit_price',
+    name: 'unit_price_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '采购单价',
+    comment: '采购单价（USD）',
   })
-  unitPrice: string;
+  unitPriceUsd: string;
 
-  @Column({ type: 'decimal', precision: 18, scale: 2, comment: '采购金额' })
-  amount: string;
+  @Column({
+    name: 'unit_price_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    comment: '采购单价（CNY）',
+  })
+  unitPriceCny: string;
 
-  @Column({ name: 'base_amount', type: 'decimal', precision: 18, scale: 2, default: 0, comment: '采购金额（CNY）= amount × PO汇率' })
-  baseAmount: string = '0';
+  @Column({
+    name: 'amount_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    comment: '采购金额（USD）',
+  })
+  amountUsd: string;
+
+  @Column({
+    name: 'amount_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '采购金额（CNY）= amountUsd × PO汇率',
+  })
+  amountCny: string = '0';
 
   @Column({
     name: 'received_quantity',
