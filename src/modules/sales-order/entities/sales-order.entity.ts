@@ -50,44 +50,44 @@ export class SalesOrder extends BaseEntity {
   tradeType: string;
 
   @Column({
-    name: 'total_amount',
+    name: 'total_amount_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '订单销售金额（订单币种）',
+    comment: '订单销售金额（USD）',
   })
-  totalAmount: string = '0';
+  totalAmountUsd: string = '0';
 
   @Column({
-    name: 'total_base_amount',
+    name: 'total_amount_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '订单总金额（CNY）= totalAmount × exchangeRate',
+    comment: '订单销售金额（CNY）= totalAmountUsd × exchangeRate',
   })
-  totalBaseAmount: string = '0';
+  totalAmountCny: string = '0';
 
   @Column({
-    name: 'received_amount',
+    name: 'received_amount_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '已收金额（订单币种）',
+    comment: '已收金额（USD）',
   })
-  receivedAmount: string = '0';
+  receivedAmountUsd: string = '0';
 
   @Column({
-    name: 'received_base_amount',
+    name: 'received_amount_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '已收金额（CNY）= receivedAmount × exchangeRate',
+    comment: '已收金额（CNY）= receivedAmountUsd × exchangeRate',
   })
-  receivedBaseAmount: string = '0';
+  receivedAmountCny: string = '0';
 
   @Index('idx_shipment_status')
   @Column({
@@ -122,7 +122,7 @@ export class SalesOrder extends BaseEntity {
     precision: 18,
     scale: 4,
     default: 7.0,
-    comment: '汇率（订单币种→CNY），CNY时为1',
+    comment: 'USD→CNY汇率',
   })
   exchangeRate: string = '7.0000';
 
@@ -137,24 +137,24 @@ export class SalesOrder extends BaseEntity {
   bloggerCommissionRate: string = '5.0000';
 
   @Column({
-    name: 'blogger_commission_amount',
+    name: 'blogger_commission_amount_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '博主佣金金额（订单币种），收款时自动计算',
+    comment: '博主佣金金额（USD），收款时自动计算',
   })
-  bloggerCommissionAmount: string = '0';
+  bloggerCommissionAmountUsd: string = '0';
 
   @Column({
-    name: 'blogger_commission_base_amount',
+    name: 'blogger_commission_amount_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
     comment: '博主佣金金额（CNY）',
   })
-  bloggerCommissionBaseAmount: string = '0';
+  bloggerCommissionAmountCny: string = '0';
 
   @Index('idx_status')
   @Column({

@@ -29,32 +29,41 @@ export class SalesOrderItem extends BaseEntity {
   quantity: string;
 
   @Column({
-    name: 'unit_price',
+    name: 'unit_price_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售单价（订单币种）',
+    comment: '销售单价（USD）',
   })
-  unitPrice: string;
+  unitPriceUsd: string;
 
   @Column({
-    name: 'amount',
+    name: 'unit_price_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
-    comment: '销售金额（订单币种）',
+    comment: '销售单价（CNY）',
   })
-  amount: string;
+  unitPriceCny: string;
 
   @Column({
-    name: 'base_amount',
+    name: 'amount_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    comment: '销售金额（USD）',
+  })
+  amountUsd: string;
+
+  @Column({
+    name: 'amount_cny',
     type: 'decimal',
     precision: 18,
     scale: 2,
     default: 0,
-    comment: '销售金额（CNY）= amount × 订单汇率',
+    comment: '销售金额（CNY）= amountUsd × 订单汇率',
   })
-  baseAmount: string = '0';
+  amountCny: string = '0';
 
   @Column({
     name: 'shipped_quantity',
