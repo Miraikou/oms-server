@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsEmail,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -32,4 +38,24 @@ export class ChangePasswordDto {
   @IsNotEmpty({ message: '新密码不能为空' })
   @MinLength(6, { message: '新密码至少 6 位' })
   newPassword: string;
+}
+
+export class UpdateProfileDto {
+  @ApiProperty({ description: '姓名', required: false })
+  @IsString()
+  @IsOptional()
+  @IsNotEmpty({ message: '姓名不能为空' })
+  realName?: string;
+
+  @ApiProperty({ description: '手机号', required: false })
+  @IsString()
+  @IsOptional()
+  @IsNotEmpty({ message: '手机号不能为空' })
+  phone?: string;
+
+  @ApiProperty({ description: '邮箱', required: false })
+  @IsString()
+  @IsOptional()
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email?: string;
 }

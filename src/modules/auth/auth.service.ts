@@ -13,7 +13,7 @@ import { SysUser } from '../user/entities/sys-user.entity';
 import { SysLoginLog } from './entities/sys-login-log.entity';
 import { RoleService } from '../role/role.service';
 import { MenuService } from '../menu/menu.service';
-import type { LoginDto, ChangePasswordDto } from './dto/auth.dto';
+import type { LoginDto, ChangePasswordDto, UpdateProfileDto } from './dto/auth.dto';
 import { snowflake } from '../../common/utils/snowflake';
 
 /** JWT Payload 结构 */
@@ -154,7 +154,16 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await this.userRepo.findOne({
       where: { id: userId },
-      select: { id: true, username: true, realName: true },
+      select: {
+        id: true,
+        username: true,
+        realName: true,
+        phone: true,
+        email: true,
+        lastLoginTime: true,
+        lastLoginIp: true,
+        createdTime: true,
+      },
     });
     if (!user) {
       throw new UnauthorizedException('用户不存在');
@@ -166,7 +175,38 @@ export class AuthService {
       id: user.id,
       username: user.username,
       realName: user.realName,
+      phone: user.phone,
+      email: user.email,
+      lastLoginTime: user.lastLoginTime,
+      lastLoginIp: user.lastLoginIp,
+      createdTime: user.createdTime,
       roles,
+    };
+  }
+
+  /**
+   * 修改当前用户个人信息（姓名、手机、邮箱）
+   * @param userId 当前用户 ID
+   * @param dto 修改参数
+   */
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('用户不存在');
+    }
+
+    if (dto.realName !== undefined) user.realName = dto.realName;
+    if (dto.phone !== undefined) user.phone = dto.phone || null;
+    if (dto.email !== undefined) user.email = dto.email || null;
+
+    await this.userRepo.save(user);
+
+    return {
+      id: user.id,
+      username: user.username,
+      realName: user.realName,
+      phone: user.phone,
+      email: user.email,
     };
   }
 
