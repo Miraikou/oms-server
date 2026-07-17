@@ -64,6 +64,10 @@ export class UserService {
       qb.andWhere('user.status = :status', { status: query.status });
     }
 
+    if (query.roleCode) {
+      qb.andWhere('role.roleCode = :roleCode', { roleCode: query.roleCode });
+    }
+
     const sortField = query.sortField || 'createdTime';
     const sortOrder = query.sortOrder || 'DESC';
     qb.orderBy(`user.${sortField}`, sortOrder)

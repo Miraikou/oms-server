@@ -100,6 +100,11 @@ export class QueryUserDto extends PaginationParamsDto {
   @IsIn([0, 1])
   @IsOptional()
   status?: number;
+
+  @ApiPropertyOptional({ description: '角色编码筛选' })
+  @IsString()
+  @IsOptional()
+  roleCode?: string;
 }
 
 /** 重置密码 DTO */
