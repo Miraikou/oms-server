@@ -44,10 +44,11 @@ export class DashboardService {
       shipmentStats,
       purchaseStats,
       inventoryStats,
+      commissionStats,
     ] = await Promise.all([
       this.executeQuery(
         `SELECT COALESCE(SUM(total_base_amount), 0) AS totalSales, COUNT(*) AS orderCount
-           FROM sales_order so WHERE so.status >= 1 {dateFilter}`,
+           FROM sales_order so WHERE so.status IN (1, 2) {dateFilter}`,
         'so.order_date',
         startDate,
         endDate,
@@ -55,7 +56,7 @@ export class DashboardService {
       this.executeQuery(
         `SELECT COALESCE(SUM(base_amount), 0) AS totalPayment
            FROM payment p INNER JOIN sales_order so ON p.order_id = so.id
-           WHERE 1=1 {dateFilter}`,
+           WHERE p.type = 1 {dateFilter}`,
         'p.payment_date',
         startDate,
         endDate,
@@ -65,7 +66,7 @@ export class DashboardService {
            FROM shipment_item si
            INNER JOIN shipment s ON si.shipment_id = s.id
            INNER JOIN sales_order so ON s.order_id = so.id
-           WHERE 1=1 {dateFilter}`,
+           WHERE so.status IN (1, 2) {dateFilter}`,
         'so.order_date',
         startDate,
         endDate,
@@ -74,7 +75,7 @@ export class DashboardService {
         `SELECT COALESCE(SUM(soc.base_amount), 0) AS totalCost
            FROM sales_order_cost soc
            INNER JOIN sales_order so ON soc.order_id = so.id
-           WHERE 1=1 {dateFilter}`,
+           WHERE so.status IN (1, 2) {dateFilter}`,
         'so.order_date',
         startDate,
         endDate,
@@ -82,14 +83,14 @@ export class DashboardService {
       this.executeQuery(
         `SELECT COUNT(*) AS shipmentCount
            FROM shipment s INNER JOIN sales_order so ON s.order_id = so.id
-           WHERE 1=1 {dateFilter}`,
+           WHERE so.status IN (1, 2) {dateFilter}`,
         'so.order_date',
         startDate,
         endDate,
       ),
       this.executeQuery(
         `SELECT COALESCE(SUM(total_base_amount), 0) AS totalPurchase
-           FROM purchase_order po WHERE po.status >= 1 {dateFilter}`,
+           FROM purchase_order po WHERE po.status IN (1, 2) {dateFilter}`,
         'po.purchase_date',
         startDate,
         endDate,
@@ -98,6 +99,7 @@ export class DashboardService {
         `SELECT COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost_base AS DECIMAL(18,2))), 0) AS inventoryValue
            FROM inventory_batch ib WHERE ib.status = 1`,
       ),
+      this.getCommissionSummary(startDate, endDate),
     ]);
 
     const shipmentProfit = getNum(profitStats[0], 'shipmentProfit');
@@ -117,6 +119,45 @@ export class DashboardService {
       shipmentCount: getInt(shipmentStats[0], 'shipmentCount'),
       totalPurchase: getNum(purchaseStats[0], 'totalPurchase').toFixed(2),
       inventoryValue: getNum(inventoryStats[0], 'inventoryValue').toFixed(2),
+      commissionEarned: commissionStats.monthEarned.toFixed(2),
+      commissionClawback: commissionStats.monthClawback.toFixed(2),
+      commissionNet: commissionStats.monthNet,
+      commissionPending: commissionStats.totalPending.toFixed(2),
+    };
+  }
+
+  /**
+   * 提成汇总统计
+   */
+  async getCommissionSummary(startDate?: string, endDate?: string) {
+    const dateFilter =
+      startDate && endDate
+        ? `AND created_time >= '${startDate}' AND created_time <= '${endDate} 23:59:59'`
+        : '';
+
+    const [earned, clawback, pending] = await Promise.all([
+      this.dataSource.query(
+        `SELECT COALESCE(SUM(commission_base_amount), 0) AS total
+         FROM commission_ledger WHERE type = 1 ${dateFilter}`,
+      ),
+      this.dataSource.query(
+        `SELECT COALESCE(SUM(ABS(commission_base_amount)), 0) AS total
+         FROM commission_ledger WHERE type = 2 ${dateFilter}`,
+      ),
+      this.dataSource.query(
+        `SELECT COALESCE(SUM(commission_base_amount), 0) AS total
+         FROM commission_ledger WHERE status = 1`,
+      ),
+    ]);
+
+    return {
+      monthEarned: parseFloat(earned[0]?.total || '0'),
+      monthClawback: parseFloat(clawback[0]?.total || '0'),
+      monthNet: (
+        parseFloat(earned[0]?.total || '0') -
+        parseFloat(clawback[0]?.total || '0')
+      ).toFixed(2),
+      totalPending: parseFloat(pending[0]?.total || '0'),
     };
   }
 
@@ -133,7 +174,7 @@ export class DashboardService {
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
               COALESCE(SUM(so.total_base_amount), 0) AS amount,
               COUNT(*) AS count
-       FROM sales_order so WHERE so.status >= 1 {dateFilter}
+       FROM sales_order so WHERE so.status IN (1, 2) {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'so.order_date',
       startDate,
@@ -156,7 +197,7 @@ export class DashboardService {
        FROM shipment_item si
        INNER JOIN shipment s ON si.shipment_id = s.id
        INNER JOIN sales_order so ON s.order_id = so.id
-       WHERE 1=1 {dateFilter}
+       WHERE so.status IN (1, 2) {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'so.order_date',
       startDate,
@@ -176,7 +217,7 @@ export class DashboardService {
     return this.executeQuery(
       `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
               COALESCE(SUM(p.base_amount), 0) AS amount, COUNT(*) AS count
-       FROM payment p WHERE 1=1 {dateFilter}
+       FROM payment p WHERE p.type = 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'p.payment_date',
       startDate,
@@ -196,7 +237,7 @@ export class DashboardService {
     return this.executeQuery(
       `SELECT DATE_FORMAT(po.purchase_date, '${dateFormat}') AS period,
               COALESCE(SUM(po.total_base_amount), 0) AS amount, COUNT(*) AS count
-       FROM purchase_order po WHERE po.status >= 1 {dateFilter}
+       FROM purchase_order po WHERE po.status IN (1, 2) {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'po.purchase_date',
       startDate,
@@ -217,7 +258,7 @@ export class DashboardService {
       `SELECT sp.id AS salespersonId, sp.name AS salespersonName,
               COALESCE(SUM(so.total_base_amount), 0) AS totalSales, COUNT(so.id) AS orderCount
        FROM salesperson sp
-       LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status >= 1 {dateFilter}
+       LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status IN (1, 2) {dateFilter}
        GROUP BY sp.id, sp.name ORDER BY totalSales DESC LIMIT ?`,
       'so.order_date',
       startDate,
@@ -237,7 +278,7 @@ export class DashboardService {
               COALESCE(SUM(oi.base_amount), 0) AS totalSales
        FROM sales_order_item oi
        INNER JOIN sales_order so ON oi.order_id = so.id
-       WHERE so.status >= 1 {dateFilter}
+       WHERE so.status IN (1, 2) {dateFilter}
        GROUP BY oi.product_id ORDER BY totalSales DESC LIMIT ?`,
       'so.order_date',
       startDate,

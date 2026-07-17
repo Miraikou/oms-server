@@ -92,4 +92,13 @@ export class DashboardController {
   getPendingItems() {
     return this.service.getPendingItems();
   }
+
+  @Get('commission-summary')
+  @ApiOperation({ summary: '提成汇总统计' })
+  getCommissionSummary(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.service.getCommissionSummary(startDate, endDate);
+  }
 }
