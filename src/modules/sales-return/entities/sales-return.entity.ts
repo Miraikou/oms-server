@@ -37,14 +37,24 @@ export class SalesReturn extends BaseEntity {
   reason: string | null = null;
 
   @Column({
-    name: 'refund_amount',
+    name: 'refund_amount_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
     nullable: true,
-    comment: '退款金额（原币种），null 表示未退款',
+    comment: '退款金额（USD），null 表示未退款',
   })
-  refundAmount: string | null = null;
+  refundAmountUsd: string | null = null;
+
+  @Column({
+    name: 'refund_amount_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '退款金额（CNY），null 表示未退款',
+  })
+  refundAmountCny: string | null = null;
 
   @Column({
     name: 'refund_payment_id',
@@ -55,21 +65,41 @@ export class SalesReturn extends BaseEntity {
   refundPaymentId: string | null = null;
 
   @Column({
-    name: 'return_cost',
+    name: 'return_cost_usd',
     type: 'decimal',
     precision: 18,
     scale: 2,
     nullable: true,
-    comment: '本次退货产生额外成本，null 表示无',
+    comment: '退货成本（USD），null 表示无',
   })
-  returnCost: string | null = null;
+  returnCostUsd: string | null = null;
+
+  @Column({
+    name: 'return_cost_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '退货成本（CNY），null 表示无',
+  })
+  returnCostCny: string | null = null;
 
   @Column({
     name: 'return_cost_currency',
     type: 'varchar',
     length: 10,
     nullable: true,
-    comment: '退货成本币种',
+    comment: '退货成本原始币种',
   })
   returnCostCurrency: string | null = null;
+
+  @Column({
+    name: 'exchange_rate',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    nullable: true,
+    comment: 'USD→CNY汇率（继承自订单）',
+  })
+  exchangeRate: string | null = null;
 }
