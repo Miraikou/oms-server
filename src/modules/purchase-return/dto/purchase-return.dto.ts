@@ -63,6 +63,11 @@ export class QueryPurchaseReturnDto extends PaginationParamsDto {
   @IsOptional()
   purchaseOrderId?: string;
 
+  @ApiPropertyOptional({ description: '采购单号' })
+  @IsString()
+  @IsOptional()
+  purchaseNo?: string;
+
   @ApiPropertyOptional({ description: '开始日期' })
   @IsString()
   @IsOptional()

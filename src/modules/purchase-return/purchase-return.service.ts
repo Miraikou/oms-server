@@ -1,11 +1,14 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, IsNull } from 'typeorm';
 import { PurchaseReturn } from './entities/purchase-return.entity';
 import { PurchaseReturnItem } from './entities/purchase-return-item.entity';
 import { PurchaseOrder } from '@/modules/purchase/entities/purchase-order.entity';
 import { PurchaseOrderItem } from '@/modules/purchase/entities/purchase-order-item.entity';
+import { Product } from '@/modules/product/entities/product.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { PurchaseOrderService } from '@/modules/purchase/purchase-order.service';
+import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { snowflake } from '@/common/utils/snowflake';
@@ -55,7 +58,9 @@ export class PurchaseReturnService {
         throw new BadRequestException('采购单尚未入库，无法退货');
       }
 
-      // 2. 校验可退数量
+      // 2. 校验可退数量（采购单维度 + 库存可用量维度）
+      const orderItems = new Map<string, PurchaseOrderItem>();
+      const inventoryCache = new Map<string, number>();
       for (const item of dto.items) {
         const orderItem = await manager.findOne(PurchaseOrderItem, {
           where: { id: item.purchaseOrderItemId },
@@ -65,17 +70,36 @@ export class PurchaseReturnService {
             `采购明细 ${item.purchaseOrderItemId} 不存在`,
           );
         }
+        orderItems.set(item.purchaseOrderItemId, orderItem);
+
         const returnQty = parseFloat(item.quantity);
         if (returnQty <= 0) throw new BadRequestException('退货数量必须大于零');
 
         const received = parseFloat(orderItem.receivedQuantity);
         const returned = parseFloat(orderItem.returnedQuantity);
-        const returnable = received - returned;
+        const poReturnable = received - returned;
+
+        // 查询库存可用量（缓存，随校验扣减）
+        const invKey = `${orderItem.productId}__${orderItem.productModelId || 'NULL'}`;
+        let invAvailable = inventoryCache.get(invKey);
+        if (invAvailable === undefined) {
+          const inv = await manager.findOne(Inventory, {
+            where: orderItem.productModelId
+              ? { productId: orderItem.productId, productModelId: orderItem.productModelId }
+              : { productId: orderItem.productId, productModelId: IsNull() },
+          });
+          invAvailable = inv ? parseFloat(inv.availableQuantity) : 0;
+          inventoryCache.set(invKey, invAvailable);
+        }
+
+        const returnable = Math.max(0, Math.min(poReturnable, invAvailable));
         if (returnQty > returnable) {
           throw new BadRequestException(
             `退货数量 ${returnQty} 超过可退数量 ${returnable}`,
           );
         }
+        // 扣减已校验的可用量，同商品同型号后续明细看到递减的可用量
+        inventoryCache.set(invKey, invAvailable - returnQty);
       }
 
       // 3. 创建退货单 + 明细
@@ -141,7 +165,46 @@ export class PurchaseReturnService {
     const items = await this.returnItemRepo.find({
       where: { purchaseReturnId: id },
     });
-    return { ...ret, items };
+
+    // 批量查询商品名称
+    const productIds = items
+      .map((i) => i.productId)
+      .filter((pid): pid is string => !!pid);
+    const productNameMap = new Map<string, string>();
+    if (productIds.length > 0) {
+      const products = await this.dataSource
+        .createQueryBuilder()
+        .select('p.id, p.product_name')
+        .from(Product, 'p')
+        .where('p.id IN (:...ids)', { ids: productIds })
+        .getRawMany();
+      for (const p of products) productNameMap.set(p.id, p.product_name);
+    }
+
+    // 批量查询型号名称
+    const modelIds = items
+      .map((i) => i.productModelId)
+      .filter((mid): mid is string => !!mid);
+    const modelNameMap = new Map<string, string>();
+    if (modelIds.length > 0) {
+      const models = await this.dataSource
+        .createQueryBuilder()
+        .select('m.id, m.model_name')
+        .from(ProductModel, 'm')
+        .where('m.id IN (:...ids)', { ids: modelIds })
+        .getRawMany();
+      for (const m of models) modelNameMap.set(m.id, m.model_name);
+    }
+
+    const enrichedItems = items.map((item) => ({
+      ...item,
+      productName: productNameMap.get(item.productId) || undefined,
+      modelName: item.productModelId
+        ? modelNameMap.get(item.productModelId)
+        : undefined,
+    }));
+
+    return { ...ret, items: enrichedItems };
   }
 
   /**
@@ -151,7 +214,10 @@ export class PurchaseReturnService {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
 
-    const qb = this.returnRepo.createQueryBuilder('r');
+    const qb = this.returnRepo
+      .createQueryBuilder('r')
+      .leftJoin(PurchaseOrder, 'po', 'po.id = r.purchase_order_id')
+      .addSelect('po.purchase_no', 'purchaseNo');
 
     if (query.returnNo) {
       qb.andWhere('r.returnNo LIKE :no', { no: `%${query.returnNo}%` });
@@ -159,6 +225,11 @@ export class PurchaseReturnService {
     if (query.purchaseOrderId) {
       qb.andWhere('r.purchaseOrderId = :purchaseOrderId', {
         purchaseOrderId: query.purchaseOrderId,
+      });
+    }
+    if (query.purchaseNo) {
+      qb.andWhere('po.purchase_no LIKE :purchaseNo', {
+        purchaseNo: query.purchaseNo,
       });
     }
     if (query.startDate) {
@@ -174,7 +245,12 @@ export class PurchaseReturnService {
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
-    const [list, total] = await qb.getManyAndCount();
-    return { list, total, page, pageSize };
+    const { entities, raw: rawResults } = await qb.getRawAndEntities();
+    const list = entities.map((entity, index) => ({
+      ...entity,
+      purchaseNo: rawResults[index]?.purchaseNo || null,
+    }));
+
+    return { list, total: await qb.getCount(), page, pageSize };
   }
 }

@@ -4,6 +4,8 @@ import { DataSource, EntityManager, Repository, In } from 'typeorm';
 import { PurchaseOrder } from './entities/purchase-order.entity';
 import { PurchaseOrderItem } from './entities/purchase-order-item.entity';
 import { ProductModel } from '@/modules/product/entities/product-model.entity';
+import { Product } from '@/modules/product/entities/product.entity';
+import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { snowflake } from '@/common/utils/snowflake';
 import type {
@@ -26,6 +28,8 @@ export class PurchaseOrderService {
 		private readonly itemRepo: Repository<PurchaseOrderItem>,
 		@InjectRepository(ProductModel)
 		private readonly productModelRepo: Repository<ProductModel>,
+		@InjectRepository(Product)
+		private readonly productRepo: Repository<Product>,
 		private readonly sequenceService: SequenceService,
 		private readonly rateService: RateService,
 		private readonly dataSource: DataSource,
@@ -197,6 +201,20 @@ export class PurchaseOrderService {
 			where: { purchaseOrderId: id },
 		});
 
+		// 批量查询商品名称
+		const productIds = items
+			.map((i) => i.productId)
+			.filter((id): id is string => !!id);
+		const productNameMap = new Map<string, string>();
+		if (productIds.length > 0) {
+			const products = await this.productRepo.find({
+				where: { id: In(productIds) },
+			});
+			for (const p of products) {
+				productNameMap.set(p.id, p.productName);
+			}
+		}
+
 		// 批量查询型号名称
 		const modelIds = items
 			.map((i) => i.productModelId)
@@ -210,14 +228,62 @@ export class PurchaseOrderService {
 				modelNameMap.set(m.id, m.modelName);
 			}
 		}
-		const itemsWithModel = items.map((item) => ({
+		const itemsWithNames = items.map((item) => ({
 			...item,
+			productName: productNameMap.get(item.productId) || undefined,
 			modelName: item.productModelId
 				? modelNameMap.get(item.productModelId)
 				: undefined,
 		}));
 
-		return { ...order, items: itemsWithModel as any };
+		// 批量查询库存可用量（按 productId + productModelId 组合）
+		const uniquePairs = [
+			...new Map(
+				items.map((i) => [
+					`${i.productId}__${i.productModelId || 'NULL'}`,
+					{ productId: i.productId, productModelId: i.productModelId },
+				]),
+			).values(),
+		];
+		const inventoryMap = new Map<string, number>();
+		if (uniquePairs.length > 0) {
+			const qb = this.dataSource
+				.createQueryBuilder()
+				.select('i.product_id', 'product_id')
+				.addSelect('i.product_model_id', 'product_model_id')
+				.addSelect('i.available_quantity', 'available_quantity')
+				.from(Inventory, 'i');
+			const orConditions = uniquePairs.map((pair, idx) => {
+				if (pair.productModelId) {
+					return `(i.product_id = :pid${idx} AND i.product_model_id = :pmid${idx})`;
+				}
+				return `(i.product_id = :pid${idx} AND i.product_model_id IS NULL)`;
+			});
+			qb.where(`(${orConditions.join(' OR ')})`);
+			const params: Record<string, string> = {};
+			uniquePairs.forEach((pair, idx) => {
+				params[`pid${idx}`] = pair.productId;
+				if (pair.productModelId) {
+					params[`pmid${idx}`] = pair.productModelId;
+				}
+			});
+			qb.setParameters(params);
+			const invRows = await qb.getRawMany();
+			for (const row of invRows) {
+				const key = `${row.product_id}__${row.product_model_id || 'NULL'}`;
+				inventoryMap.set(key, parseFloat(row.available_quantity));
+			}
+		}
+
+		const enrichedItems = itemsWithNames.map((item) => {
+			const key = `${item.productId}__${item.productModelId || 'NULL'}`;
+			return {
+				...item,
+				inventoryAvailable: inventoryMap.get(key) ?? 0,
+			};
+		});
+
+		return { ...order, items: enrichedItems as any };
 	}
 
 	/**
