@@ -47,14 +47,14 @@ export class DashboardService {
       commissionStats,
     ] = await Promise.all([
       this.executeQuery(
-        `SELECT COALESCE(SUM(total_base_amount), 0) AS totalSales, COUNT(*) AS orderCount
+        `SELECT COALESCE(SUM(total_amount_cny), 0) AS totalSales, COUNT(*) AS orderCount
            FROM sales_order so WHERE so.status IN (1, 2) {dateFilter}`,
         'so.order_date',
         startDate,
         endDate,
       ),
       this.executeQuery(
-        `SELECT COALESCE(SUM(base_amount), 0) AS totalPayment
+        `SELECT COALESCE(SUM(amount_cny), 0) AS totalPayment
            FROM payment p INNER JOIN sales_order so ON p.order_id = so.id
            WHERE p.type = 1 {dateFilter}`,
         'p.payment_date',
@@ -62,7 +62,7 @@ export class DashboardService {
         endDate,
       ),
       this.executeQuery(
-        `SELECT COALESCE(SUM(si.gross_profit), 0) AS shipmentProfit
+        `SELECT COALESCE(SUM(si.gross_profit_cny), 0) AS shipmentProfit
            FROM shipment_item si
            INNER JOIN shipment s ON si.shipment_id = s.id
            INNER JOIN sales_order so ON s.order_id = so.id
@@ -137,15 +137,15 @@ export class DashboardService {
 
     const [earned, clawback, pending] = await Promise.all([
       this.dataSource.query(
-        `SELECT COALESCE(SUM(commission_base_amount), 0) AS total
+        `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
          FROM commission_ledger WHERE type = 1 ${dateFilter}`,
       ),
       this.dataSource.query(
-        `SELECT COALESCE(SUM(ABS(commission_base_amount)), 0) AS total
+        `SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total
          FROM commission_ledger WHERE type = 2 ${dateFilter}`,
       ),
       this.dataSource.query(
-        `SELECT COALESCE(SUM(commission_base_amount), 0) AS total
+        `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
          FROM commission_ledger WHERE status = 1`,
       ),
     ]);
@@ -172,7 +172,7 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
-              COALESCE(SUM(so.total_base_amount), 0) AS amount,
+              COALESCE(SUM(so.total_amount_cny), 0) AS amount,
               COUNT(*) AS count
        FROM sales_order so WHERE so.status IN (1, 2) {dateFilter}
        GROUP BY period ORDER BY period ASC`,
@@ -193,7 +193,7 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
-              COALESCE(SUM(si.gross_profit), 0) AS profit
+              COALESCE(SUM(si.gross_profit_cny), 0) AS profit
        FROM shipment_item si
        INNER JOIN shipment s ON si.shipment_id = s.id
        INNER JOIN sales_order so ON s.order_id = so.id
@@ -216,7 +216,7 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
-              COALESCE(SUM(p.base_amount), 0) AS amount, COUNT(*) AS count
+              COALESCE(SUM(p.amount_cny), 0) AS amount, COUNT(*) AS count
        FROM payment p WHERE p.type = 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'p.payment_date',
@@ -256,7 +256,7 @@ export class DashboardService {
     const safeLimit = Math.max(1, Math.min(limit || 10, 100));
     return this.executeQuery(
       `SELECT sp.id AS salespersonId, sp.name AS salespersonName,
-              COALESCE(SUM(so.total_base_amount), 0) AS totalSales, COUNT(so.id) AS orderCount
+              COALESCE(SUM(so.total_amount_cny), 0) AS totalSales, COUNT(so.id) AS orderCount
        FROM salesperson sp
        LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status IN (1, 2) {dateFilter}
        GROUP BY sp.id, sp.name ORDER BY totalSales DESC LIMIT ?`,
