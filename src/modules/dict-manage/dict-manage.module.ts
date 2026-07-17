@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SysDictType } from './entities/sys-dict-type.entity';
 import { SysDictItem } from './entities/sys-dict-item.entity';
@@ -12,4 +12,10 @@ import { DictTypeController, DictItemController } from './dict-manage.controller
   providers: [DictTypeService, DictItemService],
   exports: [DictTypeService, DictItemService],
 })
-export class DictManageModule {}
+export class DictManageModule implements OnModuleInit {
+  constructor(private readonly dictTypeService: DictTypeService) {}
+
+  async onModuleInit() {
+    await this.dictTypeService.seedDictTypes();
+  }
+}
