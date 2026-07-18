@@ -273,6 +273,18 @@ export class PurchaseReceiptService {
       });
     }
 
+    if (query.startDate) {
+      qb.andWhere('pr.receiptDate >= :startDate', {
+        startDate: query.startDate,
+      });
+    }
+
+    if (query.endDate) {
+      qb.andWhere('pr.receiptDate <= :endDate', {
+        endDate: `${query.endDate} 23:59:59`,
+      });
+    }
+
     qb.orderBy('pr.createdTime', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
