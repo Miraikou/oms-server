@@ -31,6 +31,6 @@ export class PurchaseReceipt extends BaseEntity {
   purchaseOrder: PurchaseOrder;
 
   @Index('idx_receipt_date')
-  @Column({ name: 'receipt_date', type: 'datetime', comment: '入库时间' })
+  @Column({ name: 'receipt_date', type: 'datetime', comment: '入库日期' })
   receiptDate: Date;
 }

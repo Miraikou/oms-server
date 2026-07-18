@@ -131,7 +131,7 @@ export class InventoryBatch {
   stockQuantity: string;
 
   @Index('idx_inbound_time')
-  @Column({ name: 'inbound_time', type: 'datetime', comment: '入库时间' })
+  @Column({ name: 'inbound_time', type: 'datetime', comment: '入库日期' })
   inboundTime: Date;
 
   @Index('idx_freeze_status')

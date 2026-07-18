@@ -29,7 +29,7 @@ export class CreatePurchaseReceiptDto {
   @IsNotEmpty({ message: '采购单不能为空' })
   purchaseOrderId: string;
 
-  @ApiPropertyOptional({ description: '入库时间', default: '当前时间' })
+  @ApiPropertyOptional({ description: '入库日期', default: '当前时间' })
   @IsString()
   @IsOptional()
   receiptDate?: string;
