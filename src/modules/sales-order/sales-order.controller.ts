@@ -16,9 +16,11 @@ import { Repository } from 'typeorm';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SalesOrderService } from './sales-order.service';
 import { SalesOrderCostService } from './sales-order-cost.service';
+import { DashboardService } from '@/modules/dashboard/dashboard.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { PermissionGuard } from '@/common/guards/permission.guard';
 import { RequirePermission } from '@/common/decorators/require-permission.decorator';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Payment } from '@/modules/payment/entities/payment.entity';
 import {
   CreateSalesOrderDto,
@@ -36,13 +38,23 @@ export class SalesOrderController {
   constructor(
     private readonly orderService: SalesOrderService,
     private readonly costService: SalesOrderCostService,
+    private readonly dashboardService: DashboardService,
     @InjectRepository(Payment)
     private readonly paymentRepo: Repository<Payment>,
   ) {}
 
   @Get()
   @ApiOperation({ summary: '订单列表（分页）' })
-  findAll(@Query() query: QuerySalesOrderDto) {
+  async findAll(
+    @Query() query: QuerySalesOrderDto,
+    @CurrentUser('sub') userId: string,
+    @Query('viewMode') viewMode?: string,
+  ) {
+    // 根据视图模式自动过滤销售员
+    const salespersonId = await this.dashboardService.resolveSalespersonId(userId, viewMode);
+    if (salespersonId) {
+      query.salespersonId = salespersonId;
+    }
     return this.orderService.findAll(query);
   }
 
