@@ -70,10 +70,42 @@ const DEFAULT_MENUS = [
     ],
   },
   {
+    menuName: '商品管理',
+    menuType: 0,
+    icon: 'AppstoreOutlined',
+    sortNo: 5,
+    children: [
+      {
+        menuName: '商品管理',
+        menuType: 1,
+        path: '/products',
+        sortNo: 1,
+        buttons: [
+          { name: '查询', permission: 'product:query' },
+          { name: '新增', permission: 'product:create' },
+          { name: '编辑', permission: 'product:edit' },
+          { name: '导入', permission: 'product:import' },
+          { name: '导出', permission: 'product:export' },
+        ],
+      },
+      {
+        menuName: '商品分类',
+        menuType: 1,
+        path: '/categories',
+        sortNo: 2,
+        buttons: [
+          { name: '查询', permission: 'category:query' },
+          { name: '新增', permission: 'category:create' },
+          { name: '编辑', permission: 'category:edit' },
+        ],
+      },
+    ],
+  },
+  {
     menuName: '采购管理',
     menuType: 0,
     icon: 'ShopOutlined',
-    sortNo: 5,
+    sortNo: 6,
     children: [
       {
         menuName: '采购订单',
@@ -108,7 +140,7 @@ const DEFAULT_MENUS = [
     menuName: '库存管理',
     menuType: 0,
     icon: 'InboxOutlined',
-    sortNo: 6,
+    sortNo: 7,
     children: [
       {
         menuName: '当前库存',
@@ -144,7 +176,7 @@ const DEFAULT_MENUS = [
     menuName: '退货管理',
     menuType: 0,
     icon: 'SendOutlined',
-    sortNo: 7,
+    sortNo: 8,
     children: [
       {
         menuName: '客户退货',
@@ -174,7 +206,7 @@ const DEFAULT_MENUS = [
     menuName: '财务管理',
     menuType: 0,
     icon: 'AccountBookOutlined',
-    sortNo: 8,
+    sortNo: 9,
     children: [
       {
         menuName: '提成管理',
@@ -206,40 +238,14 @@ const DEFAULT_MENUS = [
     menuName: '基础资料',
     menuType: 0,
     icon: 'DatabaseOutlined',
-    sortNo: 9,
+    sortNo: 10,
     children: [
-      {
-        menuName: '商品管理',
-        menuType: 1,
-        path: '/products',
-        icon: 'ShopOutlined',
-        sortNo: 1,
-        buttons: [
-          { name: '查询', permission: 'product:query' },
-          { name: '新增', permission: 'product:create' },
-          { name: '编辑', permission: 'product:edit' },
-          { name: '导入', permission: 'product:import' },
-          { name: '导出', permission: 'product:export' },
-        ],
-      },
-      {
-        menuName: '商品分类',
-        menuType: 1,
-        path: '/categories',
-        icon: 'TagsOutlined',
-        sortNo: 2,
-        buttons: [
-          { name: '查询', permission: 'category:query' },
-          { name: '新增', permission: 'category:create' },
-          { name: '编辑', permission: 'category:edit' },
-        ],
-      },
       {
         menuName: '供应商管理',
         menuType: 1,
         path: '/suppliers',
         icon: 'TeamOutlined',
-        sortNo: 3,
+        sortNo: 1,
         buttons: [
           { name: '查询', permission: 'supplier:query' },
           { name: '新增', permission: 'supplier:create' },
@@ -253,7 +259,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/salespersons',
         icon: 'UserOutlined',
-        sortNo: 4,
+        sortNo: 2,
         buttons: [
           { name: '查询', permission: 'salesperson:query' },
           { name: '新增', permission: 'salesperson:create' },
@@ -265,7 +271,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/express-companies',
         icon: 'CarOutlined',
-        sortNo: 5,
+        sortNo: 3,
         buttons: [
           { name: '查询', permission: 'express-company:query' },
           { name: '新增', permission: 'express-company:create' },
@@ -277,7 +283,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/transport-channels',
         icon: 'SendOutlined',
-        sortNo: 6,
+        sortNo: 4,
         buttons: [
           { name: '查询', permission: 'transport-channel:query' },
           { name: '新增', permission: 'transport-channel:create' },
@@ -289,7 +295,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/cost-types',
         icon: 'DollarOutlined',
-        sortNo: 7,
+        sortNo: 5,
         buttons: [
           { name: '查询', permission: 'cost-type:query' },
           { name: '新增', permission: 'cost-type:create' },
@@ -301,7 +307,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/common-contacts',
         icon: 'ContactsOutlined',
-        sortNo: 8,
+        sortNo: 6,
         buttons: [
           { name: '查询', permission: 'common-contact:query' },
           { name: '新增', permission: 'common-contact:create' },
@@ -314,7 +320,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/system-configs',
         icon: 'SettingOutlined',
-        sortNo: 9,
+        sortNo: 7,
         buttons: [
           { name: '查询', permission: 'system-config:query' },
           { name: '新增', permission: 'system-config:create' },
@@ -327,7 +333,7 @@ const DEFAULT_MENUS = [
     menuName: '系统管理',
     menuType: 0,
     icon: 'SettingOutlined',
-    sortNo: 10,
+    sortNo: 11,
     children: [
       {
         menuName: '用户管理',
