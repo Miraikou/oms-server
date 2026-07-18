@@ -394,8 +394,10 @@ export class SalesReturnService {
             id: snowflake.nextId(),
             orderId: dto.orderId,
             costTypeId: costType.id,
-            amount: returnCostVal.toFixed(2),
-            baseAmount: costBaseAmount.toFixed(2),
+            amountUsd: costCurrency === 'USD'
+              ? returnCostVal.toFixed(2)
+              : (costBaseAmount / costRateNum).toFixed(2),
+            amountCny: costBaseAmount.toFixed(2),
             currency: costCurrency,
             exchangeRate: costRate,
           });
