@@ -61,22 +61,24 @@ export class PaymentService {
 				throw new BadRequestException('订单已结束，无法收款');
 			}
 
-			// 2. 校验不超额（微元整数运算，避免浮点精度问题）
-			const totalMicro = toMicroUnits(order.totalAmountUsd);
-			const receivedMicro = toMicroUnits(order.receivedAmountUsd);
+			// 2. 校验不超额（同币种直接比较）
+			const currency = order.currency || 'USD';
+			const totalOrder = currency === 'CNY' ? order.totalAmountCny : order.totalAmountUsd;
+			const receivedOrder = currency === 'CNY' ? order.receivedAmountCny : order.receivedAmountUsd;
+			const totalMicro = toMicroUnits(totalOrder);
+			const receivedMicro = toMicroUnits(receivedOrder);
 			if (receivedMicro + amountMicro > totalMicro) {
 				throw new BadRequestException(
-					`收款金额超出订单金额：订单 ${order.totalAmountUsd}，已收 ${order.receivedAmountUsd}，本次 ${dto.amount}`,
+					`收款金额超出订单金额：订单 ${totalOrder}，已收 ${receivedOrder}，本次 ${dto.amount}`,
 				);
 			}
 
 			// 3. 生成收款单号
 			const paymentNo = await this.sequenceService.generate('SK');
 
-			const currency = order.currency || 'USD';
 			const exchangeRate = await this.rateService.getRate(
 				dto.paymentDate,
-				currency,
+				'USD',
 			);
 			const dualAmounts = computeDualAmounts(dto.amount, currency, exchangeRate);
 
@@ -147,24 +149,25 @@ export class PaymentService {
 			});
 			if (!order) throw new BadRequestException('订单不存在');
 
-			// 2. 校验可退金额（已收金额 > 0）
-			const receivedMicro = toMicroUnits(order.receivedAmountUsd);
+			// 2. 校验可退金额（同币种直接比较）
+			const currency = order.currency || 'USD';
+			const receivedOrder = currency === 'CNY' ? order.receivedAmountCny : order.receivedAmountUsd;
+			const receivedMicro = toMicroUnits(receivedOrder);
 			if (receivedMicro <= 0) {
 				throw new BadRequestException('该订单无已收款，无法退款');
 			}
 			if (amountMicro > receivedMicro) {
 				throw new BadRequestException(
-					`退款金额超出已收金额：已收 ${order.receivedAmountUsd}，本次退 ${dto.amount}`,
+					`退款金额超出已收金额：已收 ${receivedOrder}，本次退 ${dto.amount}`,
 				);
 			}
 
 			// 3. 生成退款单号（复用 SK 前缀）
 			const paymentNo = await this.sequenceService.generate('TK');
 
-			const currency = order.currency || 'USD';
 			const exchangeRate = await this.rateService.getRate(
 				dto.paymentDate,
-				currency,
+				'USD',
 			);
 			const dualAmounts = computeDualAmounts(dto.amount, currency, exchangeRate);
 

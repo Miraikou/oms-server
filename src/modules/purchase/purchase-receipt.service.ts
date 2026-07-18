@@ -11,6 +11,7 @@ import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entit
 import { SequenceService } from '@/common/services/sequence.service';
 import { snowflake } from '@/common/utils/snowflake';
 import { computeDualAmounts } from '@/common/utils/dual-currency';
+import { RateService } from '@/common/rate/rate.service';
 import type {
   CreatePurchaseReceiptDto,
   QueryPurchaseReceiptDto,
@@ -41,6 +42,7 @@ export class PurchaseReceiptService {
     private readonly flowRepo: Repository<InventoryFlow>,
     private readonly sequenceService: SequenceService,
     private readonly dataSource: DataSource,
+    private readonly rateService: RateService,
   ) {}
 
   /**
@@ -109,9 +111,14 @@ export class PurchaseReceiptService {
           );
         }
 
-        const poRate = parseFloat(order.exchangeRate || '1');
-        const amount = qty * parseFloat(orderItem.unitPriceUsd);
-        const dualAmounts = computeDualAmounts(amount, order.currency || 'CNY', poRate);
+        const poRate = parseFloat(order.exchangeRate || this.rateService.getDefaultRate());
+        const currency = order.currency || 'CNY';
+        // Bug 2 修复：根据订单币种选择正确的单价
+        const originalUnitPrice = currency === 'USD'
+          ? parseFloat(orderItem.unitPriceUsd)
+          : parseFloat(orderItem.unitPriceCny);
+        const amount = qty * originalUnitPrice;
+        const dualAmounts = computeDualAmounts(amount, currency, poRate);
         const receiptItem = manager.create(PurchaseReceiptItem, {
           id: snowflake.nextId(),
           receiptId: savedReceipt.id,
@@ -138,11 +145,9 @@ export class PurchaseReceiptService {
           batchSource: 1,
           batchNo,
           unitCostUsd: ri.unitPriceUsd,
-          unitCostCny: ri.amountCny
-            ? (parseFloat(ri.amountCny) / parseFloat(ri.quantity)).toFixed(2)
-            : ri.unitPriceUsd,
+          unitCostCny: ri.unitPriceCny,
           currency: order.currency || 'CNY',
-          exchangeRate: order.exchangeRate || '1',
+          exchangeRate: order.exchangeRate || this.rateService.getDefaultRate(),
           originalQuantity: ri.quantity,
           availableQuantity: ri.quantity,
           frozenQuantity: '0',
@@ -208,10 +213,11 @@ export class PurchaseReceiptService {
             changeType: 1,
             quantity: ri.quantity,
             unitCostUsd: ri.unitPriceUsd,
+            unitCostCny: ri.unitPriceCny,
             totalCostUsd: ri.amountUsd,
             totalCostCny: ri.amountCny,
             flowCurrency: order.currency || 'CNY',
-            exchangeRate: order.exchangeRate || '7',
+            exchangeRate: order.exchangeRate || this.rateService.getDefaultRate(),
             beforeAvailable,
             afterAvailable: savedInventory.availableQuantity,
             beforeFrozen: savedInventory.frozenQuantity,

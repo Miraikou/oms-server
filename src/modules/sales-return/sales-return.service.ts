@@ -119,7 +119,7 @@ export class SalesReturnService {
       const returnCostVal = parseFloat(dto.returnCost || '0');
       const returnCostCurrency = returnCostVal > 0 ? (dto.returnCostCurrency || 'CNY') : null;
       const returnCostDual = returnCostVal > 0
-        ? computeDualAmounts(returnCostVal, returnCostCurrency!, order.exchangeRate || '1')
+        ? computeDualAmounts(returnCostVal, returnCostCurrency!, order.exchangeRate || this.rateService.getDefaultRate())
         : null;
       const salesReturn = manager.create(SalesReturn, {
         id: snowflake.nextId(),
@@ -132,7 +132,7 @@ export class SalesReturnService {
         returnCostUsd: returnCostDual ? returnCostDual.amountUsd : null,
         returnCostCny: returnCostDual ? returnCostDual.amountCny : null,
         returnCostCurrency,
-        exchangeRate: order.exchangeRate || '1',
+        exchangeRate: order.exchangeRate || this.rateService.getDefaultRate(),
       });
       const savedReturn = await manager.save(salesReturn);
 
@@ -228,7 +228,7 @@ export class SalesReturnService {
                   totalCostUsd: (toRestore * parseFloat(sb.unitCostUsd)).toFixed(2),
                   totalCostCny: (toRestore * parseFloat(sb.unitCostCny || '0')).toFixed(2),
                   flowCurrency: sb.currency || 'CNY',
-                  exchangeRate: sb.exchangeRate || '7',
+                  exchangeRate: sb.exchangeRate || this.rateService.getDefaultRate(),
                   beforeAvailable: beforeAvailable.toFixed(4),
                   afterAvailable: (beforeAvailable + toRestore).toFixed(4),
                   beforeFrozen: beforeFrozen.toFixed(4),
@@ -274,29 +274,34 @@ export class SalesReturnService {
 
       if (dto.refund) {
         // 计算退款金额 = SUM(退货数量 × 发货明细销售单价)
+        // 根据订单币种选择正确的单价
         let refundTotal = 0;
         for (const dtoItem of dto.items) {
           const shipItem = await manager.findOne(ShipmentItem, {
             where: { id: dtoItem.shipmentItemId },
           });
           if (shipItem) {
-            refundTotal +=
-              parseFloat(dtoItem.quantity) *
-              parseFloat(shipItem.salesUnitPriceUsd);
+            const unitPrice = (order.currency || 'USD') === 'CNY'
+              ? parseFloat(shipItem.salesUnitPriceCny)
+              : parseFloat(shipItem.salesUnitPriceUsd);
+            refundTotal += parseFloat(dtoItem.quantity) * unitPrice;
           }
         }
 
-        // 校验退款金额不超过已收金额
-        const received = parseFloat(order.receivedAmountUsd);
-        if (refundTotal > received + 0.01) {
+        // 校验退款金额不超过已收金额（同币种直接比较）
+        const currency = order.currency || 'USD';
+        const receivedInCurrency = currency === 'CNY'
+          ? parseFloat(order.receivedAmountCny || '0')
+          : parseFloat(order.receivedAmountUsd);
+        if (refundTotal > receivedInCurrency + 0.01) {
           throw new BadRequestException(
-            `退款金额（${refundTotal.toFixed(2)}）超过已收金额（${received.toFixed(2)}）`,
+            `退款金额（${refundTotal.toFixed(2)}）超过已收金额（${receivedInCurrency.toFixed(2)}）`,
           );
         }
 
         // 创建退款记录
         const paymentNo = await this.sequenceService.generate('TK');
-        const refundDual = computeDualAmounts(refundTotal, order.currency || 'USD', order.exchangeRate || '1');
+        const refundDual = computeDualAmounts(refundTotal, currency, order.exchangeRate || this.rateService.getDefaultRate());
         const payment = manager.create(Payment, {
           id: snowflake.nextId(),
           paymentNo,
@@ -346,16 +351,9 @@ export class SalesReturnService {
       // 7. 退货成本累加到 SalesOrderCost
       if (returnCostVal > 0) {
         const costCurrency = dto.returnCostCurrency || 'CNY';
-        // 通过 RateService 查询实际汇率（不信任前端）
-        const costRate =
-          costCurrency === 'CNY'
-            ? '1'
-            : await this.rateService.getRate(
-                new Date(order.orderDate).toISOString().slice(0, 10),
-                costCurrency,
-              );
-        const costRateNum = parseFloat(costRate);
-        const costBaseAmount = returnCostVal * costRateNum;
+        // 与退货单存储使用相同汇率（order.exchangeRate），保证一致性
+        const usdToCnyRate = order.exchangeRate || this.rateService.getDefaultRate();
+        const costDual = computeDualAmounts(returnCostVal, costCurrency, usdToCnyRate);
 
         // 查找或创建"客户退货成本"成本类型
         let costType = await this.costTypeRepo.findOne({
@@ -377,16 +375,11 @@ export class SalesReturnService {
         });
 
         if (existingCost) {
-          const existAmt = parseFloat(existingCost.amountCny);
-          // 跨币种统一用 CNY 金额累加
-          const addAmt = costBaseAmount;
-
-          const newAmt = existAmt + addAmt;
-          const newUsdAmt = parseFloat(existingCost.amountUsd) + costBaseAmount / parseFloat(existingCost.exchangeRate);
-          existingCost.amountCny = newAmt.toFixed(2);
-          existingCost.amountUsd = newUsdAmt.toFixed(2);
-          existingCost.exchangeRate =
-            newUsdAmt > 0 ? (newAmt / newUsdAmt).toFixed(4) : '7';
+          const newCny = parseFloat(existingCost.amountCny) + parseFloat(costDual.amountCny);
+          const newUsd = parseFloat(existingCost.amountUsd) + parseFloat(costDual.amountUsd);
+          existingCost.amountCny = newCny.toFixed(2);
+          existingCost.amountUsd = newUsd.toFixed(2);
+          existingCost.exchangeRate = usdToCnyRate;
           await manager.save(existingCost);
         } else {
           // 新建成本记录
@@ -394,12 +387,10 @@ export class SalesReturnService {
             id: snowflake.nextId(),
             orderId: dto.orderId,
             costTypeId: costType.id,
-            amountUsd: costCurrency === 'USD'
-              ? returnCostVal.toFixed(2)
-              : (costBaseAmount / costRateNum).toFixed(2),
-            amountCny: costBaseAmount.toFixed(2),
+            amountUsd: costDual.amountUsd,
+            amountCny: costDual.amountCny,
             currency: costCurrency,
-            exchangeRate: costRate,
+            exchangeRate: usdToCnyRate,
           });
           await manager.save(cost);
         }
@@ -474,17 +465,18 @@ export class SalesReturnService {
     const shipItemIds = items
       .map((i) => i.shipmentItemId)
       .filter((id): id is string => !!id);
-    const shipItemMap = new Map<string, { salesUnitPrice: string; currency: string; shipmentId: string }>();
+    const shipItemMap = new Map<string, { salesUnitPriceUsd: string; salesUnitPriceCny: string; currency: string; shipmentId: string }>();
     if (shipItemIds.length > 0) {
       const shipItems = await this.dataSource
         .createQueryBuilder()
-        .select('si.id, si.sales_unit_price, si.currency, si.shipment_id')
+        .select('si.id, si.sales_unit_price_usd, si.sales_unit_price_cny, si.currency, si.shipment_id')
         .from(ShipmentItem, 'si')
         .where('si.id IN (:...ids)', { ids: shipItemIds })
         .getRawMany();
       for (const si of shipItems) {
         shipItemMap.set(si.id, {
-          salesUnitPrice: si.sales_unit_price,
+          salesUnitPriceUsd: si.sales_unit_price_usd,
+          salesUnitPriceCny: si.sales_unit_price_cny,
           currency: si.currency,
           shipmentId: si.shipment_id,
         });
@@ -514,7 +506,8 @@ export class SalesReturnService {
         modelName: item.productModelId
           ? modelNameMap.get(item.productModelId)
           : undefined,
-        salesUnitPrice: si?.salesUnitPrice || undefined,
+        salesUnitPriceUsd: si?.salesUnitPriceUsd || undefined,
+        salesUnitPriceCny: si?.salesUnitPriceCny || undefined,
         currency: si?.currency || undefined,
         shipmentNo: si ? shipmentNoMap.get(si.shipmentId) : undefined,
       };

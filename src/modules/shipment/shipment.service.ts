@@ -13,6 +13,7 @@ import { SalesReturnItem } from '@/modules/sales-return/entities/sales-return-it
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
+import { RateService } from '@/common/rate/rate.service';
 import { snowflake } from '@/common/utils/snowflake';
 import { computeDualUnitPrice, computeDualAmounts } from '@/common/utils/dual-currency';
 import type { CreateShipmentDto, QueryShipmentDto } from './dto/shipment.dto';
@@ -44,6 +45,7 @@ export class ShipmentService {
     private readonly fifoService: FifoService,
     private readonly salesOrderService: SalesOrderService,
     private readonly dataSource: DataSource,
+    private readonly rateService: RateService,
   ) {}
 
   /**
@@ -122,11 +124,15 @@ export class ShipmentService {
         const orderItem = orderItemMap.get(dtoItem.orderItemId)!;
         const shipQty = parseFloat(dtoItem.quantity);
         const orderCurrency = order.currency || 'USD';
-        const orderRate = order.exchangeRate || '1';
+        const orderRate = order.exchangeRate || this.rateService.getDefaultRate();
 
-        const unitPrices = computeDualUnitPrice(orderItem.unitPriceUsd, orderCurrency, orderRate);
+        // 根据订单币种选择正确的原始单价
+        const originalUnitPrice = orderCurrency === 'USD'
+          ? orderItem.unitPriceUsd
+          : orderItem.unitPriceCny;
+        const unitPrices = computeDualUnitPrice(originalUnitPrice, orderCurrency, orderRate);
         const salesAmounts = computeDualAmounts(
-          shipQty * parseFloat(orderItem.unitPriceUsd),
+          shipQty * parseFloat(originalUnitPrice),
           orderCurrency,
           orderRate,
         );
@@ -253,16 +259,21 @@ export class ShipmentService {
 
       const batchPreview = [];
       let need = remaining;
+      const orderCurrency = order.currency || 'USD';
       for (const batch of batches) {
         if (need <= 0) break;
         const frozen = parseFloat(batch.frozenQuantity);
         const qty = Math.min(frozen, need);
+        // 根据订单币种选择对应的批次成本
+        const batchUnitCost = orderCurrency === 'CNY'
+          ? batch.unitCostCny
+          : batch.unitCostUsd;
         batchPreview.push({
           batchId: batch.id,
           batchNo: batch.batchNo,
           quantity: qty,
-          unitCost: batch.unitCostUsd,
-          totalCost: (qty * parseFloat(batch.unitCostUsd)).toFixed(2),
+          unitCost: batchUnitCost,
+          totalCost: (qty * parseFloat(batchUnitCost)).toFixed(2),
         });
         need -= qty;
       }

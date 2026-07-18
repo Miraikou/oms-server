@@ -155,8 +155,11 @@ export class InventoryAdjustmentService {
                 item.costSourceType,
               );
               currency = 'CNY';
-              exchangeRate = '1';
-              const dualPrice = computeDualUnitPrice(estimate.costCNY, 'CNY', '1');
+              exchangeRate = await this.rateService.getRate(
+                new Date().toISOString().split('T')[0],
+                'USD',
+              );
+              const dualPrice = computeDualUnitPrice(estimate.costCNY, 'CNY', exchangeRate);
               unitCostUsd = dualPrice.unitPriceUsd;
               unitCostCny = dualPrice.unitPriceCny;
             }

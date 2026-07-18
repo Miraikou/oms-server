@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { RateService } from '@/common/rate/rate.service';
 
 /** 查询结果行（TypeORM raw query 返回类型） */
 type Row = Record<string, unknown>;
@@ -29,7 +30,10 @@ const getInt = (row: Row | undefined, key: string, fallback = '0'): number => {
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly rateService: RateService,
+  ) {}
 
   /**
    * KPI 总览（8 个指标卡）
@@ -112,7 +116,7 @@ export class DashboardService {
       ),
     ]);
 
-    const currentRate = parseFloat(rateResult?.[0]?.rate || '7');
+    const currentRate = parseFloat(rateResult?.[0]?.rate || this.rateService.getDefaultRate());
 
     const shipmentProfitCny = getNum(profitStats[0], 'shipmentProfit');
     const orderCostCny = getNum(costStats[0], 'totalCostCny');

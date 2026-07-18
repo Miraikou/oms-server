@@ -221,11 +221,12 @@ export class SalesOrderService {
 
       // 9. 同步创建收款记录（可选）
       if (dto.payment) {
-        const paymentDualForCheck = computeDualAmounts(dto.payment.amount, currency, exchangeRate);
-        const paymentAmountUsd = parseFloat(paymentDualForCheck.amountUsd);
-        if (paymentAmountUsd > totalAmountUsd + 0.01) {
+        // 同币种直接比较
+        const totalInCurrency = currency === 'CNY' ? totalAmountCny : totalAmountUsd;
+        const paymentAmount = parseFloat(dto.payment.amount);
+        if (paymentAmount > totalInCurrency + 0.01) {
           throw new BadRequestException(
-            `收款金额（${paymentAmountUsd.toFixed(2)} USD）不能超过货物总金额（${totalAmountUsd.toFixed(2)} USD）`,
+            `收款金额（${paymentAmount.toFixed(2)}）不能超过货物总金额（${totalInCurrency.toFixed(2)}）`,
           );
         }
         const paymentRepoTx = manager.getRepository(Payment);
@@ -390,12 +391,17 @@ export class SalesOrderService {
           );
         }
 
-        // 商品总价变更后，校验已收金额不能超出新总价
-        const newTotalUsd = parseFloat(totalAmountUsd.toFixed(2));
-        const received = parseFloat(order.receivedAmountUsd);
-        if (received > newTotalUsd + 0.01 && newTotalUsd > 0) {
+        // 商品总价变更后，校验已收金额不能超出新总价（同币种直接比较）
+        const currency = orderCurrency;
+        const newTotal = currency === 'CNY'
+          ? parseFloat(totalAmountCny.toFixed(2))
+          : parseFloat(totalAmountUsd.toFixed(2));
+        const received = currency === 'CNY'
+          ? parseFloat(order.receivedAmountCny || '0')
+          : parseFloat(order.receivedAmountUsd);
+        if (received > newTotal + 0.01 && newTotal > 0) {
           throw new BadRequestException(
-            `修改后货物总金额为 ${newTotalUsd.toFixed(2)}，但已收款 ${received.toFixed(2)}，请先退款后再修改订单`,
+            `修改后货物总金额为 ${newTotal.toFixed(2)} ${currency}，但已收款 ${received.toFixed(2)} ${currency}，请先退款后再修改订单`,
           );
         }
 
@@ -771,13 +777,13 @@ export class SalesOrderService {
     const order = await this.orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
-    const exchangeRate = parseFloat(order.exchangeRate || '7');
+    const exchangeRate = parseFloat(order.exchangeRate || this.rateService.getDefaultRate());
 
-    // ── 产品成本（CNY，来自 FIFO，shipment_item.total_cost 已是 CNY）──
+    // ── 产品成本（CNY，来自 FIFO，shipment_item.total_cost_cny）──
     const costResult = await this.shipmentItemRepo
       .createQueryBuilder('si')
       .innerJoin('shipment', 's', 's.id = si.shipment_id')
-      .select('COALESCE(SUM(si.total_cost), 0)', 'totalCost')
+      .select('COALESCE(SUM(si.total_cost_cny), 0)', 'totalCost')
       .where('s.order_id = :orderId', { orderId })
       .getRawOne();
     const productCostCny = parseFloat(costResult?.totalCost || '0');

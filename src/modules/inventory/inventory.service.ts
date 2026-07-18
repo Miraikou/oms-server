@@ -4,6 +4,7 @@ import { Repository, IsNull } from 'typeorm';
 import { Inventory } from './entities/inventory.entity';
 import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
+import { RateService } from '@/common/rate/rate.service';
 import { snowflake } from '@/common/utils/snowflake';
 
 /**
@@ -20,6 +21,7 @@ export class InventoryService {
     private readonly batchRepo: Repository<InventoryBatch>,
     @InjectRepository(InventoryFlow)
     private readonly flowRepo: Repository<InventoryFlow>,
+    private readonly rateService: RateService,
   ) {}
 
   /**
@@ -33,6 +35,9 @@ export class InventoryService {
     batchSource: number;
     batchNo: string;
     unitCostUsd: string;
+    unitCostCny: string;
+    currency?: string;
+    exchangeRate?: string;
     quantity: string;
     inboundTime: Date;
     createdBy?: string | null;
@@ -45,6 +50,9 @@ export class InventoryService {
       batchSource: data.batchSource,
       batchNo: data.batchNo,
       unitCostUsd: data.unitCostUsd,
+      unitCostCny: data.unitCostCny,
+      currency: data.currency || 'CNY',
+      exchangeRate: data.exchangeRate || this.rateService.getDefaultRate(),
       originalQuantity: data.quantity,
       availableQuantity: data.quantity,
       frozenQuantity: '0',

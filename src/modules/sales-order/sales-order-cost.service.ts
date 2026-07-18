@@ -92,6 +92,9 @@ export class SalesOrderCostService {
 		const cost = await this.costRepo.findOne({ where: { id } });
 		if (!cost) throw new BadRequestException('成本记录不存在');
 
+		// 保存原始金额（在原币种下的值），用于只改币种时正确重算
+		const originalAmount = cost.currency === 'CNY' ? cost.amountCny : cost.amountUsd;
+
 		// 成本类型变更 → 校验唯一约束
 		if (dto.costTypeId !== undefined && dto.costTypeId !== cost.costTypeId) {
 			const conflict = await this.costRepo.findOne({
@@ -119,7 +122,7 @@ export class SalesOrderCostService {
 		// 金额或汇率变化时重算 amountUsd 和 amountCny
 		if (dto.amount !== undefined || dto.currency !== undefined) {
 			const dual = computeDualAmounts(
-				dto.amount !== undefined ? dto.amount : cost.amountUsd,
+				dto.amount !== undefined ? dto.amount : originalAmount,
 				cost.currency,
 				cost.exchangeRate,
 			);
