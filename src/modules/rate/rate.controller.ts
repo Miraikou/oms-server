@@ -43,7 +43,7 @@ export class RateController {
     @Query('toCurrency') toCurrency: string = 'CNY',
   ) {
     const rate = await this.rateService.getRate(date, fromCurrency, toCurrency);
-    return { fromCurrency, toCurrency, effectiveDate: date, rate };
+    return { fromCurrency, toCurrency, effectiveDate: date, rate: parseFloat(rate) };
   }
 
   @Post()
