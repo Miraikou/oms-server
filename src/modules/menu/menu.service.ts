@@ -24,7 +24,9 @@ const DEFAULT_MENUS = [
     path: '/dashboard',
     icon: 'DashboardOutlined',
     sortNo: 1,
-    buttons: [],
+    buttons: [
+      { name: '查看全局数据', permission: 'dashboard:view-all' },
+    ],
   },
   {
     menuName: '订单管理',
@@ -764,6 +766,7 @@ export class MenuService {
     const rolePermissions: Record<string, string[]> = {
       BOSS: [
         'dashboard', // 驾驶舱全部
+        'dashboard:view-all', // 查看全局驾驶舱数据
         'order:query',
         'order:export',
         'shipment:query',
@@ -898,6 +901,7 @@ export class MenuService {
       ],
       FINANCE: [
         'dashboard',
+        'dashboard:view-all', // 查看全局驾驶舱数据
         'order:query',
         'order:export',
         'shipment:query',

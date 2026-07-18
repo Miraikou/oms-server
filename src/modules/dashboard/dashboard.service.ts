@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { RateService } from '@/common/rate/rate.service';
+import { Salesperson } from '@/modules/salesperson/entities/salesperson.entity';
 
 /** 查询结果行（TypeORM raw query 返回类型） */
 type Row = Record<string, unknown>;
@@ -33,12 +35,78 @@ export class DashboardService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
+    @InjectRepository(Salesperson)
+    private readonly salespersonRepo: Repository<Salesperson>,
   ) {}
 
   /**
-   * KPI 总览（8 个指标卡）
+   * 检查用户是否拥有全局驾驶舱查看权限
+   * 通过 dashboard:view-all 权限码判断，SUPER_ADMIN 兜底放行
    */
-  async getOverview(startDate?: string, endDate?: string) {
+  async canViewAll(userId: string): Promise<boolean> {
+    if (!userId) return false;
+    const rows = await this.dataSource.query(
+      `SELECT 1 FROM sys_user_role ur
+       INNER JOIN sys_role r ON ur.role_id = r.id AND r.status = 1
+       INNER JOIN sys_role_menu rm ON r.id = rm.role_id
+       INNER JOIN sys_menu m ON rm.menu_id = m.id AND m.status = 1
+       WHERE ur.user_id = ? AND (m.permission = 'dashboard:view-all' OR r.role_code = 'SUPER_ADMIN')
+       LIMIT 1`,
+      [userId],
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * 根据系统用户 ID 和视图模式解析实际的销售员过滤 ID
+   * @param userId 系统用户 ID
+   * @param viewMode 视图模式 'global' | 'personal' | undefined
+   * @returns salespersonId（需要过滤时）或 null（不过滤）
+   */
+  async resolveSalespersonId(userId: string, viewMode?: string): Promise<string | null> {
+    if (!userId) return null;
+
+    const hasGlobalPerm = await this.canViewAll(userId);
+
+    if (viewMode === 'personal') {
+      // 明确请求个人视图 → 查销售员关联
+      const sp = await this.salespersonRepo.findOne({ where: { userId, status: 1 } });
+      return sp?.id ?? null;
+    }
+
+    if (viewMode === 'global' && hasGlobalPerm) {
+      // 明确请求全局且有权限 → 不过滤
+      return null;
+    }
+
+    // viewMode 未传：有全局权限则默认全局，否则默认个人
+    if (hasGlobalPerm) return null;
+
+    const sp = await this.salespersonRepo.findOne({ where: { userId, status: 1 } });
+    return sp?.id ?? null;
+  }
+
+  /**
+   * KPI 总览
+   * viewMode='global'：全局数据（需 dashboard:view-all 权限）
+   * viewMode='personal'：按销售员过滤
+   * viewMode 未传：有权限默认全局，无权限默认个人
+   */
+  async getOverview(startDate?: string, endDate?: string, userId?: string, viewMode?: string) {
+    // 解析视图模式 → 得到实际的销售员过滤 ID
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
+    const canViewAllFlag = userId ? await this.canViewAll(userId) : false;
+    const currentView: 'global' | 'personal' = salespersonId ? 'personal' : 'global';
+    // 是否处于个人视图（用于跳过不适用的查询）
+    const isPersonalView = !!salespersonId;
+    // 销售员过滤参数（传给需要过滤的查询）
+    const spFilter = salespersonId
+      ? { alias: 'so', salespersonId }
+      : undefined;
+
+    // 个人视图不适用的查询直接返回空结果
+    const emptyRow = (): Row[] => [{ totalPurchaseUsd: '0', totalPurchaseCny: '0', inventoryValueUsd: '0', inventoryValueCny: '0' }];
+
     // 所有独立查询并行执行
     const [
       orderStats,
@@ -59,6 +127,8 @@ export class DashboardService {
         'so.order_date',
         startDate,
         endDate,
+        [],
+        spFilter,
       ),
       this.executeQuery(
         `SELECT COALESCE(SUM(p.amount_usd), 0) AS totalPaymentUsd,
@@ -68,6 +138,8 @@ export class DashboardService {
         'p.payment_date',
         startDate,
         endDate,
+        [],
+        spFilter,
       ),
       this.executeQuery(
         `SELECT COALESCE(SUM(si.gross_profit_cny), 0) AS shipmentProfit
@@ -78,6 +150,8 @@ export class DashboardService {
         'so.order_date',
         startDate,
         endDate,
+        [],
+        spFilter,
       ),
       this.executeQuery(
         `SELECT COALESCE(SUM(soc.amount_usd), 0) AS totalCostUsd,
@@ -88,6 +162,8 @@ export class DashboardService {
         'so.order_date',
         startDate,
         endDate,
+        [],
+        spFilter,
       ),
       this.executeQuery(
         `SELECT COUNT(*) AS shipmentCount
@@ -96,21 +172,29 @@ export class DashboardService {
         'so.order_date',
         startDate,
         endDate,
+        [],
+        spFilter,
       ),
-      this.executeQuery(
-        `SELECT COALESCE(SUM(po.total_amount_usd), 0) AS totalPurchaseUsd,
-                COALESCE(SUM(po.total_amount_cny), 0) AS totalPurchaseCny
-           FROM purchase_order po WHERE po.status IN (1, 2) {dateFilter}`,
-        'po.purchase_date',
-        startDate,
-        endDate,
-      ),
-      this.executeQuery(
-        `SELECT COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost_usd AS DECIMAL(18,2))), 0) AS inventoryValueUsd,
-                COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost_cny AS DECIMAL(18,2))), 0) AS inventoryValueCny
-           FROM inventory_batch ib WHERE ib.status = 1`,
-      ),
-      this.getCommissionSummary(startDate, endDate),
+      // 采购数据：个人视图不适用，直接跳过
+      isPersonalView
+        ? emptyRow()
+        : this.executeQuery(
+            `SELECT COALESCE(SUM(po.total_amount_usd), 0) AS totalPurchaseUsd,
+                    COALESCE(SUM(po.total_amount_cny), 0) AS totalPurchaseCny
+               FROM purchase_order po WHERE po.status IN (1, 2) {dateFilter}`,
+            'po.purchase_date',
+            startDate,
+            endDate,
+          ),
+      // 库存数据：个人视图不适用，直接跳过
+      isPersonalView
+        ? emptyRow()
+        : this.executeQuery(
+            `SELECT COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost_usd AS DECIMAL(18,2))), 0) AS inventoryValueUsd,
+                    COALESCE(SUM(CAST(ib.stock_quantity AS DECIMAL(18,4)) * CAST(ib.unit_cost_cny AS DECIMAL(18,2))), 0) AS inventoryValueCny
+               FROM inventory_batch ib WHERE ib.status = 1`,
+          ),
+      this.getCommissionSummary(startDate, endDate, salespersonId),
       this.dataSource.query(
         `SELECT rate FROM exchange_rate WHERE from_currency = 'USD' AND to_currency = 'CNY' ORDER BY effective_date DESC LIMIT 1`,
       ),
@@ -131,6 +215,8 @@ export class DashboardService {
     const profitRate = totalSalesCny > 0 ? (totalProfitCny / totalSalesCny) * 100 : 0;
 
     return {
+      canViewAll: canViewAllFlag,
+      currentView,
       totalSalesUsd: totalSalesUsd.toFixed(2),
       totalSalesCny: totalSalesCny.toFixed(2),
       totalPaymentUsd: getNum(paymentStats[0], 'totalPaymentUsd').toFixed(2),
@@ -153,25 +239,29 @@ export class DashboardService {
 
   /**
    * 提成汇总统计
+   * @param salespersonId 销售员 ID（传入时仅统计该销售员）
    */
-  async getCommissionSummary(startDate?: string, endDate?: string) {
+  async getCommissionSummary(startDate?: string, endDate?: string, salespersonId?: string | null) {
     const dateFilter =
       startDate && endDate
         ? `AND created_time >= '${startDate}' AND created_time <= '${endDate} 23:59:59'`
         : '';
+    const spFilter = salespersonId
+      ? `AND salesperson_id = '${salespersonId}'`
+      : '';
 
     const [earned, clawback, pending] = await Promise.all([
       this.dataSource.query(
         `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
-         FROM commission_ledger WHERE type = 1 ${dateFilter}`,
+         FROM commission_ledger WHERE type = 1 ${dateFilter} ${spFilter}`,
       ),
       this.dataSource.query(
         `SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total
-         FROM commission_ledger WHERE type = 2 ${dateFilter}`,
+         FROM commission_ledger WHERE type = 2 ${dateFilter} ${spFilter}`,
       ),
       this.dataSource.query(
         `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
-         FROM commission_ledger WHERE status = 1`,
+         FROM commission_ledger WHERE status = 1 ${spFilter}`,
       ),
     ]);
 
@@ -193,7 +283,10 @@ export class DashboardService {
     startDate?: string,
     endDate?: string,
     granularity = 'day',
+    userId?: string,
+    viewMode?: string,
   ) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
@@ -204,6 +297,8 @@ export class DashboardService {
       'so.order_date',
       startDate,
       endDate,
+      [],
+      salespersonId ? { alias: 'so', salespersonId } : undefined,
     );
   }
 
@@ -214,7 +309,10 @@ export class DashboardService {
     startDate?: string,
     endDate?: string,
     granularity = 'day',
+    userId?: string,
+    viewMode?: string,
   ) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
@@ -227,18 +325,40 @@ export class DashboardService {
       'so.order_date',
       startDate,
       endDate,
+      [],
+      salespersonId ? { alias: 'so', salespersonId } : undefined,
     );
   }
 
   /**
    * 收款趋势
+   * 销售员视角需要 JOIN sales_order 以按 salesperson_id 过滤
    */
   async getPaymentTrend(
     startDate?: string,
     endDate?: string,
     granularity = 'day',
+    userId?: string,
+    viewMode?: string,
   ) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     const dateFormat = this.getDateFormat(granularity);
+    if (salespersonId) {
+      // 销售员：需要 JOIN sales_order 过滤
+      return this.executeQuery(
+        `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
+                COALESCE(SUM(p.amount_cny), 0) AS amount, COUNT(*) AS count
+         FROM payment p
+         INNER JOIN sales_order so ON p.order_id = so.id
+         WHERE p.type = 1 {dateFilter}
+         GROUP BY period ORDER BY period ASC`,
+        'p.payment_date',
+        startDate,
+        endDate,
+        [],
+        { alias: 'so', salespersonId },
+      );
+    }
     return this.executeQuery(
       `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
               COALESCE(SUM(p.amount_cny), 0) AS amount, COUNT(*) AS count
@@ -252,12 +372,17 @@ export class DashboardService {
 
   /**
    * 采购趋势
+   * 销售员不适用，返回空数组
    */
   async getPurchaseTrend(
     startDate?: string,
     endDate?: string,
     granularity = 'day',
+    userId?: string,
+    viewMode?: string,
   ) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
+    if (salespersonId) return [];
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(po.purchase_date, '${dateFormat}') AS period,
@@ -272,13 +397,34 @@ export class DashboardService {
 
   /**
    * 销售员排行榜
+   * 销售员视角：只返回自己的数据
    */
   async getSalespersonRanking(
     startDate?: string,
     endDate?: string,
     limit = 10,
+    userId?: string,
+    viewMode?: string,
   ) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     const safeLimit = Math.max(1, Math.min(limit || 10, 100));
+    if (salespersonId) {
+      // 销售员只看自己
+      return this.executeQuery(
+        `SELECT sp.id AS salespersonId, sp.name AS salespersonName,
+                COALESCE(SUM(so.total_amount_usd), 0) AS totalSalesUsd,
+                COALESCE(SUM(so.total_amount_cny), 0) AS totalSalesCny,
+                COUNT(so.id) AS orderCount
+         FROM salesperson sp
+         LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status IN (1, 2) {dateFilter}
+         WHERE sp.id = ?
+         GROUP BY sp.id, sp.name`,
+        'so.order_date',
+        startDate,
+        endDate,
+        [salespersonId],
+      );
+    }
     return this.executeQuery(
       `SELECT sp.id AS salespersonId, sp.name AS salespersonName,
               COALESCE(SUM(so.total_amount_usd), 0) AS totalSalesUsd,
@@ -297,7 +443,14 @@ export class DashboardService {
   /**
    * 商品排行榜
    */
-  async getProductRanking(startDate?: string, endDate?: string, limit = 10) {
+  async getProductRanking(
+    startDate?: string,
+    endDate?: string,
+    limit = 10,
+    userId?: string,
+    viewMode?: string,
+  ) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     const safeLimit = Math.max(1, Math.min(limit || 10, 100));
     return this.executeQuery(
       `SELECT oi.product_id AS productId,
@@ -312,29 +465,38 @@ export class DashboardService {
       startDate,
       endDate,
       [safeLimit],
+      salespersonId ? { alias: 'so', salespersonId } : undefined,
     );
   }
 
   /**
-   * 待处理事项（4 个独立 COUNT 并行执行）
+   * 待处理事项
+   * 销售员视角：只显示自己的待发货/待收款，隐藏采购和库存
    */
-  async getPendingItems() {
+  async getPendingItems(userId?: string, viewMode?: string) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     type CountResult = Array<{ count: string }>;
+    const spFilter = salespersonId ? `AND salesperson_id = '${salespersonId}'` : '';
+
     const [pendingShipment, pendingPayment, pendingReceipt, inventoryWarnings] =
       (await Promise.all([
         this.dataSource.query(
-          `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND shipment_status IN (1, 2)`,
+          `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND shipment_status IN (1, 2) ${spFilter}`,
         ),
         this.dataSource.query(
-          `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND payment_status IN (1, 2)`,
+          `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND payment_status IN (1, 2) ${spFilter}`,
         ),
-        this.dataSource.query(
-          `SELECT COUNT(*) AS count FROM purchase_order WHERE status IN (1, 2)`,
-        ),
-        this.dataSource.query(
-          `SELECT COUNT(*) AS count FROM inventory
-         WHERE CAST(available_quantity AS DECIMAL(18,4)) < CAST(minimum_stock AS DECIMAL(18,4))`,
-        ),
+        salespersonId
+          ? Promise.resolve([{ count: '0' }])
+          : this.dataSource.query(
+              `SELECT COUNT(*) AS count FROM purchase_order WHERE status IN (1, 2)`,
+            ),
+        salespersonId
+          ? Promise.resolve([{ count: '0' }])
+          : this.dataSource.query(
+              `SELECT COUNT(*) AS count FROM inventory
+             WHERE CAST(available_quantity AS DECIMAL(18,4)) < CAST(minimum_stock AS DECIMAL(18,4))`,
+            ),
       ])) as [CountResult, CountResult, CountResult, CountResult];
 
     return {
@@ -352,6 +514,7 @@ export class DashboardService {
    * @param startDate 开始日期
    * @param endDate 结束日期
    * @param extraParams 额外的参数化值
+   * @param salespersonFilter 销售员过滤（alias 为表别名，salespersonId 为销售员 ID）
    */
   private async executeQuery(
     template: string,
@@ -359,6 +522,7 @@ export class DashboardService {
     startDate?: string,
     endDate?: string,
     extraParams: unknown[] = [],
+    salespersonFilter?: { alias: string; salespersonId: string },
   ): Promise<Row[]> {
     const params: unknown[] = [];
     let dateFilter = '';
@@ -372,6 +536,12 @@ export class DashboardService {
         dateFilter += ` AND ${column} <= ?`;
         params.push(endDate);
       }
+    }
+
+    // 销售员身份过滤
+    if (salespersonFilter) {
+      dateFilter += ` AND ${salespersonFilter.alias}.salesperson_id = ?`;
+      params.push(salespersonFilter.salespersonId);
     }
 
     const sql = template.replace('{dateFilter}', dateFilter);
