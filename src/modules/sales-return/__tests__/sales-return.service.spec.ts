@@ -103,7 +103,12 @@ const mockShipBatch = {
   shipmentItemId: 'SI001',
   inventoryBatchId: 'IB001',
   quantity: '10.0000',
-  unitCost: '50.0000',
+  unitCostUsd: '50.0000',
+  unitCostCny: '350.0000',
+  totalCostUsd: '500.0000',
+  totalCostCny: '3500.0000',
+  currency: 'USD',
+  exchangeRate: '7.0000',
 }
 
 const mockInventoryBatch = {

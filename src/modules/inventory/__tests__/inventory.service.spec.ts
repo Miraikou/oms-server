@@ -57,6 +57,7 @@ describe('InventoryService', () => {
         batchSource: 1,
         batchNo: 'BT001',
         unitCostUsd: '50.00',
+        unitCostCny: '340.00',
         quantity: '100.0000',
         inboundTime,
         createdBy: '3001',
@@ -72,6 +73,7 @@ describe('InventoryService', () => {
           batchSource: 1,
           batchNo: 'BT001',
           unitCostUsd: '50.00',
+          unitCostCny: '340.00',
           originalQuantity: '100.0000',
           availableQuantity: '100.0000',
           frozenQuantity: '0',
@@ -93,6 +95,7 @@ describe('InventoryService', () => {
         batchSource: 3,
         batchNo: 'BT002',
         unitCostUsd: '0',
+        unitCostCny: '0',
         quantity: '20.0000',
         inboundTime: new Date('2026-07-05'),
       }

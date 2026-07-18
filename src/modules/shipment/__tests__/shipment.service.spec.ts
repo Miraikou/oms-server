@@ -331,7 +331,7 @@ describe('ShipmentService', () => {
 
       const result = await service.preview('order-1')
 
-      expect(result.orderId).toBe('order-1')
+      expect(result.id).toBe('order-1')
       expect(result.orderNo).toBe('ORD20260700001')
       expect(result.customerName).toBe('测试客户')
 

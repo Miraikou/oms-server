@@ -17,8 +17,9 @@ jest.mock('@/common/utils/snowflake', () => ({
 
 const mockFifoService = {
   consume: jest.fn().mockResolvedValue({
-    items: [{ batchId: 'b1', quantity: 5, unitCost: '50.00', totalCost: '250.00' }],
-    totalCost: '250.00',
+    items: [{ batchId: 'b1', quantity: 5, unitCostUsd: '50.00', totalCostUsd: '250.00', unitCostCny: '350.00', totalCostCny: '1750.00', currency: 'CNY', exchangeRate: '7.0000' }],
+    totalCostUsd: '250.00',
+    totalCostCny: '1750.00',
   }),
 }
 
@@ -95,7 +96,10 @@ describe('InventoryAdjustmentService', () => {
         availableQuantity: '50.0000',
         stockQuantity: '50.0000',
         originalQuantity: '50.0000',
-        unitCost: '10.00',
+        unitCostUsd: '10.00',
+        unitCostCny: '70.00',
+        currency: 'CNY',
+        exchangeRate: '7.0000',
         status: 1,
         version: 1,
       }
@@ -162,8 +166,10 @@ describe('InventoryAdjustmentService', () => {
           businessId: result.id,
           changeType: 5,
           quantity: '10',
-          unitCost: '10.00',
-          totalCost: '100.00',
+          unitCostUsd: '10.00',
+          unitCostCny: '70.00',
+          totalCostUsd: '100.00',
+          totalCostCny: '700.00',
           beforeAvailable: '50.0000',
           afterAvailable: '60.0000',
         }),
@@ -196,7 +202,8 @@ describe('InventoryAdjustmentService', () => {
         expect.objectContaining({
           batchSource: 3,
           batchNo: 'BT202607050001',
-          unitCost: '0',
+          unitCostUsd: '0',
+          unitCostCny: '0',
           originalQuantity: '20',
           availableQuantity: '20',
           stockQuantity: '20',
@@ -214,11 +221,13 @@ describe('InventoryAdjustmentService', () => {
       )
       expect(mockInventoryRepo.save).toHaveBeenCalled()
 
-      // 验证流水写入（unitCost=0，totalCost=0.00）
+      // 验证流水写入
       expect(mockFlowRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          unitCost: '0',
-          totalCost: '0.00',
+          unitCostUsd: '0',
+          unitCostCny: '0',
+          totalCostUsd: '0.00',
+          totalCostCny: '0.00',
           beforeAvailable: '0',
           afterAvailable: '20',
           changeType: 5,
