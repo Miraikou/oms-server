@@ -13,6 +13,8 @@ import { Repository, In } from 'typeorm';
 import { Inventory } from './entities/inventory.entity';
 import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
+import { Product } from '@/modules/product/entities/product.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { QueryInventoryDto, QueryInventoryTreeDto } from './dto/inventory-adjustment.dto';
 
@@ -28,6 +30,10 @@ export class InventoryController {
     private readonly batchRepo: Repository<InventoryBatch>,
     @InjectRepository(InventoryFlow)
     private readonly flowRepo: Repository<InventoryFlow>,
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
+    @InjectRepository(ProductModel)
+    private readonly productModelRepo: Repository<ProductModel>,
   ) {}
 
   @Get()
@@ -145,6 +151,29 @@ export class InventoryController {
     }
     const inventories = await invQb.getMany();
 
+    // 2.1 查询商品名称
+    const products = await this.productRepo
+      .createQueryBuilder('p')
+      .select(['p.id', 'p.productName'])
+      .where('p.id IN (:...productIds)', { productIds })
+      .getMany();
+    const productNameMap = new Map(products.map((p) => [p.id, p.productName]));
+
+    // 2.2 查询型号名称
+    const modelIds = inventories
+      .map((inv) => inv.productModelId)
+      .filter((id): id is string => !!id);
+    let modelNameMap = new Map<string, string>();
+    if (modelIds.length > 0) {
+      const uniqueModelIds = [...new Set(modelIds)];
+      const productModels = await this.productModelRepo
+        .createQueryBuilder('pm')
+        .select(['pm.id', 'pm.modelName'])
+        .where('pm.id IN (:...modelIds)', { modelIds: uniqueModelIds })
+        .getMany();
+      modelNameMap = new Map(productModels.map((m) => [m.id, m.modelName]));
+    }
+
     // 3. 从批次表实时汇总（按 productId + productModelId）
     const batchSums = await this.batchRepo
       .createQueryBuilder('b')
@@ -181,13 +210,16 @@ export class InventoryController {
     // 4. 按商品分组构建树形结构
     const productMap = new Map<string, {
       productId: string;
+      productName: string;
       availableQuantity: string;
       frozenQuantity: string;
       stockQuantity: string;
       updatedTime: string;
       children: Array<{
         productId: string;
+        productName: string;
         productModelId: string | null;
+        modelName: string;
         availableQuantity: string;
         frozenQuantity: string;
         stockQuantity: string;
@@ -210,7 +242,11 @@ export class InventoryController {
 
       const child = {
         productId: inv.productId,
+        productName: productNameMap.get(inv.productId) || inv.productId,
         productModelId: inv.productModelId || null,
+        modelName: inv.productModelId
+          ? (modelNameMap.get(inv.productModelId) || inv.productModelId)
+          : '',
         availableQuantity,
         frozenQuantity,
         stockQuantity,
@@ -220,6 +256,7 @@ export class InventoryController {
       if (!productMap.has(inv.productId)) {
         productMap.set(inv.productId, {
           productId: inv.productId,
+          productName: productNameMap.get(inv.productId) || inv.productId,
           availableQuantity: '0',
           frozenQuantity: '0',
           stockQuantity: '0',

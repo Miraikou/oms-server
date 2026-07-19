@@ -5,6 +5,8 @@ import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
 import { InventoryAdjustment } from './entities/inventory-adjustment.entity';
 import { InventoryAdjustmentItem } from './entities/inventory-adjustment-item.entity';
+import { Product } from '@/modules/product/entities/product.entity';
+import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { InventoryService } from './inventory.service';
 import { FifoService } from './services/fifo.service';
 import { InventoryAdjustmentService } from './inventory-adjustment.service';
@@ -26,6 +28,8 @@ import { RateModule } from '@/common/rate/rate.module';
       InventoryFlow,
       InventoryAdjustment,
       InventoryAdjustmentItem,
+      Product,
+      ProductModel,
     ]),
     RateModule,
   ],
