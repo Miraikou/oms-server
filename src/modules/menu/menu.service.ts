@@ -134,6 +134,19 @@ const DEFAULT_MENUS = [
           { name: '导出', permission: 'purchase-receipt:export' },
         ],
       },
+      {
+        menuName: '供应商管理',
+        menuType: 1,
+        path: '/suppliers',
+        sortNo: 3,
+        buttons: [
+          { name: '查询', permission: 'supplier:query' },
+          { name: '新增', permission: 'supplier:create' },
+          { name: '编辑', permission: 'supplier:edit' },
+          { name: '导入', permission: 'supplier:import' },
+          { name: '导出', permission: 'supplier:export' },
+        ],
+      },
     ],
   },
   {
@@ -241,25 +254,11 @@ const DEFAULT_MENUS = [
     sortNo: 10,
     children: [
       {
-        menuName: '供应商管理',
-        menuType: 1,
-        path: '/suppliers',
-        icon: 'TeamOutlined',
-        sortNo: 1,
-        buttons: [
-          { name: '查询', permission: 'supplier:query' },
-          { name: '新增', permission: 'supplier:create' },
-          { name: '编辑', permission: 'supplier:edit' },
-          { name: '导入', permission: 'supplier:import' },
-          { name: '导出', permission: 'supplier:export' },
-        ],
-      },
-      {
         menuName: '销售员管理',
         menuType: 1,
         path: '/salespersons',
         icon: 'UserOutlined',
-        sortNo: 2,
+        sortNo: 1,
         buttons: [
           { name: '查询', permission: 'salesperson:query' },
           { name: '新增', permission: 'salesperson:create' },
@@ -271,7 +270,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/express-companies',
         icon: 'CarOutlined',
-        sortNo: 3,
+        sortNo: 2,
         buttons: [
           { name: '查询', permission: 'express-company:query' },
           { name: '新增', permission: 'express-company:create' },
@@ -283,7 +282,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/transport-channels',
         icon: 'SendOutlined',
-        sortNo: 4,
+        sortNo: 3,
         buttons: [
           { name: '查询', permission: 'transport-channel:query' },
           { name: '新增', permission: 'transport-channel:create' },
@@ -295,7 +294,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/cost-types',
         icon: 'DollarOutlined',
-        sortNo: 5,
+        sortNo: 4,
         buttons: [
           { name: '查询', permission: 'cost-type:query' },
           { name: '新增', permission: 'cost-type:create' },
@@ -307,7 +306,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/common-contacts',
         icon: 'ContactsOutlined',
-        sortNo: 6,
+        sortNo: 5,
         buttons: [
           { name: '查询', permission: 'common-contact:query' },
           { name: '新增', permission: 'common-contact:create' },
@@ -320,7 +319,7 @@ const DEFAULT_MENUS = [
         menuType: 1,
         path: '/system-configs',
         icon: 'SettingOutlined',
-        sortNo: 7,
+        sortNo: 6,
         buttons: [
           { name: '查询', permission: 'system-config:query' },
           { name: '新增', permission: 'system-config:create' },
