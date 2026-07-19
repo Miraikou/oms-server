@@ -338,25 +338,6 @@ export class SalesReturnService {
           manager,
         );
 
-        // 记录提成冲回（退货退款时）
-        if (order.salespersonId) {
-          await this.commissionService.recordClawback(
-            {
-              salesOrderId: order.id,
-              paymentId: savedPayment.id,
-              salesReturnId: savedReturn.id,
-              salespersonId: order.salespersonId,
-              orderAmountUsd: order.totalAmountUsd,
-              orderAmountCny: order.totalAmountCny,
-              refundAmountUsd: refundDual.amountUsd,
-              refundAmountCny: refundDual.amountCny,
-              currency: order.currency || 'USD',
-              exchangeRate: order.exchangeRate,
-            },
-            manager,
-          );
-        }
-
         refundAmountUsdStr = refundDual.amountUsd;
         refundAmountCnyStr = refundDual.amountCny;
         refundPaymentId = savedPayment.id;
@@ -412,6 +393,18 @@ export class SalesReturnService {
 
       // 8. 重算订单发货状态（退货减少净发货量，可能改变 shipmentStatus）
       await this.salesOrderService.recalculateStatus(dto.orderId, manager);
+
+      // 9. 退货后重算提成差额（必须在退货成本累加之后调用，确保 calcOrderProfit 获取到最新成本）
+      if (dto.refund && order.salespersonId) {
+        await this.commissionService.recalculateOrderCommission(
+          order.id,
+          refundAmountUsdStr!,
+          refundAmountCnyStr!,
+          refundPaymentId!,
+          savedReturn.id,
+          manager,
+        );
+      }
 
       // 回写退款信息到退货单
       savedReturn.refundAmountUsd = refundAmountUsdStr;

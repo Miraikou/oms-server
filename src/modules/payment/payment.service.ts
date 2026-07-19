@@ -107,20 +107,11 @@ export class PaymentService {
 				manager,
 			);
 
-			// 6. 记录提成（收款计提）
-			if (order.salespersonId) {
-				await this.commissionService.recordCommission(
-					{
-						salesOrderId: order.id,
-						paymentId: savedPayment.id,
-						salespersonId: order.salespersonId,
-						orderAmountUsd: order.totalAmountUsd,
-						orderAmountCny: order.totalAmountCny,
-						receivedAmountUsd: dualAmounts.amountUsd,
-						receivedAmountCny: dualAmounts.amountCny,
-						currency,
-						exchangeRate,
-					},
+			// 6. 如果收款后订单变为已完成，触发提成计提（仅完成时计提一次）
+			const updatedOrder = await orderRepo.findOne({ where: { id: order.id } });
+			if (updatedOrder && updatedOrder.status === 2 && updatedOrder.salespersonId) {
+				await this.commissionService.accrueOrderCommission(
+					order.id,
 					manager,
 				);
 			}
@@ -197,21 +188,14 @@ export class PaymentService {
 				manager,
 			);
 
-			// 6. 记录提成冲回（退款时）
+			// 6. 退款后重算提成差额（如果订单已计提提成）
 			if (order.salespersonId) {
-				await this.commissionService.recordClawback(
-					{
-						salesOrderId: order.id,
-						paymentId: savedPayment.id,
-						salesReturnId: '',
-						salespersonId: order.salespersonId,
-						orderAmountUsd: order.totalAmountUsd,
-						orderAmountCny: order.totalAmountCny,
-						refundAmountUsd: dualAmounts.amountUsd,
-						refundAmountCny: dualAmounts.amountCny,
-						currency,
-						exchangeRate,
-					},
+				await this.commissionService.recalculateOrderCommission(
+					order.id,
+					dualAmounts.amountUsd,
+					dualAmounts.amountCny,
+					savedPayment.id,
+					'', // 非退货场景，无 salesReturnId
 					manager,
 				);
 			}

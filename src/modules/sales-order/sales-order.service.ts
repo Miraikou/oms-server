@@ -569,7 +569,7 @@ export class SalesOrderService {
           [spIds],
         );
         for (const row of spRows) {
-          spCommissionRateMap.set(row.id, parseFloat(row.commissionRate || '40'));
+          spCommissionRateMap.set(row.id, parseFloat(row.commissionRate || '0'));
         }
       }
 

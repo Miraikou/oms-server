@@ -8,6 +8,7 @@ import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { RateService } from '@/common/rate/rate.service';
+import { CommissionService } from '@/modules/commission/commission.service';
 
 jest.mock('@/common/utils/snowflake', () => ({
   snowflake: { nextId: jest.fn(() => '9999999999999999') },
@@ -35,6 +36,11 @@ describe('PaymentService', () => {
 
   const mockRateService = {
     getRate: jest.fn().mockResolvedValue('7.12'),
+  };
+
+  const mockCommissionService = {
+    accrueOrderCommission: jest.fn().mockResolvedValue(null),
+    recalculateOrderCommission: jest.fn().mockResolvedValue(null),
   };
 
   /* ---- 事务内 manager.getRepository 返回的 Mock ---- */
@@ -71,6 +77,7 @@ describe('PaymentService', () => {
         { provide: SalesOrderService, useValue: mockSalesOrderService },
         { provide: DataSource, useValue: mockDataSource },
         { provide: RateService, useValue: mockRateService },
+        { provide: CommissionService, useValue: mockCommissionService },
       ],
     }).compile();
 

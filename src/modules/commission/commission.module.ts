@@ -3,6 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommissionLedger } from './entities/commission-ledger.entity';
 import { CommissionSettlement } from './entities/commission-settlement.entity';
 import { Salesperson } from '@/modules/salesperson/entities/salesperson.entity';
+import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
+import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
+import { SalesOrderCost } from '@/modules/sales-order/entities/sales-order-cost.entity';
+import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
 import { CommissionService } from './commission.service';
 import { CommissionController } from './commission.controller';
 
@@ -16,6 +20,10 @@ import { CommissionController } from './commission.controller';
 			CommissionLedger,
 			CommissionSettlement,
 			Salesperson,
+			SalesOrder,
+			SalesOrderItem,
+			SalesOrderCost,
+			ShipmentItem,
 		]),
 	],
 	controllers: [CommissionController],

@@ -14,6 +14,7 @@ import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { RateService } from '@/common/rate/rate.service';
+import { CommissionService } from '@/modules/commission/commission.service';
 import { snowflake } from '@/common/utils/snowflake';
 import { computeDualUnitPrice, computeDualAmounts } from '@/common/utils/dual-currency';
 import type { CreateShipmentDto, QueryShipmentDto } from './dto/shipment.dto';
@@ -46,6 +47,7 @@ export class ShipmentService {
     private readonly salesOrderService: SalesOrderService,
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
+    private readonly commissionService: CommissionService,
   ) {}
 
   /**
@@ -204,6 +206,17 @@ export class ShipmentService {
           dto.orderId,
           dtoItem.orderItemId,
           parseFloat(dtoItem.quantity),
+          manager,
+        );
+      }
+
+      // 8. 发货后检查订单是否变为已完成，触发提成计提（仅完成时计提一次）
+      const updatedOrder = await manager.getRepository(SalesOrder).findOne({
+        where: { id: dto.orderId },
+      });
+      if (updatedOrder && updatedOrder.status === 2 && updatedOrder.salespersonId) {
+        await this.commissionService.accrueOrderCommission(
+          dto.orderId,
           manager,
         );
       }

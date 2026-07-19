@@ -11,6 +11,7 @@ import { ShipmentService } from './shipment.service';
 import { ShipmentController } from './shipment.controller';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
 import { SalesOrderModule } from '@/modules/sales-order/sales-order.module';
+import { CommissionModule } from '@/modules/commission/commission.module';
 import { RateModule as CommonRateModule } from '@/common/rate/rate.module';
 
 /**
@@ -30,6 +31,7 @@ import { RateModule as CommonRateModule } from '@/common/rate/rate.module';
     ]),
     InventoryModule,
     SalesOrderModule,
+    CommissionModule,
     CommonRateModule,
   ],
   controllers: [ShipmentController],

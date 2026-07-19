@@ -122,6 +122,46 @@ export class CommissionLedger extends BaseEntity {
 	commissionAmountCny: string = '0';
 
 	@Column({
+		name: 'profit_base_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '计提时的订单利润基数（USD）',
+	})
+	profitBaseUsd: string | null = null;
+
+	@Column({
+		name: 'profit_base_cny',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '计提时的订单利润基数（CNY）',
+	})
+	profitBaseCny: string | null = null;
+
+	@Column({
+		name: 'revenue_adjustment_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '累计收入调整（USD，退款时扣减）',
+	})
+	revenueAdjustmentUsd: string | null = null;
+
+	@Column({
+		name: 'revenue_adjustment_cny',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '累计收入调整（CNY，退款时扣减）',
+	})
+	revenueAdjustmentCny: string | null = null;
+
+	@Column({
 		name: 'currency',
 		type: 'varchar',
 		length: 10,
