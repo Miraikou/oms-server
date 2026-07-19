@@ -80,6 +80,16 @@ export class ShipmentItem extends BaseEntity {
   totalCostCny: string = '0';
 
   @Column({
+    name: 'total_cost_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '产品成本(USD)',
+  })
+  totalCostUsd: string | null = null;
+
+  @Column({
     name: 'gross_profit_cny',
     type: 'decimal',
     precision: 18,
@@ -88,6 +98,16 @@ export class ShipmentItem extends BaseEntity {
     comment: '产品毛利润（CNY）',
   })
   grossProfitCny: string = '0';
+
+  @Column({
+    name: 'gross_profit_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    nullable: true,
+    comment: '毛利(USD)',
+  })
+  grossProfitUsd: string | null = null;
 
   @Column({
     name: 'currency',

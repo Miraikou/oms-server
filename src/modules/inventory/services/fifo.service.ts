@@ -150,7 +150,7 @@ export class FifoService {
         batch.version += 1;
         await manager.save(batch);
 
-        const unitCostUsd = parseFloat(batch.unitCostUsd);
+        const unitCostUsd = parseFloat(batch.unitCostUsd || '0');
         const costUsd = deduct * unitCostUsd;
         totalCostValue += costUsd;
 
@@ -592,7 +592,7 @@ export class FifoService {
           batch.version += 1;
           await manager.save(batch);
 
-          const unitCostUsd = parseFloat(batch.unitCostUsd);
+          const unitCostUsd = parseFloat(batch.unitCostUsd || '0');
           const costUsd = toDeduct * unitCostUsd;
           totalCostValue += costUsd;
 

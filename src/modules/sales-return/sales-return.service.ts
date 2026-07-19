@@ -159,6 +159,7 @@ export class SalesReturnService {
           const returnQty = parseFloat(dtoItem.quantity);
           let remaining = returnQty;
           let costReduction = 0;
+          let costReductionUsd = 0;
 
           // 按原批次比例恢复
           for (const sb of shipBatches) {
@@ -168,6 +169,7 @@ export class SalesReturnService {
 
             // 按该批次实际成本累加扣减
             costReduction += toRestore * parseFloat(sb.unitCostCny || '0');
+            costReductionUsd += toRestore * parseFloat(sb.unitCostUsd || '0');
 
             // 恢复库存批次
             const batch = await manager.findOne(InventoryBatch, {
@@ -225,7 +227,7 @@ export class SalesReturnService {
                   quantity: String(toRestore),
                   unitCostUsd: sb.unitCostUsd,
                   unitCostCny: sb.unitCostCny || null,
-                  totalCostUsd: (toRestore * parseFloat(sb.unitCostUsd)).toFixed(2),
+                  totalCostUsd: (toRestore * parseFloat(sb.unitCostUsd || '0')).toFixed(2),
                   totalCostCny: (toRestore * parseFloat(sb.unitCostCny || '0')).toFixed(2),
                   flowCurrency: sb.currency || 'CNY',
                   exchangeRate: sb.exchangeRate || this.rateService.getDefaultRate(),
@@ -241,14 +243,25 @@ export class SalesReturnService {
             remaining -= toRestore;
           }
 
-          // 扣减该发货明细的产品成本（CNY）
-          if (costReduction > 0 && shipItem) {
-            shipItem.totalCostCny = (
-              parseFloat(shipItem.totalCostCny) - costReduction
-            ).toFixed(2);
+          // 扣减该发货明细的产品成本（CNY + USD）
+          if ((costReduction > 0 || costReductionUsd > 0) && shipItem) {
+            if (costReduction > 0) {
+              shipItem.totalCostCny = (
+                parseFloat(shipItem.totalCostCny) - costReduction
+              ).toFixed(2);
+            }
+            if (costReductionUsd > 0) {
+              shipItem.totalCostUsd = (
+                parseFloat(shipItem.totalCostUsd || '0') - costReductionUsd
+              ).toFixed(2);
+            }
             shipItem.grossProfitCny = (
               parseFloat(shipItem.salesAmountCny) -
               parseFloat(shipItem.totalCostCny)
+            ).toFixed(2);
+            shipItem.grossProfitUsd = (
+              parseFloat(shipItem.salesAmountUsd) -
+              parseFloat(shipItem.totalCostUsd || '0')
             ).toFixed(2);
             await manager.save(shipItem);
           }
@@ -292,7 +305,7 @@ export class SalesReturnService {
         const currency = order.currency || 'USD';
         const receivedInCurrency = currency === 'CNY'
           ? parseFloat(order.receivedAmountCny || '0')
-          : parseFloat(order.receivedAmountUsd);
+          : parseFloat(order.receivedAmountUsd || '0');
         if (refundTotal > receivedInCurrency + 0.01) {
           throw new BadRequestException(
             `退款金额（${refundTotal.toFixed(2)}）超过已收金额（${receivedInCurrency.toFixed(2)}）`,
@@ -317,10 +330,11 @@ export class SalesReturnService {
         });
         const savedPayment = await manager.save(payment);
 
-        // 扣减已收金额
+        // 扣减已收金额（使用退款记录的 USD/CNY 金额，保证汇率一致）
         await this.salesOrderService.decreaseReceivedAmount(
           dto.orderId,
-          refundTotal.toFixed(2),
+          refundDual.amountUsd,
+          refundDual.amountCny,
           manager,
         );
 

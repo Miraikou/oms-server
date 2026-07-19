@@ -159,7 +159,7 @@ export class InventoryAdjustmentService {
                 new Date().toISOString().split('T')[0],
                 'USD',
               );
-              const dualPrice = computeDualUnitPrice(estimate.costCNY, 'CNY', exchangeRate);
+              const dualPrice = computeDualUnitPrice(estimate.costCny, 'CNY', exchangeRate);
               unitCostUsd = dualPrice.unitPriceUsd;
               unitCostCny = dualPrice.unitPriceCny;
             }
@@ -408,13 +408,13 @@ export class InventoryAdjustmentService {
    * @param productId 商品ID
    * @param productModelId 型号ID（null表示匹配型号为空的批次）
    * @param costSourceType 成本来源类型 1=近一年加权平均 2=剩余库存加权平均 3=最新采购记录成本
-   * @returns { costCNY: string }
+   * @returns { costCny: string }
    */
   private async estimateCostInternal(
     productId: string,
     productModelId: string | null,
     costSourceType: number,
-  ): Promise<{ costCNY: string }> {
+  ): Promise<{ costCny: string }> {
     switch (costSourceType) {
       case 1:
         return this.calcYearlyWeightedAvg(productId, productModelId);
@@ -434,7 +434,7 @@ export class InventoryAdjustmentService {
   private async calcYearlyWeightedAvg(
     productId: string,
     productModelId: string | null,
-  ): Promise<{ costCNY: string }> {
+  ): Promise<{ costCny: string }> {
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
@@ -467,7 +467,7 @@ export class InventoryAdjustmentService {
       throw new BadRequestException('该商品近一年无入库记录');
     }
 
-    return { costCNY: (totalCostCNY / totalQty).toFixed(4) };
+    return { costCny: (totalCostCNY / totalQty).toFixed(4) };
   }
 
   /**
@@ -477,7 +477,7 @@ export class InventoryAdjustmentService {
   private async calcRemainingWeightedAvg(
     productId: string,
     productModelId: string | null,
-  ): Promise<{ costCNY: string }> {
+  ): Promise<{ costCny: string }> {
     const qb = this.batchRepo.createQueryBuilder('b')
       .where('b.productId = :productId', { productId })
       .andWhere('b.availableQuantity > 0');
@@ -507,7 +507,7 @@ export class InventoryAdjustmentService {
       throw new BadRequestException('该商品无库存');
     }
 
-    return { costCNY: (totalCostCNY / totalQty).toFixed(4) };
+    return { costCny: (totalCostCNY / totalQty).toFixed(4) };
   }
 
   /**
@@ -517,7 +517,7 @@ export class InventoryAdjustmentService {
   private async calcLatestPurchaseCost(
     productId: string,
     productModelId: string | null,
-  ): Promise<{ costCNY: string }> {
+  ): Promise<{ costCny: string }> {
     const qb = this.batchRepo.createQueryBuilder('b')
       .where('b.productId = :productId', { productId });
 
@@ -535,6 +535,6 @@ export class InventoryAdjustmentService {
       throw new BadRequestException('该商品无采购记录');
     }
 
-    return { costCNY: parseFloat(batch.unitCostCny).toFixed(4) };
+    return { costCny: parseFloat(batch.unitCostCny).toFixed(4) };
   }
 }

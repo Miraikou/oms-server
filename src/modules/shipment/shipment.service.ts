@@ -150,7 +150,9 @@ export class ShipmentService {
           salesAmountUsd: salesAmounts.amountUsd,
           salesAmountCny: salesAmounts.amountCny,
           totalCostCny: '0',
+          totalCostUsd: null,
           grossProfitCny: '0',
+          grossProfitUsd: null,
           currency: orderCurrency,
           exchangeRate: orderRate,
         });
@@ -184,10 +186,14 @@ export class ShipmentService {
           await batchRepo.save(itemBatch);
         }
 
-        // 6. 汇总成本、计算毛利(CNY)
+        // 6. 汇总成本、计算毛利(CNY + USD)
         savedItem.totalCostCny = fifoResult.totalCostCny;
+        savedItem.totalCostUsd = fifoResult.totalCostUsd;
         savedItem.grossProfitCny = (
           parseFloat(salesAmounts.amountCny) - parseFloat(fifoResult.totalCostCny)
+        ).toFixed(2);
+        savedItem.grossProfitUsd = (
+          parseFloat(salesAmounts.amountUsd) - parseFloat(fifoResult.totalCostUsd)
         ).toFixed(2);
         await itemRepo.save(savedItem);
       }
@@ -273,7 +279,11 @@ export class ShipmentService {
           batchNo: batch.batchNo,
           quantity: qty,
           unitCost: batchUnitCost,
+          unitCostUsd: batch.unitCostUsd,
+          unitCostCny: batch.unitCostCny,
           totalCost: (qty * parseFloat(batchUnitCost)).toFixed(2),
+          totalCostUsd: (qty * parseFloat(batch.unitCostUsd || '0')).toFixed(2),
+          totalCostCny: (qty * parseFloat(batch.unitCostCny)).toFixed(2),
         });
         need -= qty;
       }
