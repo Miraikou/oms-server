@@ -47,6 +47,7 @@ const DEFAULT_MENUS = [
           { name: '取消', permission: 'order:cancel' },
           { name: '导入', permission: 'order:import' },
           { name: '导出', permission: 'order:export' },
+          { name: '查看全局数据', permission: 'order:view-all' },
         ],
       },
       {
@@ -776,6 +777,7 @@ export class MenuService {
       BOSS: [
         'dashboard', // 驾驶舱全部
         'dashboard:view-all', // 查看全局驾驶舱数据
+        'order:view-all', // 查看全局订单数据
         'order:query',
         'order:export',
         'shipment:query',
@@ -911,6 +913,7 @@ export class MenuService {
       FINANCE: [
         'dashboard',
         'dashboard:view-all', // 查看全局驾驶舱数据
+        'order:view-all', // 查看全局订单数据
         'order:query',
         'order:export',
         'shipment:query',

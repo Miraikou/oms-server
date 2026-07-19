@@ -50,8 +50,8 @@ export class SalesOrderController {
     @CurrentUser('sub') userId: string,
     @Query('viewMode') viewMode?: string,
   ) {
-    // 根据视图模式自动过滤销售员
-    const salespersonId = await this.dashboardService.resolveSalespersonId(userId, viewMode);
+    // 根据视图模式自动过滤销售员（使用独立的订单全局查看权限）
+    const salespersonId = await this.dashboardService.resolveSalespersonId(userId, viewMode, 'order:view-all');
     if (salespersonId) {
       query.salespersonId = salespersonId;
     }

@@ -40,19 +40,21 @@ export class DashboardService {
   ) {}
 
   /**
-   * 检查用户是否拥有全局驾驶舱查看权限
-   * 通过 dashboard:view-all 权限码判断，SUPER_ADMIN 兜底放行
+   * 检查用户是否拥有指定全局查看权限
+   * @param userId 用户 ID
+   * @param permissionCode 权限码，默认 'dashboard:view-all'
+   * SUPER_ADMIN 兜底放行
    */
-  async canViewAll(userId: string): Promise<boolean> {
+  async canViewAll(userId: string, permissionCode = 'dashboard:view-all'): Promise<boolean> {
     if (!userId) return false;
     const rows = await this.dataSource.query(
       `SELECT 1 FROM sys_user_role ur
        INNER JOIN sys_role r ON ur.role_id = r.id AND r.status = 1
        INNER JOIN sys_role_menu rm ON r.id = rm.role_id
        INNER JOIN sys_menu m ON rm.menu_id = m.id AND m.status = 1
-       WHERE ur.user_id = ? AND (m.permission = 'dashboard:view-all' OR r.role_code = 'SUPER_ADMIN')
+       WHERE ur.user_id = ? AND (m.permission = ? OR r.role_code = 'SUPER_ADMIN')
        LIMIT 1`,
-      [userId],
+      [userId, permissionCode],
     );
     return rows.length > 0;
   }
@@ -61,12 +63,13 @@ export class DashboardService {
    * 根据系统用户 ID 和视图模式解析实际的销售员过滤 ID
    * @param userId 系统用户 ID
    * @param viewMode 视图模式 'global' | 'personal' | undefined
+   * @param permissionCode 判断全局查看权限码，默认 'dashboard:view-all'
    * @returns salespersonId（需要过滤时）或 null（不过滤）
    */
-  async resolveSalespersonId(userId: string, viewMode?: string): Promise<string | null> {
+  async resolveSalespersonId(userId: string, viewMode?: string, permissionCode = 'dashboard:view-all'): Promise<string | null> {
     if (!userId) return null;
 
-    const hasGlobalPerm = await this.canViewAll(userId);
+    const hasGlobalPerm = await this.canViewAll(userId, permissionCode);
 
     if (viewMode === 'personal') {
       // 明确请求个人视图 → 查销售员关联
