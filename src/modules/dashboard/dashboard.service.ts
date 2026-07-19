@@ -458,7 +458,7 @@ export class DashboardService {
 
   /**
    * 采购趋势
-   * 销售员不适用，返回空数组
+   * 检查用户是否有 purchase-order:query 权限，有则返回数据，无则返回空数组
    */
   async getPurchaseTrend(
     startDate?: string,
@@ -467,15 +467,16 @@ export class DashboardService {
     userId?: string,
     viewMode?: string,
   ) {
-    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
-    if (salespersonId) return [];
+    const hasPermission = userId ? await this.canViewAll(userId, 'purchase-order:query') : false;
+
+    if (!hasPermission) return [];
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(po.purchase_date, '${dateFormat}') AS period,
               COALESCE(SUM(po.total_amount_cny), 0) AS amountCny,
               COALESCE(SUM(po.total_amount_usd), 0) AS amountUsd,
               COUNT(*) AS count
-       FROM purchase_order po WHERE po.status IN (1, 2) {dateFilter}
+       FROM purchase_order po WHERE po.status IN (1, 2, 3) {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'po.purchase_date',
       startDate,
