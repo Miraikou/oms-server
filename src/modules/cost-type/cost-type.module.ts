@@ -17,11 +17,11 @@ export class CostTypeModule implements OnModuleInit {
   /** 初始化默认成本类型 */
   async onModuleInit() {
     const defaults = [
-      '物流成本',
-      '广告成本',
-      '营销成本',
-      '扣关成本',
       '其他成本',
+      '扣关成本',
+      '营销成本',
+      '广告成本',
+      '物流成本',
     ];
     for (const name of defaults) {
       const existing = await this.service.findAll({
