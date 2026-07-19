@@ -117,7 +117,6 @@ export class DashboardService {
       purchaseStats,
       inventoryStats,
       commissionStats,
-      rateResult,
     ] = await Promise.all([
       this.executeQuery(
         `SELECT COALESCE(SUM(total_amount_usd), 0) AS totalSalesUsd,
@@ -142,7 +141,8 @@ export class DashboardService {
         spFilter,
       ),
       this.executeQuery(
-        `SELECT COALESCE(SUM(si.gross_profit_cny), 0) AS shipmentProfit
+        `SELECT COALESCE(SUM(si.gross_profit_cny), 0) AS shipmentProfitCny,
+                COALESCE(SUM(si.gross_profit_usd), 0) AS shipmentProfitUsd
            FROM shipment_item si
            INNER JOIN shipment s ON si.shipment_id = s.id
            INNER JOIN sales_order so ON s.order_id = so.id
@@ -195,19 +195,13 @@ export class DashboardService {
                FROM inventory_batch ib WHERE ib.status = 1`,
           ),
       this.getCommissionSummary(startDate, endDate, salespersonId),
-      this.dataSource.query(
-        `SELECT rate FROM exchange_rate WHERE from_currency = 'USD' AND to_currency = 'CNY' ORDER BY effective_date DESC LIMIT 1`,
-      ),
     ]);
 
-    const currentRate = parseFloat(rateResult?.[0]?.rate || this.rateService.getDefaultRate());
-
-    const shipmentProfitCny = getNum(profitStats[0], 'shipmentProfit');
+    const shipmentProfitCny = getNum(profitStats[0], 'shipmentProfitCny');
+    const shipmentProfitUsd = getNum(profitStats[0], 'shipmentProfitUsd');
     const orderCostCny = getNum(costStats[0], 'totalCostCny');
-    const totalProfitCny = shipmentProfitCny - orderCostCny;
     const orderCostUsd = getNum(costStats[0], 'totalCostUsd');
-    // 发货利润仅有 CNY，USD 通过汇率换算
-    const shipmentProfitUsd = shipmentProfitCny / currentRate;
+    const totalProfitCny = shipmentProfitCny - orderCostCny;
     const totalProfitUsd = shipmentProfitUsd - orderCostUsd;
 
     const totalSalesCny = getNum(orderStats[0], 'totalSalesCny');
@@ -234,6 +228,10 @@ export class DashboardService {
       commissionClawback: commissionStats.monthClawback.toFixed(2),
       commissionNet: commissionStats.monthNet,
       commissionPending: commissionStats.totalPending.toFixed(2),
+      commissionEarnedUsd: commissionStats.monthEarnedUsd.toFixed(2),
+      commissionClawbackUsd: commissionStats.monthClawbackUsd.toFixed(2),
+      commissionNetUsd: commissionStats.monthNetUsd,
+      commissionPendingUsd: commissionStats.totalPendingUsd.toFixed(2),
     };
   }
 
@@ -242,37 +240,54 @@ export class DashboardService {
    * @param salespersonId 销售员 ID（传入时仅统计该销售员）
    */
   async getCommissionSummary(startDate?: string, endDate?: string, salespersonId?: string | null) {
-    const dateFilter =
-      startDate && endDate
-        ? `AND created_time >= '${startDate}' AND created_time <= '${endDate} 23:59:59'`
-        : '';
-    const spFilter = salespersonId
-      ? `AND salesperson_id = '${salespersonId}'`
-      : '';
+    const dateParams: unknown[] = [];
+    let dateFilter = '';
+    if (startDate && endDate) {
+      dateFilter = 'AND created_time >= ? AND created_time <= ?';
+      dateParams.push(startDate, endDate + ' 23:59:59');
+    }
+    const spParams: unknown[] = [];
+    let spFilter = '';
+    if (salespersonId) {
+      spFilter = 'AND salesperson_id = ?';
+      spParams.push(salespersonId);
+    }
 
     const [earned, clawback, pending] = await Promise.all([
       this.dataSource.query(
-        `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
+        `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
+                COALESCE(SUM(commission_amount_usd), 0) AS totalUsd
          FROM commission_ledger WHERE type = 1 ${dateFilter} ${spFilter}`,
+        [...dateParams, ...spParams],
       ),
       this.dataSource.query(
-        `SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total
+        `SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total,
+                COALESCE(SUM(ABS(commission_amount_usd)), 0) AS totalUsd
          FROM commission_ledger WHERE type = 2 ${dateFilter} ${spFilter}`,
+        [...dateParams, ...spParams],
       ),
       this.dataSource.query(
-        `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
+        `SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
+                COALESCE(SUM(commission_amount_usd), 0) AS totalUsd
          FROM commission_ledger WHERE status = 1 ${spFilter}`,
+        spParams,
       ),
     ]);
 
+    const monthEarned = parseFloat(earned[0]?.total || '0');
+    const monthEarnedUsd = parseFloat(earned[0]?.totalUsd || '0');
+    const monthClawback = parseFloat(clawback[0]?.total || '0');
+    const monthClawbackUsd = parseFloat(clawback[0]?.totalUsd || '0');
+
     return {
-      monthEarned: parseFloat(earned[0]?.total || '0'),
-      monthClawback: parseFloat(clawback[0]?.total || '0'),
-      monthNet: (
-        parseFloat(earned[0]?.total || '0') -
-        parseFloat(clawback[0]?.total || '0')
-      ).toFixed(2),
+      monthEarned,
+      monthEarnedUsd,
+      monthClawback,
+      monthClawbackUsd,
+      monthNet: (monthEarned - monthClawback).toFixed(2),
+      monthNetUsd: (monthEarnedUsd - monthClawbackUsd).toFixed(2),
       totalPending: parseFloat(pending[0]?.total || '0'),
+      totalPendingUsd: parseFloat(pending[0]?.totalUsd || '0'),
     };
   }
 
@@ -290,7 +305,8 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
-              COALESCE(SUM(so.total_amount_cny), 0) AS amount,
+              COALESCE(SUM(so.total_amount_cny), 0) AS amountCny,
+              COALESCE(SUM(so.total_amount_usd), 0) AS amountUsd,
               COUNT(*) AS count
        FROM sales_order so WHERE so.status IN (1, 2) {dateFilter}
        GROUP BY period ORDER BY period ASC`,
@@ -316,7 +332,8 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(so.order_date, '${dateFormat}') AS period,
-              COALESCE(SUM(si.gross_profit_cny), 0) AS profit
+              COALESCE(SUM(si.gross_profit_cny), 0) AS profitCny,
+              COALESCE(SUM(si.gross_profit_usd), 0) AS profitUsd
        FROM shipment_item si
        INNER JOIN shipment s ON si.shipment_id = s.id
        INNER JOIN sales_order so ON s.order_id = so.id
@@ -347,7 +364,9 @@ export class DashboardService {
       // 销售员：需要 JOIN sales_order 过滤
       return this.executeQuery(
         `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
-                COALESCE(SUM(p.amount_cny), 0) AS amount, COUNT(*) AS count
+                COALESCE(SUM(p.amount_cny), 0) AS amountCny,
+                COALESCE(SUM(p.amount_usd), 0) AS amountUsd,
+                COUNT(*) AS count
          FROM payment p
          INNER JOIN sales_order so ON p.order_id = so.id
          WHERE p.type = 1 {dateFilter}
@@ -361,7 +380,9 @@ export class DashboardService {
     }
     return this.executeQuery(
       `SELECT DATE_FORMAT(p.payment_date, '${dateFormat}') AS period,
-              COALESCE(SUM(p.amount_cny), 0) AS amount, COUNT(*) AS count
+              COALESCE(SUM(p.amount_cny), 0) AS amountCny,
+              COALESCE(SUM(p.amount_usd), 0) AS amountUsd,
+              COUNT(*) AS count
        FROM payment p WHERE p.type = 1 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'p.payment_date',
@@ -386,7 +407,9 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(po.purchase_date, '${dateFormat}') AS period,
-              COALESCE(SUM(po.total_amount_cny), 0) AS amount, COUNT(*) AS count
+              COALESCE(SUM(po.total_amount_cny), 0) AS amountCny,
+              COALESCE(SUM(po.total_amount_usd), 0) AS amountUsd,
+              COUNT(*) AS count
        FROM purchase_order po WHERE po.status IN (1, 2) {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'po.purchase_date',
@@ -476,15 +499,18 @@ export class DashboardService {
   async getPendingItems(userId?: string, viewMode?: string) {
     const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     type CountResult = Array<{ count: string }>;
-    const spFilter = salespersonId ? `AND salesperson_id = '${salespersonId}'` : '';
+    const spParams: unknown[] = salespersonId ? [salespersonId] : [];
+    const spFilter = salespersonId ? 'AND salesperson_id = ?' : '';
 
     const [pendingShipment, pendingPayment, pendingReceipt, inventoryWarnings] =
       (await Promise.all([
         this.dataSource.query(
           `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND shipment_status IN (1, 2) ${spFilter}`,
+          spParams,
         ),
         this.dataSource.query(
           `SELECT COUNT(*) AS count FROM sales_order WHERE status = 1 AND payment_status IN (1, 2) ${spFilter}`,
+          spParams,
         ),
         salespersonId
           ? Promise.resolve([{ count: '0' }])
