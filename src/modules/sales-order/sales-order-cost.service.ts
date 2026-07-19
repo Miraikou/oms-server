@@ -83,7 +83,7 @@ export class SalesOrderCostService {
 
 	/**
 	 * 修改成本
-	 * 如果币种变更，重新查询汇率；否则保留原汇率
+	 * 金额或币种变更时，始终重新查询当前汇率以确保准确性
 	 */
 	async update(
 		id: string,
@@ -110,17 +110,17 @@ export class SalesOrderCostService {
 			cost.amountUsd = dto.amount; // temporary, will be recomputed below
 		}
 
-		// 币种变更 → 重新查汇率
+		// 币种变更
 		if (dto.currency !== undefined && dto.currency !== cost.currency) {
 			cost.currency = dto.currency || 'CNY';
+		}
+
+		// 金额或币种变更时，始终重新查询当前汇率
+		if (dto.amount !== undefined || dto.currency !== undefined) {
 			cost.exchangeRate = await this.rateService.getRate(
 				new Date().toISOString().slice(0, 10),
 				'USD',
 			);
-		}
-
-		// 金额或汇率变化时重算 amountUsd 和 amountCny
-		if (dto.amount !== undefined || dto.currency !== undefined) {
 			const dual = computeDualAmounts(
 				dto.amount !== undefined ? dto.amount : originalAmount,
 				cost.currency,

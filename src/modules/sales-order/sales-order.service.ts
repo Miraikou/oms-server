@@ -153,6 +153,7 @@ export class SalesOrderService {
         totalAmountCny: totalAmountCny.toFixed(2),
         receivedAmountUsd: '0',
         receivedAmountCny: '0',
+        bloggerCommissionAmountUsd: '0',
         bloggerCommissionAmountCny: '0',
         shipmentStatus: 1,
         paymentStatus: 1,
@@ -253,8 +254,13 @@ export class SalesOrderService {
         });
         await paymentRepoTx.save(payment);
 
-        // 更新订单已收金额 + 重算三维状态
-        await this.updateReceivedAmount(savedOrder.id, dto.payment.amount, manager);
+        // 更新订单已收金额 + 重算三维状态（使用付款记录的 USD/CNY 金额）
+        await this.updateReceivedAmount(
+          savedOrder.id,
+          paymentDual.amountUsd,
+          paymentDual.amountCny,
+          manager,
+        );
       }
 
       // 10. Upsert 常用联系人
@@ -398,7 +404,7 @@ export class SalesOrderService {
           : parseFloat(totalAmountUsd.toFixed(2));
         const received = currency === 'CNY'
           ? parseFloat(order.receivedAmountCny || '0')
-          : parseFloat(order.receivedAmountUsd);
+          : parseFloat(order.receivedAmountUsd || '0');
         if (received > newTotal + 0.01 && newTotal > 0) {
           throw new BadRequestException(
             `修改后货物总金额为 ${newTotal.toFixed(2)} ${currency}，但已收款 ${received.toFixed(2)} ${currency}，请先退款后再修改订单`,
@@ -564,6 +570,7 @@ export class SalesOrderService {
     unfrozenItems: Array<{ productId: string; quantity: number }>;
     needsRefund: boolean;
     refundableAmount: string;
+    refundableAmountCny: string;
   }> {
     const order = await this.orderRepo.findOne({ where: { id } });
     if (!order) throw new BadRequestException('订单不存在');
@@ -574,7 +581,7 @@ export class SalesOrderService {
     if (order.shipmentStatus === 2 || order.shipmentStatus === 3) {
       throw new BadRequestException('订单已发货，无法取消，请走退货流程');
     }
-    if (parseFloat(order.receivedAmountUsd) > 0) {
+    if (parseFloat(order.receivedAmountUsd || '0') > 0 || parseFloat(order.receivedAmountCny || '0') > 0) {
       throw new BadRequestException('订单已有收款，请先完成退款后再取消');
     }
 
@@ -608,8 +615,9 @@ export class SalesOrderService {
       await manager.save(order);
 
       // 判断是否需要退款
-      const received = parseFloat(order.receivedAmountUsd);
-      const needsRefund = received > 0;
+      const receivedUsd = parseFloat(order.receivedAmountUsd || '0');
+      const receivedCny = parseFloat(order.receivedAmountCny || '0');
+      const needsRefund = receivedUsd > 0 || receivedCny > 0;
 
       this.logger.log(
         `订单取消成功: ${order.orderNo}, 解冻 ${unfrozenItems.length} 项, 需退款: ${needsRefund}`,
@@ -620,6 +628,7 @@ export class SalesOrderService {
         unfrozenItems,
         needsRefund,
         refundableAmount: order.receivedAmountUsd,
+        refundableAmountCny: order.receivedAmountCny,
       };
     });
   }
@@ -661,9 +670,14 @@ export class SalesOrderService {
       order.shipmentStatus = 1;
     }
 
-    // 计算收款状态
-    const totalAmt = parseFloat(order.totalAmountUsd);
-    const receivedAmt = parseFloat(order.receivedAmountUsd);
+    // 计算收款状态（使用订单原币种比较，避免汇率精度漂移）
+    const currency = order.currency || 'USD';
+    const totalAmt = parseFloat(
+      currency === 'CNY' ? order.totalAmountCny : order.totalAmountUsd,
+    );
+    const receivedAmt = parseFloat(
+      currency === 'CNY' ? order.receivedAmountCny : (order.receivedAmountUsd || '0'),
+    );
 
     if (receivedAmt >= totalAmt && totalAmt > 0) {
       order.paymentStatus = 3;
@@ -683,11 +697,14 @@ export class SalesOrderService {
 
   /**
    * 更新已收金额（收款模块调用）
-   * 同时更新 receivedAmountUsd 和 receivedAmountCny
+   * 使用付款记录已计算好的 USD/CNY 金额，避免汇率二次换算不一致
+   * @param amountUsd 本次收款对应的 USD 金额
+   * @param amountCny 本次付款对应的 CNY 金额
    */
   async updateReceivedAmount(
     orderId: string,
-    amount: string,
+    amountUsd: string,
+    amountCny: string,
     externalManager?: EntityManager,
   ): Promise<void> {
     const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
@@ -695,14 +712,11 @@ export class SalesOrderService {
     const order = await orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
-    const exchangeRate = parseFloat(order.exchangeRate);
-    const dual = computeDualAmounts(amount, order.currency, exchangeRate);
-
     order.receivedAmountUsd = (
-      parseFloat(order.receivedAmountUsd) + parseFloat(dual.amountUsd)
+      parseFloat(order.receivedAmountUsd || '0') + parseFloat(amountUsd)
     ).toFixed(2);
     order.receivedAmountCny = (
-      parseFloat(order.receivedAmountCny || '0') + parseFloat(dual.amountCny)
+      parseFloat(order.receivedAmountCny || '0') + parseFloat(amountCny)
     ).toFixed(2);
 
     await orderRepo.save(order);
@@ -711,11 +725,14 @@ export class SalesOrderService {
 
   /**
    * 扣减已收金额（退款模块调用）
-   * 同时扣减 receivedAmountUsd 和 receivedAmountCny
+   * 使用退款记录已计算好的 USD/CNY 金额，避免汇率二次换算不一致
+   * @param amountUsd 本次退款对应的 USD 金额
+   * @param amountCny 本次退款对应的 CNY 金额
    */
   async decreaseReceivedAmount(
     orderId: string,
-    amount: string,
+    amountUsd: string,
+    amountCny: string,
     externalManager?: EntityManager,
   ): Promise<void> {
     const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
@@ -723,11 +740,8 @@ export class SalesOrderService {
     const order = await orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
-    const exchangeRate = parseFloat(order.exchangeRate);
-    const dual = computeDualAmounts(amount, order.currency, exchangeRate);
-
-    const newValUsd = parseFloat(order.receivedAmountUsd) - parseFloat(dual.amountUsd);
-    const newValCny = parseFloat(order.receivedAmountCny || '0') - parseFloat(dual.amountCny);
+    const newValUsd = parseFloat(order.receivedAmountUsd || '0') - parseFloat(amountUsd);
+    const newValCny = parseFloat(order.receivedAmountCny || '0') - parseFloat(amountCny);
 
     if (newValUsd < -0.01 || newValCny < -0.01) {
       throw new BadRequestException('退款金额超出已收金额');

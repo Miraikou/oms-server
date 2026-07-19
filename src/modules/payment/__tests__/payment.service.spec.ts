@@ -112,6 +112,8 @@ describe('PaymentService', () => {
       expect(mockSalesOrderService.updateReceivedAmount).toHaveBeenCalledWith(
         'oid1',
         '1500.00',
+        '10680.00',
+        mockManager,
       );
     });
 

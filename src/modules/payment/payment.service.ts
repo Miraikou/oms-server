@@ -99,10 +99,11 @@ export class PaymentService {
 			});
 			const savedPayment = await paymentRepo.save(payment);
 
-			// 5. 更新订单已收金额 + 重算三维状态（传入 manager 保证事务原子性）
+			// 5. 更新订单已收金额 + 重算三维状态（使用付款记录的 USD/CNY 金额，保证汇率一致）
 			await this.salesOrderService.updateReceivedAmount(
 				dto.orderId,
-				dto.amount,
+				dualAmounts.amountUsd,
+				dualAmounts.amountCny,
 				manager,
 			);
 
@@ -188,10 +189,11 @@ export class PaymentService {
 			});
 			const savedPayment = await paymentRepo.save(payment);
 
-			// 5. 扣减订单已收金额 + 重算三维状态（传入 manager 保证事务原子性）
+			// 5. 扣减订单已收金额 + 重算三维状态（使用退款记录的 USD/CNY 金额，保证汇率一致）
 			await this.salesOrderService.decreaseReceivedAmount(
 				dto.orderId,
-				dto.amount,
+				dualAmounts.amountUsd,
+				dualAmounts.amountCny,
 				manager,
 			);
 
