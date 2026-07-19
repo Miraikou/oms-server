@@ -498,6 +498,37 @@ export class CommissionService {
 		);
 	}
 
+	/**
+	 * 按订单 ID 批量查询销售员提成汇总
+	 * @param orderIds 订单 ID 数组
+	 * @returns Map<orderId, { commissionUsd, commissionCny }>
+	 */
+	async getCommissionByOrderIds(
+		orderIds: string[],
+	): Promise<Map<string, { commissionUsd: string; commissionCny: string }>> {
+		const result = new Map<string, { commissionUsd: string; commissionCny: string }>();
+		if (orderIds.length === 0) return result;
+
+		const rows = await this.dataSource.query(
+			`SELECT sales_order_id AS orderId,
+			        COALESCE(SUM(commission_amount_usd), 0) AS commissionUsd,
+			        COALESCE(SUM(commission_amount_cny), 0) AS commissionCny
+			 FROM commission_ledger
+			 WHERE sales_order_id IN (?)
+			 GROUP BY sales_order_id`,
+			[orderIds],
+		);
+
+		for (const row of rows) {
+			result.set(row.orderId, {
+				commissionUsd: parseFloat(row.commissionUsd || '0').toFixed(2),
+				commissionCny: parseFloat(row.commissionCny || '0').toFixed(2),
+			});
+		}
+
+		return result;
+	}
+
 	// ==================== 私有方法 ====================
 
 	/** 计算提成金额 */

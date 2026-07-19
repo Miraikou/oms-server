@@ -21,6 +21,7 @@ import type {
   QuerySalesOrderDto,
 } from './dto/sales-order.dto';
 import { RateService } from '@/common/rate/rate.service';
+import { CommissionService } from '@/modules/commission/commission.service';
 
 /**
  * 订单服务 ⭐
@@ -55,6 +56,7 @@ export class SalesOrderService {
     private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
+    private readonly commissionService: CommissionService,
   ) {}
 
   /**
@@ -555,6 +557,65 @@ export class SalesOrderService {
       .take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
+
+    // 批量查询销售员提成 + 动态计算博主佣金 + 销售利润
+    if (list.length > 0) {
+      const orderIds = list.map((o) => o.id);
+      const commissionMap = await this.commissionService.getCommissionByOrderIds(orderIds);
+
+      // 批量查询产品成本（来自 shipment_item.total_cost_cny）
+      const productCostRows = await this.dataSource.query(
+        `SELECT s.order_id AS orderId, COALESCE(SUM(si.total_cost_cny), 0) AS totalCostCny
+         FROM shipment_item si
+         INNER JOIN shipment s ON s.id = si.shipment_id
+         WHERE s.order_id IN (?)
+         GROUP BY s.order_id`,
+        [orderIds],
+      );
+      const productCostMap = new Map<string, number>();
+      for (const row of productCostRows) {
+        productCostMap.set(row.orderId, parseFloat(row.totalCostCny || '0'));
+      }
+
+      // 批量查询额外成本（来自 sales_order_cost.amount_cny）
+      const extraCostRows = await this.dataSource.query(
+        `SELECT order_id AS orderId, COALESCE(SUM(amount_cny), 0) AS totalCny
+         FROM sales_order_cost
+         WHERE order_id IN (?)
+         GROUP BY order_id`,
+        [orderIds],
+      );
+      const extraCostMap = new Map<string, number>();
+      for (const row of extraCostRows) {
+        extraCostMap.set(row.orderId, parseFloat(row.totalCny || '0'));
+      }
+
+      for (const order of list) {
+        const commission = commissionMap.get(order.id);
+        (order as any).commissionAmountUsd = commission?.commissionUsd || '0';
+        (order as any).commissionAmountCny = commission?.commissionCny || '0';
+
+        // 博主佣金：根据已收款金额 × 佣金比例动态计算
+        const rate = parseFloat(order.bloggerCommissionRate || '0');
+        const receivedCny = parseFloat(order.receivedAmountCny || '0');
+        const receivedUsd = parseFloat(order.receivedAmountUsd || '0');
+        const bloggerCommissionCny = receivedCny * rate / 100;
+        const bloggerCommissionUsd = receivedUsd * rate / 100;
+        (order as any).bloggerCommissionAmountCny = bloggerCommissionCny.toFixed(2);
+        (order as any).bloggerCommissionAmountUsd = bloggerCommissionUsd.toFixed(2);
+
+        // 销售利润 = 已收款 - 博主佣金 - 产品成本 - 额外成本
+        const productCostCny = productCostMap.get(order.id) || 0;
+        const extraCostCny = extraCostMap.get(order.id) || 0;
+        const netReceivedCny = receivedCny - bloggerCommissionCny;
+        const salesProfitCny = netReceivedCny - productCostCny - extraCostCny;
+        const exchangeRate = parseFloat(order.exchangeRate || '1');
+        const salesProfitUsd = exchangeRate > 0 ? salesProfitCny / exchangeRate : 0;
+        (order as any).salesProfitCny = salesProfitCny.toFixed(2);
+        (order as any).salesProfitUsd = salesProfitUsd.toFixed(2);
+      }
+    }
+
     return { list, total, page, pageSize };
   }
 
@@ -827,6 +888,10 @@ export class SalesOrderService {
 
     const f = (n: number) => n.toFixed(2);
 
+    // ── 销售员提成（来自 commission_ledger）──
+    const commissionMap = await this.commissionService.getCommissionByOrderIds([orderId]);
+    const commission = commissionMap.get(orderId);
+
     return {
       productCostUsd: f(productCostUsd),
       productCostCny: f(productCostCny),
@@ -834,6 +899,8 @@ export class SalesOrderService {
       extraCostCny: f(extraCostCny),
       bloggerCommissionUsd: f(bloggerCommissionUsd),
       bloggerCommissionCny: f(bloggerCommissionCny),
+      salespersonCommissionUsd: commission?.commissionUsd || '0',
+      salespersonCommissionCny: commission?.commissionCny || '0',
       netReceivedUsd: f(netReceivedUsd),
       netReceivedCny: f(netReceivedCny),
       exchangeRate: order.exchangeRate,
