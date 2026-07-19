@@ -96,6 +96,7 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
     @Query('viewMode') viewMode?: string,
+    @Query('groupBy') groupBy?: string,
   ) {
     return this.service.getProductRanking(
       startDate,
@@ -103,6 +104,7 @@ export class DashboardController {
       parseInt(limit || '10'),
       userId,
       viewMode,
+      groupBy || 'product',
     );
   }
 

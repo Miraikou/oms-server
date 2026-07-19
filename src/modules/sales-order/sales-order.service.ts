@@ -595,21 +595,19 @@ export class SalesOrderService {
         (order as any).commissionAmountUsd = commission?.commissionUsd || '0';
         (order as any).commissionAmountCny = commission?.commissionCny || '0';
 
-        // 博主佣金：根据已收款金额 × 佣金比例动态计算
+        // 博主佣金：根据订单金额 × 佣金比例计算（展示全额收款时的预期利润）
         const rate = parseFloat(order.bloggerCommissionRate || '0');
-        const receivedCny = parseFloat(order.receivedAmountCny || '0');
-        const receivedUsd = parseFloat(order.receivedAmountUsd || '0');
-        const bloggerCommissionCny = receivedCny * rate / 100;
-        const bloggerCommissionUsd = receivedUsd * rate / 100;
+        const totalCny = parseFloat(order.totalAmountCny || '0');
+        const bloggerCommissionCny = totalCny * rate / 100;
+        const exchangeRate = parseFloat(order.exchangeRate || '1');
+        const bloggerCommissionUsd = exchangeRate > 0 ? bloggerCommissionCny / exchangeRate : 0;
         (order as any).bloggerCommissionAmountCny = bloggerCommissionCny.toFixed(2);
         (order as any).bloggerCommissionAmountUsd = bloggerCommissionUsd.toFixed(2);
 
-        // 销售利润 = 已收款 - 博主佣金 - 产品成本 - 额外成本
+        // 销售利润 = 订单金额 - 博主佣金 - 产品成本 - 额外成本
         const productCostCny = productCostMap.get(order.id) || 0;
         const extraCostCny = extraCostMap.get(order.id) || 0;
-        const netReceivedCny = receivedCny - bloggerCommissionCny;
-        const salesProfitCny = netReceivedCny - productCostCny - extraCostCny;
-        const exchangeRate = parseFloat(order.exchangeRate || '1');
+        const salesProfitCny = totalCny - bloggerCommissionCny - productCostCny - extraCostCny;
         const salesProfitUsd = exchangeRate > 0 ? salesProfitCny / exchangeRate : 0;
         (order as any).salesProfitCny = salesProfitCny.toFixed(2);
         (order as any).salesProfitUsd = salesProfitUsd.toFixed(2);
@@ -841,10 +839,10 @@ export class SalesOrderService {
    * 利润摘要
    * 产品成本 = SUM(shipment_item.totalCost) — CNY（FIFO 写入时已转 CNY）
    * 额外成本 = SUM(cost.amount_cny) — 预存 CNY
-   * 博主佣金 = receivedAmountCny × 佣金比例 / 100（CNY）
-   * 实收金额 = receivedAmountCny - 博主佣金（CNY）
-   * 销售利润 = 实收CNY - 产品成本CNY - 额外成本CNY
-   * 利润率 = 销售利润 / 实收CNY × 100%
+   * 博主佣金 = totalAmountCny × 佣金比例 / 100（CNY）
+   * 净额 = totalAmountCny - 博主佣金（CNY）
+   * 销售利润 = 订单金额CNY - 博主佣金 - 产品成本CNY - 额外成本CNY
+   * 利润率 = 销售利润 / 订单金额CNY × 100%
    *
    * USD 列由 CNY ÷ exchangeRate 反算（exchangeRate = USD→CNY）
    */
@@ -873,18 +871,18 @@ export class SalesOrderService {
     const extraCostCny = parseFloat(extraCostResult?.totalCny || '0');
     const extraCostUsd = exchangeRate > 0 ? extraCostCny / exchangeRate : 0;
 
-    // ── 博主佣金 & 净收款（使用预存 receivedAmountCny）──
-    const receivedAmountCny = parseFloat(order.receivedAmountCny || '0');
+    // ── 博主佣金 & 净额（使用订单金额 totalAmountCny 计算预期利润）──
+    const totalAmountCny = parseFloat(order.totalAmountCny || '0');
     const commissionRate = parseFloat(order.bloggerCommissionRate || '0');
-    const bloggerCommissionCny = receivedAmountCny * commissionRate / 100;
-    const netReceivedCny = receivedAmountCny - bloggerCommissionCny;
+    const bloggerCommissionCny = totalAmountCny * commissionRate / 100;
+    const netAmountCny = totalAmountCny - bloggerCommissionCny;
     const bloggerCommissionUsd = exchangeRate > 0 ? bloggerCommissionCny / exchangeRate : 0;
-    const netReceivedUsd = exchangeRate > 0 ? netReceivedCny / exchangeRate : 0;
+    const netAmountUsd = exchangeRate > 0 ? netAmountCny / exchangeRate : 0;
 
     // ── 销售利润 & 利润率 ──
-    const salesProfitCny = netReceivedCny - productCostCny - extraCostCny;
-    const salesProfitUsd = netReceivedUsd - productCostUsd - extraCostUsd;
-    const profitRate = netReceivedCny > 0 ? (salesProfitCny / netReceivedCny) * 100 : 0;
+    const salesProfitCny = totalAmountCny - bloggerCommissionCny - productCostCny - extraCostCny;
+    const salesProfitUsd = exchangeRate > 0 ? salesProfitCny / exchangeRate : 0;
+    const profitRate = totalAmountCny > 0 ? (salesProfitCny / totalAmountCny) * 100 : 0;
 
     const f = (n: number) => n.toFixed(2);
 
@@ -901,8 +899,8 @@ export class SalesOrderService {
       bloggerCommissionCny: f(bloggerCommissionCny),
       salespersonCommissionUsd: commission?.commissionUsd || '0',
       salespersonCommissionCny: commission?.commissionCny || '0',
-      netReceivedUsd: f(netReceivedUsd),
-      netReceivedCny: f(netReceivedCny),
+      netAmountUsd: f(netAmountUsd),
+      netAmountCny: f(netAmountCny),
       exchangeRate: order.exchangeRate,
       salesProfitUsd: f(salesProfitUsd),
       salesProfitCny: f(salesProfitCny),
