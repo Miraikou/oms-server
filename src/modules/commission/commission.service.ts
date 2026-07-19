@@ -199,8 +199,9 @@ export class CommissionService {
 			// 计提总额（type=1）
 			const earnedResult = await this.dataSource.query(
 				`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
+				        COALESCE(SUM(commission_amount_usd), 0) AS totalUsd,
 				        COUNT(DISTINCT sales_order_id) AS order_count
-				 FROM commission_ledger 
+				 FROM commission_ledger
 				 WHERE salesperson_id = ? AND status = 1 AND type = 1
 				   AND DATE_FORMAT(created_time, '%Y-%m') = ?`,
 				[salesperson_id, month],
@@ -209,17 +210,22 @@ export class CommissionService {
 			// 冲回总额（type=2，取绝对值）
 			const clawbackResult = await this.dataSource.query(
 				`SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total,
+				        COALESCE(SUM(ABS(commission_amount_usd)), 0) AS totalUsd,
 				        COUNT(*) AS clawback_count
-				 FROM commission_ledger 
+				 FROM commission_ledger
 				 WHERE salesperson_id = ? AND status = 1 AND type = 2
 				   AND DATE_FORMAT(created_time, '%Y-%m') = ?`,
 				[salesperson_id, month],
 			);
 
 			const totalEarned = parseFloat(earnedResult[0].total || '0');
+			const totalEarnedUsd = parseFloat(earnedResult[0].totalUsd || '0');
 			const orderCount = parseInt(earnedResult[0].order_count || '0');
 			const totalClawback = parseFloat(
 				clawbackResult[0].total || '0',
+			);
+			const totalClawbackUsd = parseFloat(
+				clawbackResult[0].totalUsd || '0',
 			);
 			const clawbackCount = parseInt(
 				clawbackResult[0].clawback_count || '0',
@@ -230,10 +236,16 @@ export class CommissionService {
 				salesperson_id,
 				month,
 			);
+			const previousBalanceUsd = await this.getPreviousBalanceUsd(
+				salesperson_id,
+				month,
+			);
 
 			// 净提成 = 计提 - 冲回 + 上月结余
 			const netCommission =
 				totalEarned - totalClawback + previousBalance;
+			const netCommissionUsd =
+				totalEarnedUsd - totalClawbackUsd + previousBalanceUsd;
 
 			// 创建结算记录
 			const settlement = this.settlementRepo.create({
@@ -241,9 +253,13 @@ export class CommissionService {
 				salespersonId: salesperson_id,
 				settleMonth: month,
 				totalEarned: totalEarned.toFixed(2),
+				totalEarnedUsd: totalEarnedUsd.toFixed(2),
 				totalClawback: totalClawback.toFixed(2),
+				totalClawbackUsd: totalClawbackUsd.toFixed(2),
 				previousBalance: previousBalance.toFixed(2),
+				previousBalanceUsd: previousBalanceUsd.toFixed(2),
 				netCommission: netCommission.toFixed(2),
+				netCommissionUsd: netCommissionUsd.toFixed(2),
 				orderCount,
 				clawbackCount,
 				status: 1, // 待确认
@@ -401,37 +417,50 @@ export class CommissionService {
 	 * 提成汇总统计
 	 */
 	async getSummary(startDate?: string, endDate?: string) {
-		const dateFilter =
-			startDate && endDate
-				? `AND created_time >= '${startDate}' AND created_time <= '${endDate}'`
-				: '';
+		const params: unknown[] = [];
+		let dateFilter = '';
+		if (startDate && endDate) {
+			dateFilter = 'AND created_time >= ? AND created_time <= ?';
+			params.push(startDate, endDate);
+		}
 
 		// 当月计提总额
 		const earned = await this.dataSource.query(
-			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
+			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
+			        COALESCE(SUM(commission_amount_usd), 0) AS totalUsd
 			 FROM commission_ledger WHERE type = 1 ${dateFilter}`,
+			params,
 		);
 
 		// 当月冲回总额
 		const clawback = await this.dataSource.query(
-			`SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total
+			`SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total,
+			        COALESCE(SUM(ABS(commission_amount_usd)), 0) AS totalUsd
 			 FROM commission_ledger WHERE type = 2 ${dateFilter}`,
+			params,
 		);
 
 		// 待结算总额（所有未结算的）
 		const pending = await this.dataSource.query(
-			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total
+			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
+			        COALESCE(SUM(commission_amount_usd), 0) AS totalUsd
 			 FROM commission_ledger WHERE status = 1`,
 		);
 
+		const monthEarned = parseFloat(earned[0]?.total || '0');
+		const monthEarnedUsd = parseFloat(earned[0]?.totalUsd || '0');
+		const monthClawback = parseFloat(clawback[0]?.total || '0');
+		const monthClawbackUsd = parseFloat(clawback[0]?.totalUsd || '0');
+
 		return {
-			monthEarned: parseFloat(earned[0]?.total || '0'),
-			monthClawback: parseFloat(clawback[0]?.total || '0'),
-			monthNet: (
-				parseFloat(earned[0]?.total || '0') -
-				parseFloat(clawback[0]?.total || '0')
-			).toFixed(2),
+			monthEarned,
+			monthEarnedUsd,
+			monthClawback,
+			monthClawbackUsd,
+			monthNet: (monthEarned - monthClawback).toFixed(2),
+			monthNetUsd: (monthEarnedUsd - monthClawbackUsd).toFixed(2),
 			totalPending: parseFloat(pending[0]?.total || '0'),
+			totalPendingUsd: parseFloat(pending[0]?.totalUsd || '0'),
 		};
 	}
 
@@ -442,24 +471,30 @@ export class CommissionService {
 		startDate?: string,
 		endDate?: string,
 	) {
-		const dateFilter =
-			startDate && endDate
-				? `AND l.created_time >= '${startDate}' AND l.created_time <= '${endDate}'`
-				: '';
+		const params: unknown[] = [];
+		let dateFilter = '';
+		if (startDate && endDate) {
+			dateFilter = 'AND l.created_time >= ? AND l.created_time <= ?';
+			params.push(startDate, endDate);
+		}
 
 		return this.dataSource.query(
-			`SELECT 
+			`SELECT
 				l.salesperson_id AS salespersonId,
 				sp.name AS salespersonName,
 				sp.commission_rate AS commissionRate,
 				COALESCE(SUM(CASE WHEN l.type = 1 THEN l.commission_amount_cny ELSE 0 END), 0) AS totalEarned,
+				COALESCE(SUM(CASE WHEN l.type = 1 THEN l.commission_amount_usd ELSE 0 END), 0) AS totalEarnedUsd,
 				COALESCE(SUM(CASE WHEN l.type = 2 THEN ABS(l.commission_amount_cny) ELSE 0 END), 0) AS totalClawback,
-				COALESCE(SUM(l.commission_amount_cny), 0) AS netCommission
+				COALESCE(SUM(CASE WHEN l.type = 2 THEN ABS(l.commission_amount_usd) ELSE 0 END), 0) AS totalClawbackUsd,
+				COALESCE(SUM(l.commission_amount_cny), 0) AS netCommission,
+				COALESCE(SUM(l.commission_amount_usd), 0) AS netCommissionUsd
 			 FROM commission_ledger l
 			 LEFT JOIN salesperson sp ON sp.id = l.salesperson_id
 			 WHERE 1=1 ${dateFilter}
 			 GROUP BY l.salesperson_id, sp.name, sp.commission_rate
 			 ORDER BY netCommission DESC`,
+			params,
 		);
 	}
 
@@ -482,6 +517,21 @@ export class CommissionService {
 		});
 		if (prev && parseFloat(prev.netCommission) < 0) {
 			return parseFloat(prev.netCommission);
+		}
+		return 0;
+	}
+
+	/** 获取上月结余 USD（负数余额滚入下月） */
+	private async getPreviousBalanceUsd(
+		salespersonId: string,
+		currentMonth: string,
+	): Promise<number> {
+		const prevMonth = this.getPrevMonth(currentMonth);
+		const prev = await this.settlementRepo.findOne({
+			where: { salespersonId, settleMonth: prevMonth },
+		});
+		if (prev && prev.netCommissionUsd && parseFloat(prev.netCommissionUsd) < 0) {
+			return parseFloat(prev.netCommissionUsd);
 		}
 		return 0;
 	}

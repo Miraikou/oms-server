@@ -39,6 +39,16 @@ export class CommissionSettlement extends BaseEntity {
 	totalEarned: string = '0';
 
 	@Column({
+		name: 'total_earned_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '当月计提总额（USD）',
+	})
+	totalEarnedUsd: string | null = null;
+
+	@Column({
 		name: 'total_clawback',
 		type: 'decimal',
 		precision: 18,
@@ -47,6 +57,16 @@ export class CommissionSettlement extends BaseEntity {
 		comment: '当月冲回总额（CNY，正数）',
 	})
 	totalClawback: string = '0';
+
+	@Column({
+		name: 'total_clawback_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '当月冲回总额（USD，正数）',
+	})
+	totalClawbackUsd: string | null = null;
 
 	@Column({
 		name: 'previous_balance',
@@ -59,6 +79,16 @@ export class CommissionSettlement extends BaseEntity {
 	previousBalance: string = '0';
 
 	@Column({
+		name: 'previous_balance_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '上月结余（USD，负数表示欠款）',
+	})
+	previousBalanceUsd: string | null = null;
+
+	@Column({
 		name: 'net_commission',
 		type: 'decimal',
 		precision: 18,
@@ -67,6 +97,16 @@ export class CommissionSettlement extends BaseEntity {
 		comment: '净提成 = earned - clawback + previousBalance',
 	})
 	netCommission: string = '0';
+
+	@Column({
+		name: 'net_commission_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '净提成（USD）= earnedUsd - clawbackUsd + previousBalanceUsd',
+	})
+	netCommissionUsd: string | null = null;
 
 	@Column({
 		name: 'order_count',
@@ -101,6 +141,16 @@ export class CommissionSettlement extends BaseEntity {
 		comment: '实际发放金额',
 	})
 	paidAmount: string | null = '0';
+
+	@Column({
+		name: 'paid_amount_usd',
+		type: 'decimal',
+		precision: 18,
+		scale: 2,
+		nullable: true,
+		comment: '实际发放金额（USD）',
+	})
+	paidAmountUsd: string | null = null;
 
 	@Column({
 		name: 'paid_time',
