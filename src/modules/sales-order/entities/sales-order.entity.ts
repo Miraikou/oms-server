@@ -109,6 +109,26 @@ export class SalesOrder extends BaseEntity {
   })
   refundedAmountCny: string = '0';
 
+  @Column({
+    name: 'standalone_refunded_amount_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '直接退款金额（USD）— 不经过退货流程的直接退款',
+  })
+  standaloneRefundedAmountUsd: string = '0';
+
+  @Column({
+    name: 'standalone_refunded_amount_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '直接退款金额（CNY）— 不经过退货流程的直接退款',
+  })
+  standaloneRefundedAmountCny: string = '0';
+
   @Index('idx_shipment_status')
   @Column({
     name: 'shipment_status',

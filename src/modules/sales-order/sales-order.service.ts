@@ -311,7 +311,7 @@ export class SalesOrderService {
       }
 
       // 查询汇率（始终获取 USD→CNY 汇率）
-      const orderCurrency = dto.currency || order.currency;
+      const orderCurrency = dto.currency || order.currency || 'USD';
       const exchangeRate = await this.rateService.getRate(
         dto.orderDate || (order.orderDate instanceof Date
           ? order.orderDate.toISOString().slice(0, 10)
@@ -341,7 +341,7 @@ export class SalesOrderService {
 
         // 解冻旧商品（在同一事务中）
         for (const oldItem of oldItems) {
-          const qty = parseFloat(oldItem.quantity);
+          const qty = parseFloat(oldItem.quantity) - parseFloat(oldItem.shippedQuantity || '0');
           if (qty > 0) {
             await this.fifoService.unfreeze(oldItem.productId, oldItem.productModelId, qty, id, manager);
           }
@@ -649,18 +649,18 @@ export class SalesOrderService {
         extraCostMap.set(row.orderId, parseFloat(row.totalCny || '0'));
       }
 
-      // 批量查询未发货部分的估算产品成本（区分退货退款和退货换货）
-      // remaining = effectiveQty - netShipped = (qty - refundRet) - (shipped - exchangeRet)
-      //           = qty - shipped + returned - 2*refundRet
+      // 批量查询未发货部分的估算产品成本
+      // P5: remaining = effectiveQty - GREATEST(inCustomerHands, 0)
+      //           = (qty - refundRet) - GREATEST(shipped - returned, 0)
       const unshippedEstRows = await this.dataSource.query(
         `SELECT order_id AS orderId,
                 COALESCE(SUM(estimated_cost_cny * GREATEST(
-                  quantity - COALESCE(shipped_quantity, 0) + COALESCE(returned_quantity, 0) - 2 * COALESCE(refund_returned_quantity, 0)
+                  quantity - COALESCE(refund_returned_quantity, 0) - GREATEST(COALESCE(shipped_quantity, 0) - COALESCE(returned_quantity, 0), 0)
                 , 0) / quantity), 0) AS estCostCny
          FROM sales_order_item
          WHERE order_id IN (?)
            AND quantity > 0
-           AND (quantity - COALESCE(shipped_quantity, 0) + COALESCE(returned_quantity, 0) - 2 * COALESCE(refund_returned_quantity, 0)) > 0
+           AND (quantity - COALESCE(refund_returned_quantity, 0) - GREATEST(COALESCE(shipped_quantity, 0) - COALESCE(returned_quantity, 0), 0)) > 0
          GROUP BY order_id`,
         [orderIds],
       );
@@ -674,16 +674,17 @@ export class SalesOrderService {
         const rate = parseFloat(order.bloggerCommissionRate || '0');
         const totalCny = parseFloat(order.totalAmountCny || '0');
         const bloggerCommissionCny = totalCny * rate / 100;
-        const exchangeRate = parseFloat(order.exchangeRate || '1');
+        const exchangeRate = parseFloat(order.exchangeRate || String(this.rateService.getDefaultRate()));
         const bloggerCommissionUsd = exchangeRate > 0 ? bloggerCommissionCny / exchangeRate : 0;
         (order as any).bloggerCommissionAmountCny = bloggerCommissionCny.toFixed(2);
         (order as any).bloggerCommissionAmountUsd = bloggerCommissionUsd.toFixed(2);
 
-        // 销售利润 = 订单金额 - 博主佣金 - 已退款 - 产品成本(已发货实际+未发货估算) - 额外成本
+        // 销售利润 = 订单金额 - 博主佣金 - 已退款 - 直接退款 - 产品成本(已发货实际+未发货估算) - 额外成本
         const productCostCny = (productCostMap.get(order.id) || 0) + (unshippedEstCostMap.get(order.id) || 0);
         const extraCostCny = extraCostMap.get(order.id) || 0;
         const refundedAmountCny = parseFloat(order.refundedAmountCny || '0');
-        const salesProfitCny = totalCny - bloggerCommissionCny - refundedAmountCny - productCostCny - extraCostCny;
+        const standaloneRefundedAmountCny = parseFloat(order.standaloneRefundedAmountCny || '0');
+        const salesProfitCny = totalCny - bloggerCommissionCny - refundedAmountCny - standaloneRefundedAmountCny - productCostCny - extraCostCny;
         const salesProfitUsd = exchangeRate > 0 ? salesProfitCny / exchangeRate : 0;
         (order as any).salesProfitCny = salesProfitCny.toFixed(2);
         (order as any).salesProfitUsd = salesProfitUsd.toFixed(2);
@@ -714,20 +715,25 @@ export class SalesOrderService {
     refundableAmount: string;
     refundableAmountCny: string;
   }> {
-    const order = await this.orderRepo.findOne({ where: { id } });
-    if (!order) throw new BadRequestException('订单不存在');
-    if (order.status === 2)
-      throw new BadRequestException('订单已完成，无法取消');
-    if (order.status === 3)
-      throw new BadRequestException('订单已取消，请勿重复操作');
-    if (order.shipmentStatus === 2 || order.shipmentStatus === 3) {
-      throw new BadRequestException('订单已发货，无法取消，请走退货流程');
-    }
-    if (parseFloat(order.receivedAmountUsd || '0') > 0 || parseFloat(order.receivedAmountCny || '0') > 0) {
-      throw new BadRequestException('订单已有收款，请先完成退款后再取消');
-    }
-
     return this.dataSource.transaction(async (manager: EntityManager) => {
+      // L1: 在事务内加悲观锁后重验状态，消除 TOCTOU 窗口
+      const order = await manager
+        .createQueryBuilder(SalesOrder, 'o')
+        .setLock('pessimistic_write')
+        .where('o.id = :id', { id })
+        .getOne();
+      if (!order) throw new BadRequestException('订单不存在');
+      if (order.status === 2)
+        throw new BadRequestException('订单已完成，无法取消');
+      if (order.status === 3)
+        throw new BadRequestException('订单已取消，请勿重复操作');
+      if (order.shipmentStatus === 2 || order.shipmentStatus === 3) {
+        throw new BadRequestException('订单已发货，无法取消，请走退货流程');
+      }
+      if (parseFloat(order.receivedAmountUsd || '0') > 0 || parseFloat(order.receivedAmountCny || '0') > 0) {
+        throw new BadRequestException('订单已有收款，请先完成退款后再取消');
+      }
+
       const items = await manager
         .getRepository(SalesOrderItem)
         .find({ where: { orderId: id } });
@@ -795,9 +801,10 @@ export class SalesOrderService {
     const items = await itemRepo.find({ where: { orderId } });
     if (items.length === 0) return;
 
-    // 计算发货状态（区分退货退款和退货换货）
-    // 退货退款：减少有效需求量（客户不再需要这些商品）
-    // 退货换货：不影响需求量（客户等待补发）
+    // 计算发货状态
+    // 有效需求量 = 订购量 - 退款退货量（客户不再需要的部分）
+    // 客户持有量 = 已发 - 全部退货（无论退款/换货，货已不在客户手中）
+    // 全部发货 = 每个明细的客户持有量 ≥ 有效需求量
     let allShipped = true;
     let anyShipped = false;
     for (const item of items) {
@@ -805,11 +812,10 @@ export class SalesOrderService {
       const shipped = parseFloat(item.shippedQuantity);
       const returned = parseFloat(item.returnedQuantity || '0');
       const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
-      const exchangeReturned = returned - refundReturned; // 换货类退货（需补发）
       const effectiveQty = qty - refundReturned;          // 有效需求量（扣除退款退货）
-      const netShipped = shipped - exchangeReturned;      // 净发货量（仅扣除换货退货）
-      if (netShipped > 0) anyShipped = true;
-      if (effectiveQty > 0 && netShipped < effectiveQty) allShipped = false;
+      const inCustomerHands = Math.max(0, shipped - returned); // L1: 防御性下界
+      if (inCustomerHands > 0) anyShipped = true;
+      if (effectiveQty > 0 && inCustomerHands < effectiveQty) allShipped = false;
     }
 
     if (allShipped) {
@@ -862,7 +868,14 @@ export class SalesOrderService {
   ): Promise<void> {
     const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
 
-    const order = await orderRepo.findOne({ where: { id: orderId } });
+    // M1: 事务内加行锁，防止并发收款导致 lost-update
+    const order = externalManager
+      ? await orderRepo
+          .createQueryBuilder('o')
+          .setLock('pessimistic_write')
+          .where('o.id = :id', { id: orderId })
+          .getOne()
+      : await orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
     order.receivedAmountUsd = (
@@ -891,21 +904,140 @@ export class SalesOrderService {
   ): Promise<void> {
     const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
 
-    const order = await orderRepo.findOne({ where: { id: orderId } });
+    // M1: 事务内加行锁，防止并发退款导致 lost-update
+    const order = externalManager
+      ? await orderRepo
+          .createQueryBuilder('o')
+          .setLock('pessimistic_write')
+          .where('o.id = :id', { id: orderId })
+          .getOne()
+      : await orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
     const newRefundedUsd = parseFloat(order.refundedAmountUsd || '0') + parseFloat(amountUsd);
     const newRefundedCny = parseFloat(order.refundedAmountCny || '0') + parseFloat(amountCny);
 
-    // 累计退款不得超过累计收款
+    // M2: 仅校验订单币种方向的退款上限（另一币种由汇率换算得出，不做独立校验，避免舍入偏差误拒）
     const receivedUsd = parseFloat(order.receivedAmountUsd || '0');
     const receivedCny = parseFloat(order.receivedAmountCny || '0');
-    if (newRefundedUsd > receivedUsd + 0.01 || newRefundedCny > receivedCny + 0.01) {
-      throw new BadRequestException('累计退款金额超出已收金额');
+    if (order.currency === 'USD') {
+      if (newRefundedUsd > receivedUsd + 0.01) {
+        throw new BadRequestException('累计退款金额超出已收金额');
+      }
+    } else {
+      if (newRefundedCny > receivedCny + 0.01) {
+        throw new BadRequestException('累计退款金额超出已收金额');
+      }
     }
 
     order.refundedAmountUsd = newRefundedUsd.toFixed(2);
     order.refundedAmountCny = newRefundedCny.toFixed(2);
+
+    await orderRepo.save(order);
+  }
+
+  /**
+   * 扣减已收金额（直接退款模块调用）
+   * 直接退款会减少 receivedAmount，触发 paymentStatus 和 status 重算
+   * @param amountUsd 本次退款对应的 USD 金额
+   * @param amountCny 本次退款对应的 CNY 金额
+   */
+  async decreaseReceivedAmount(
+    orderId: string,
+    amountUsd: string,
+    amountCny: string,
+    externalManager?: EntityManager,
+  ): Promise<void> {
+    const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
+
+    // M1: 事务内加行锁，防止并发退款导致 lost-update
+    const order = externalManager
+      ? await orderRepo
+          .createQueryBuilder('o')
+          .setLock('pessimistic_write')
+          .where('o.id = :id', { id: orderId })
+          .getOne()
+      : await orderRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new BadRequestException('订单不存在');
+
+    const newReceivedUsd = parseFloat(order.receivedAmountUsd || '0') - parseFloat(amountUsd);
+    const newReceivedCny = parseFloat(order.receivedAmountCny || '0') - parseFloat(amountCny);
+
+    if (newReceivedUsd < -0.01 || newReceivedCny < -0.01) {
+      throw new BadRequestException('退款金额超出已收金额');
+    }
+
+    order.receivedAmountUsd = Math.max(0, newReceivedUsd).toFixed(2);
+    order.receivedAmountCny = Math.max(0, newReceivedCny).toFixed(2);
+
+    await orderRepo.save(order);
+    await this.recalculateStatus(orderId, externalManager);
+  }
+
+  /**
+   * 累加直接退款金额（直接退款模块调用）
+   * 记录不经过退货流程的直接退款累计金额，用于利润计算
+   * @param amountUsd 本次退款对应的 USD 金额
+   * @param amountCny 本次退款对应的 CNY 金额
+   */
+  async increaseStandaloneRefundedAmount(
+    orderId: string,
+    amountUsd: string,
+    amountCny: string,
+    externalManager?: EntityManager,
+  ): Promise<void> {
+    const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
+
+    // M1: 事务内加行锁，防止并发退款导致 lost-update
+    const order = externalManager
+      ? await orderRepo
+          .createQueryBuilder('o')
+          .setLock('pessimistic_write')
+          .where('o.id = :id', { id: orderId })
+          .getOne()
+      : await orderRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new BadRequestException('订单不存在');
+
+    order.standaloneRefundedAmountUsd = (
+      parseFloat(order.standaloneRefundedAmountUsd || '0') + parseFloat(amountUsd)
+    ).toFixed(2);
+    order.standaloneRefundedAmountCny = (
+      parseFloat(order.standaloneRefundedAmountCny || '0') + parseFloat(amountCny)
+    ).toFixed(2);
+
+    await orderRepo.save(order);
+  }
+
+  /**
+   * 扣减直接退款金额（收款冲抵时调用）
+   * 后续收款优先冲抵此前的直接退款：把已退款"还"回来后，standaloneRefundedAmount 相应减少，
+   * 利润随之恢复。仅调整 standalone 字段，不影响 receivedAmount 与三维状态。
+   * @param amountUsd 冲抵的 USD 金额
+   * @param amountCny 冲抵的 CNY 金额
+   */
+  async decreaseStandaloneRefundedAmount(
+    orderId: string,
+    amountUsd: string,
+    amountCny: string,
+    externalManager?: EntityManager,
+  ): Promise<void> {
+    const orderRepo = externalManager ? externalManager.getRepository(SalesOrder) : this.orderRepo;
+
+    // M1: 事务内加行锁，防止并发冲抵导致 lost-update
+    const order = externalManager
+      ? await orderRepo
+          .createQueryBuilder('o')
+          .setLock('pessimistic_write')
+          .where('o.id = :id', { id: orderId })
+          .getOne()
+      : await orderRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new BadRequestException('订单不存在');
+
+    const newUsd = parseFloat(order.standaloneRefundedAmountUsd || '0') - parseFloat(amountUsd);
+    const newCny = parseFloat(order.standaloneRefundedAmountCny || '0') - parseFloat(amountCny);
+
+    order.standaloneRefundedAmountUsd = Math.max(0, newUsd).toFixed(2);
+    order.standaloneRefundedAmountCny = Math.max(0, newCny).toFixed(2);
 
     await orderRepo.save(order);
   }
@@ -937,8 +1069,8 @@ export class SalesOrderService {
    * 产品成本 = SUM(shipment_item.totalCost) — CNY（FIFO 写入时已转 CNY）
    * 额外成本 = SUM(cost.amount_cny) — 预存 CNY
    * 博主佣金 = totalAmountCny × 佣金比例 / 100（CNY）
-   * 净额 = totalAmountCny - 博主佣金 - 已退款（CNY）
-   * 销售利润 = 订单金额CNY - 博主佣金 - 已退款 - 产品成本CNY - 额外成本CNY
+   * 净额 = totalAmountCny - 博主佣金 - 已退款 - 直接退款（CNY）
+   * 销售利润 = 订单金额CNY - 博主佣金 - 已退款 - 直接退款 - 产品成本CNY - 额外成本CNY
    * 利润率 = 销售利润 / 订单金额CNY × 100%
    *
    * USD 列由 CNY ÷ exchangeRate 反算（exchangeRate = USD→CNY）
@@ -960,7 +1092,7 @@ export class SalesOrderService {
     const shippedActualCostCny = parseFloat(costResult?.totalCost || '0');
 
     // 未发货部分使用冻结时的估算成本（区分退货退款和退货换货）
-    // remaining = effectiveQty - netShipped = (qty - refundReturned) - (shipped - exchangeReturned)
+    // remaining = effectiveQty - inCustomerHands = (qty - refundReturned) - (shipped - returned)
     const orderItems = await this.itemRepo.find({ where: { orderId } });
     let unshippedEstCostCny = 0;
     for (const item of orderItems) {
@@ -968,10 +1100,9 @@ export class SalesOrderService {
       const shippedQty = parseFloat(item.shippedQuantity || '0');
       const returned = parseFloat(item.returnedQuantity || '0');
       const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
-      const exchangeReturned = returned - refundReturned;
       const effectiveQty = qty - refundReturned;
-      const netShipped = shippedQty - exchangeReturned;
-      const remaining = Math.max(0, effectiveQty - netShipped);
+      const inCustomerHands = Math.max(0, shippedQty - returned); // P5: 防御性下界
+      const remaining = Math.max(0, effectiveQty - inCustomerHands);
       const estCost = parseFloat(item.estimatedCostCny || '0');
       if (qty > 0 && remaining > 0 && estCost > 0) {
         unshippedEstCostCny += estCost * (remaining / qty);
@@ -990,7 +1121,7 @@ export class SalesOrderService {
     const extraCostCny = parseFloat(extraCostResult?.totalCny || '0');
     const extraCostUsd = exchangeRate > 0 ? extraCostCny / exchangeRate : 0;
 
-    // ── 博主佣金 & 已退款 & 净额 ──
+    // ── 博主佣金 & 已退款 & 直接退款 & 净额 ──
     const totalAmountCny = parseFloat(order.totalAmountCny || '0');
     const commissionRate = parseFloat(order.bloggerCommissionRate || '0');
     const bloggerCommissionCny = totalAmountCny * commissionRate / 100;
@@ -1000,12 +1131,16 @@ export class SalesOrderService {
     const refundedAmountCny = parseFloat(order.refundedAmountCny || '0');
     const refundedAmountUsd = exchangeRate > 0 ? refundedAmountCny / exchangeRate : 0;
 
-    // 净额 = 订单金额 - 博主佣金 - 已退款
-    const netAmountCny = totalAmountCny - bloggerCommissionCny - refundedAmountCny;
+    // 直接退款金额（不经过退货流程的直接退款）
+    const standaloneRefundedAmountCny = parseFloat(order.standaloneRefundedAmountCny || '0');
+    const standaloneRefundedAmountUsd = exchangeRate > 0 ? standaloneRefundedAmountCny / exchangeRate : 0;
+
+    // 净额 = 订单金额 - 博主佣金 - 已退款 - 直接退款
+    const netAmountCny = totalAmountCny - bloggerCommissionCny - refundedAmountCny - standaloneRefundedAmountCny;
     const netAmountUsd = exchangeRate > 0 ? netAmountCny / exchangeRate : 0;
 
     // ── 销售利润 & 利润率 ──
-    const salesProfitCny = totalAmountCny - bloggerCommissionCny - refundedAmountCny - productCostCny - extraCostCny;
+    const salesProfitCny = totalAmountCny - bloggerCommissionCny - refundedAmountCny - standaloneRefundedAmountCny - productCostCny - extraCostCny;
     const salesProfitUsd = exchangeRate > 0 ? salesProfitCny / exchangeRate : 0;
     const profitRate = totalAmountCny > 0 ? (salesProfitCny / totalAmountCny) * 100 : 0;
 
@@ -1039,6 +1174,8 @@ export class SalesOrderService {
       netAmountCny: f(netAmountCny),
       refundedAmountUsd: f(refundedAmountUsd),
       refundedAmountCny: f(refundedAmountCny),
+      standaloneRefundedAmountUsd: f(standaloneRefundedAmountUsd),
+      standaloneRefundedAmountCny: f(standaloneRefundedAmountCny),
       exchangeRate: order.exchangeRate,
       salesProfitUsd: f(salesProfitUsd),
       salesProfitCny: f(salesProfitCny),

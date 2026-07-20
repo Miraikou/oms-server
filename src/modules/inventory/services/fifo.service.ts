@@ -114,10 +114,17 @@ export class FifoService {
         );
       }
 
-      // 3. 获取当前库存汇总
-      const inventory = await manager.findOne(Inventory, {
-        where: modelWhere,
-      });
+      // 3. 获取当前库存汇总（加悲观锁，防止并发 consume 的 lost-update）
+      let invQb = manager
+        .createQueryBuilder(Inventory, 'inv')
+        .setLock('pessimistic_write')
+        .where('inv.productId = :productId', { productId });
+      if (productModelId) {
+        invQb = invQb.andWhere('inv.productModelId = :pmid', { pmid: productModelId });
+      } else {
+        invQb = invQb.andWhere('inv.productModelId IS NULL');
+      }
+      const inventory = await invQb.getOne();
       if (!inventory) throw new BadRequestException('库存记录不存在');
       const beforeAvailable = parseFloat(inventory.availableQuantity);
       const beforeFrozen = parseFloat(inventory.frozenQuantity);
@@ -147,7 +154,6 @@ export class FifoService {
           batch.status = 2; // 耗尽
         }
 
-        batch.version += 1;
         await manager.save(batch);
 
         const unitCostUsd = parseFloat(batch.unitCostUsd || '0');
@@ -178,7 +184,6 @@ export class FifoService {
       inventory.stockQuantity = (
         parseFloat(inventory.stockQuantity) - quantity
       ).toFixed(4);
-      inventory.version += 1;
       await manager.save(inventory);
 
       // 6. 写入库存流水（每个批次一条）
@@ -277,9 +282,17 @@ export class FifoService {
         );
       }
 
-      const inventory = await manager.findOne(Inventory, {
-        where: modelWhere,
-      });
+      // M4: 加行锁防止并发读写库存汇总
+      let invQb = manager
+        .createQueryBuilder(Inventory, 'inv')
+        .setLock('pessimistic_write')
+        .where('inv.productId = :productId', { productId });
+      if (productModelId) {
+        invQb = invQb.andWhere('inv.productModelId = :productModelId', { productModelId });
+      } else {
+        invQb = invQb.andWhere('inv.productModelId IS NULL');
+      }
+      const inventory = await invQb.getOne();
       if (!inventory) throw new BadRequestException('库存记录不存在');
 
       const beforeAvailable = parseFloat(inventory.availableQuantity);
@@ -310,7 +323,6 @@ export class FifoService {
           batch.freezeStatus = 3; // 全部冻结
         }
 
-        batch.version += 1;
         await manager.save(batch);
 
         freezeItems.push({
@@ -346,7 +358,6 @@ export class FifoService {
       // 更新库存汇总
       inventory.availableQuantity = cumulativeAvailable.toFixed(4);
       inventory.frozenQuantity = cumulativeFrozen.toFixed(4);
-      inventory.version += 1;
       await manager.save(inventory);
 
       this.logger.log(`库存冻结完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);
@@ -410,9 +421,17 @@ export class FifoService {
         );
       }
 
-      const inventory = await manager.findOne(Inventory, {
-        where: modelWhere,
-      });
+      // M4: 加行锁防止并发读写库存汇总
+      let invQb = manager
+        .createQueryBuilder(Inventory, 'inv')
+        .setLock('pessimistic_write')
+        .where('inv.productId = :productId', { productId });
+      if (productModelId) {
+        invQb = invQb.andWhere('inv.productModelId = :productModelId', { productModelId });
+      } else {
+        invQb = invQb.andWhere('inv.productModelId IS NULL');
+      }
+      const inventory = await invQb.getOne();
       if (!inventory) throw new BadRequestException('库存记录不存在');
 
       const beforeAvailable = parseFloat(inventory.availableQuantity);
@@ -447,7 +466,6 @@ export class FifoService {
           batch.status = 1;
         }
 
-        batch.version += 1;
         await manager.save(batch);
 
         unfreezeItems.push({
@@ -483,7 +501,6 @@ export class FifoService {
       // 更新库存汇总
       inventory.availableQuantity = cumulativeAvailable.toFixed(4);
       inventory.frozenQuantity = cumulativeFrozen.toFixed(4);
-      inventory.version += 1;
       await manager.save(inventory);
 
       this.logger.log(`库存解冻完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);
@@ -547,9 +564,17 @@ export class FifoService {
           );
         }
 
-        const inventory = await manager.findOne(Inventory, {
-          where: modelWhere,
-        });
+        // M4: 加行锁防止并发读写库存汇总
+        let invQb = manager
+          .createQueryBuilder(Inventory, 'inv')
+          .setLock('pessimistic_write')
+          .where('inv.productId = :productId', { productId });
+        if (productModelId) {
+          invQb = invQb.andWhere('inv.productModelId = :productModelId', { productModelId });
+        } else {
+          invQb = invQb.andWhere('inv.productModelId IS NULL');
+        }
+        const inventory = await invQb.getOne();
         if (!inventory) throw new BadRequestException('库存记录不存在');
 
         const beforeAvailable = parseFloat(inventory.availableQuantity);
@@ -582,14 +607,13 @@ export class FifoService {
           }
 
           // 更新冻结状态
+          // L-A: frozen=0 且 available=0 表示批次耗尽，无冻结可言 → freezeStatus=1（正常）
           if (parseFloat(batch.frozenQuantity) <= 0) {
-            batch.freezeStatus =
-              parseFloat(batch.availableQuantity) > 0 ? 1 : 3;
+            batch.freezeStatus = 1; // 无冻结（含耗尽批次）
           } else {
-            batch.freezeStatus = 2;
+            batch.freezeStatus = 2; // 部分冻结
           }
 
-          batch.version += 1;
           await manager.save(batch);
 
           const unitCostUsd = parseFloat(batch.unitCostUsd || '0');
@@ -645,7 +669,6 @@ export class FifoService {
         // 更新库存汇总（冻结减少，实际库存减少，可用不变）
         inventory.frozenQuantity = cumulativeFrozen.toFixed(4);
         inventory.stockQuantity = cumulativeStock.toFixed(4);
-        inventory.version += 1;
         await manager.save(inventory);
 
         this.logger.log(`冻结扣减完成: 商品=${productId}, 型号=${productModelId || '无'}, 数量=${quantity}`);

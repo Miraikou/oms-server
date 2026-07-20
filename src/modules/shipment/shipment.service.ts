@@ -91,15 +91,16 @@ export class ShipmentService {
       const shipQty = parseFloat(item.quantity);
       if (shipQty <= 0) throw new BadRequestException('发货数量必须大于零');
 
-      // 可发数量 = 有效需求量 - 净发货量（考虑退货换货需补发）
+      // 可发数量 = 有效需求量 - 客户实际持有量
+      // 有效需求量 = 订购量 - 退款退货量（客户不再需要的部分）
+      // 客户持有量 = 已发 - 全部退货（无论退款/换货，货已不在客户手中）
       const qty = parseFloat(orderItem.quantity);
       const shipped = parseFloat(orderItem.shippedQuantity);
       const returned = parseFloat(orderItem.returnedQuantity || '0');
       const refundReturned = parseFloat(orderItem.refundReturnedQuantity || '0');
-      const exchangeReturned = returned - refundReturned;
       const effectiveQty = qty - refundReturned;
-      const netShipped = shipped - exchangeReturned;
-      const remaining = effectiveQty - netShipped;
+      const inCustomerHands = Math.max(0, shipped - returned); // L1: 防御性下界
+      const remaining = effectiveQty - inCustomerHands;
       if (shipQty > remaining) {
         throw new BadRequestException(
           `发货数量 ${shipQty} 超过可发数量 ${remaining}`,
@@ -112,6 +113,45 @@ export class ShipmentService {
       const shipmentRepo = manager.getRepository(Shipment);
       const itemRepo = manager.getRepository(ShipmentItem);
       const batchRepo = manager.getRepository(ShipmentItemBatch);
+
+      // 3.0 事务内加锁重验可发数量（防止并发发货 TOCTOU 超发）
+      // H4: 按 orderItemId 排序后加锁，防止并发请求以不同顺序锁定明细导致 ABBA 死锁
+      const sortedItems = [...dto.items].sort((a, b) =>
+        a.orderItemId.localeCompare(b.orderItemId),
+      );
+      for (const item of sortedItems) {
+        const lockedItem = await manager
+          .createQueryBuilder(SalesOrderItem, 'oi')
+          .setLock('pessimistic_write')
+          .where('oi.id = :id', { id: item.orderItemId })
+          .getOne();
+        if (!lockedItem) {
+          throw new BadRequestException(`订单明细 ${item.orderItemId} 不存在`);
+        }
+        const qty = parseFloat(lockedItem.quantity);
+        const shipped = parseFloat(lockedItem.shippedQuantity);
+        const returned = parseFloat(lockedItem.returnedQuantity || '0');
+        const refundReturned = parseFloat(lockedItem.refundReturnedQuantity || '0');
+        const effectiveQty = qty - refundReturned;
+        const inCustomerHands = Math.max(0, shipped - returned); // L1: 防御性下界
+        const remaining = effectiveQty - inCustomerHands;
+        const shipQty = parseFloat(item.quantity);
+        if (shipQty > remaining) {
+          throw new BadRequestException(
+            `发货数量 ${shipQty} 超过可发数量 ${remaining}（并发校验）`,
+          );
+        }
+      }
+
+      // M2: 事务内重验订单状态（防止并发取消后仍生成发货单）
+      const lockedOrder = await manager
+        .createQueryBuilder(SalesOrder, 'o')
+        .setLock('pessimistic_write')
+        .where('o.id = :id', { id: dto.orderId })
+        .getOne();
+      if (!lockedOrder || lockedOrder.status !== 1) {
+        throw new BadRequestException('订单状态已变更，无法发货');
+      }
 
       // 3. 生成发货单号并创建
       const shipmentNo = await this.sequenceService.generate('FH');
@@ -261,15 +301,14 @@ export class ShipmentService {
 
     const previewItems = [];
     for (const item of orderItems) {
-      // 可发数量 = 有效需求量 - 净发货量（考虑退货换货需补发）
+      // 可发数量 = 有效需求量 - 客户实际持有量
       const qty = parseFloat(item.quantity);
       const shipped = parseFloat(item.shippedQuantity);
       const returned = parseFloat(item.returnedQuantity || '0');
       const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
-      const exchangeReturned = returned - refundReturned;
       const effectiveQty = qty - refundReturned;
-      const netShipped = shipped - exchangeReturned;
-      const remaining = effectiveQty - netShipped;
+      const inCustomerHands = Math.max(0, shipped - returned); // L1: 防御性下界
+      const remaining = effectiveQty - inCustomerHands;
       if (remaining <= 0) continue;
 
       // 查询预估 FIFO 批次（按 productModelId 过滤，null 也算独立型号）

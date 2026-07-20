@@ -5,6 +5,7 @@ import {
   PrimaryColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  VersionColumn,
 } from 'typeorm';
 import { snowflake } from '@/common/utils/snowflake';
 
@@ -180,6 +181,6 @@ export class InventoryBatch {
   })
   updatedTime: Date = new Date();
 
-  @Column({ type: 'int', default: 0, comment: '乐观锁版本号' })
-  version: number = 0;
+  @VersionColumn({ comment: '乐观锁版本号' })
+  version: number;
 }
