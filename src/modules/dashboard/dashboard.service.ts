@@ -167,13 +167,14 @@ export class DashboardService {
         [],
         spFilter,
       ),
-      // 利润：订单级统一公式（= 订单金额 − 博主佣金 − 已退款 − 产品成本 − 额外成本），仅已完成订单
+      // 利润：订单级统一公式（= 订单金额 − 博主佣金 − 已退款 − 直接退款 − 产品成本 − 额外成本），仅已完成订单
       this.executeQuery(
         `SELECT
            COALESCE(SUM(
              so.total_amount_cny
              - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
              - COALESCE(so.refunded_amount_cny, 0)
+             - COALESCE(so.standalone_refunded_amount_cny, 0)
              - COALESCE(pc.cost_cny, 0)
              - COALESCE(ec.cost_cny, 0)
            ), 0) AS totalProfitCny,
@@ -181,6 +182,7 @@ export class DashboardService {
              so.total_amount_usd
              - so.total_amount_usd * COALESCE(so.blogger_commission_rate, 0) / 100
              - COALESCE(so.refunded_amount_usd, 0)
+             - COALESCE(so.standalone_refunded_amount_usd, 0)
              - COALESCE(pc.cost_usd, 0)
              - COALESCE(ec.cost_usd, 0)
            ), 0) AS totalProfitUsd
@@ -386,6 +388,7 @@ export class DashboardService {
                 so.total_amount_cny
                 - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
                 - COALESCE(so.refunded_amount_cny, 0)
+                - COALESCE(so.standalone_refunded_amount_cny, 0)
                 - COALESCE(pc.cost_cny, 0)
                 - COALESCE(ec.cost_cny, 0)
               ), 0) AS profitCny,
@@ -393,6 +396,7 @@ export class DashboardService {
                 so.total_amount_usd
                 - so.total_amount_usd * COALESCE(so.blogger_commission_rate, 0) / 100
                 - COALESCE(so.refunded_amount_usd, 0)
+                - COALESCE(so.standalone_refunded_amount_usd, 0)
                 - COALESCE(pc.cost_usd, 0)
                 - COALESCE(ec.cost_usd, 0)
               ), 0) AS profitUsd
@@ -679,6 +683,155 @@ export class DashboardService {
       pendingPayment: parseInt(pendingPayment[0]?.count || '0'),
       pendingReceipt: parseInt(pendingReceipt[0]?.count || '0'),
       inventoryWarnings: parseInt(inventoryWarnings[0]?.count || '0'),
+    };
+  }
+
+  /**
+   * 进行中订单 KPI
+   * 展示 status=1 的订单核心指标：数量、金额、收发货状态分布、预估利润
+   */
+  async getInProgressKpi(userId?: string, viewMode?: string) {
+    const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
+
+    if (salespersonId === '__NONE__') {
+      return {
+        orderCount: 0,
+        totalAmountUsd: '0.00', totalAmountCny: '0.00',
+        receivedAmountUsd: '0.00', receivedAmountCny: '0.00',
+        unreceivedAmountUsd: '0.00', unreceivedAmountCny: '0.00',
+        shipmentDistribution: [
+          { status: 1, label: '待发货', count: 0, amountCny: '0.00', amountUsd: '0.00' },
+          { status: 2, label: '部分发货', count: 0, amountCny: '0.00', amountUsd: '0.00' },
+          { status: 3, label: '全部发货', count: 0, amountCny: '0.00', amountUsd: '0.00' },
+        ],
+        paymentDistribution: [
+          { status: 1, label: '未收款', count: 0, amountCny: '0.00', amountUsd: '0.00' },
+          { status: 2, label: '部分收款', count: 0, amountCny: '0.00', amountUsd: '0.00' },
+          { status: 3, label: '已收齐', count: 0, amountCny: '0.00', amountUsd: '0.00' },
+        ],
+        estimatedProfitUsd: '0.00', estimatedProfitCny: '0.00',
+      };
+    }
+
+    const spFilter = salespersonId
+      ? { alias: 'so', salespersonId }
+      : undefined;
+
+    const [summary, shipmentDist, paymentDist, profitRows] = await Promise.all([
+      // 汇总：订单数、总金额、已收金额
+      this.executeQuery(
+        `SELECT COUNT(*) AS orderCount,
+                COALESCE(SUM(so.total_amount_usd), 0) AS totalAmountUsd,
+                COALESCE(SUM(so.total_amount_cny), 0) AS totalAmountCny,
+                COALESCE(SUM(so.received_amount_usd), 0) AS receivedAmountUsd,
+                COALESCE(SUM(so.received_amount_cny), 0) AS receivedAmountCny
+           FROM sales_order so WHERE so.status = 1 {dateFilter}`,
+        undefined, undefined, undefined, [], spFilter,
+      ),
+      // 发货状态分布
+      this.executeQuery(
+        `SELECT so.shipment_status AS shipmentStatus,
+                COUNT(*) AS cnt,
+                COALESCE(SUM(so.total_amount_cny), 0) AS amountCny,
+                COALESCE(SUM(so.total_amount_usd), 0) AS amountUsd
+           FROM sales_order so WHERE so.status = 1
+           GROUP BY so.shipment_status {dateFilter}`,
+        undefined, undefined, undefined, [], spFilter,
+      ),
+      // 收款状态分布
+      this.executeQuery(
+        `SELECT so.payment_status AS paymentStatus,
+                COUNT(*) AS cnt,
+                COALESCE(SUM(so.total_amount_cny), 0) AS amountCny,
+                COALESCE(SUM(so.total_amount_usd), 0) AS amountUsd
+           FROM sales_order so WHERE so.status = 1
+           GROUP BY so.payment_status {dateFilter}`,
+        undefined, undefined, undefined, [], spFilter,
+      ),
+      // 预估利润（与已完成订单相同公式，但筛选 status=1）
+      this.executeQuery(
+        `SELECT
+           COALESCE(SUM(
+             so.total_amount_cny
+             - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+             - COALESCE(so.refunded_amount_cny, 0)
+             - COALESCE(so.standalone_refunded_amount_cny, 0)
+             - COALESCE(pc.cost_cny, 0)
+             - COALESCE(ec.cost_cny, 0)
+           ), 0) AS profitCny,
+           COALESCE(SUM(
+             so.total_amount_cny
+             - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+             - COALESCE(so.refunded_amount_cny, 0)
+             - COALESCE(so.standalone_refunded_amount_cny, 0)
+             - COALESCE(pc.cost_cny, 0)
+             - COALESCE(ec.cost_cny, 0)
+           ) / 1, 0) AS profitUsd
+         FROM sales_order so
+         LEFT JOIN (
+           SELECT s.order_id, SUM(si.total_cost_cny) AS cost_cny
+           FROM shipment_item si INNER JOIN shipment s ON si.shipment_id = s.id
+           GROUP BY s.order_id
+         ) pc ON so.id = pc.order_id
+         LEFT JOIN (
+           SELECT order_id, SUM(amount_cny) AS cost_cny
+           FROM sales_order_cost GROUP BY order_id
+         ) ec ON so.id = ec.order_id
+         WHERE so.status = 1 {dateFilter}`,
+        undefined, undefined, undefined, [], spFilter,
+      ),
+    ]);
+
+    const row = summary[0];
+    const totalAmountUsd = getNum(row, 'totalAmountUsd');
+    const totalAmountCny = getNum(row, 'totalAmountCny');
+    const receivedAmountUsd = getNum(row, 'receivedAmountUsd');
+    const receivedAmountCny = getNum(row, 'receivedAmountCny');
+
+    // 发货状态分布映射
+    const shipmentLabels: Record<number, string> = { 1: '待发货', 2: '部分发货', 3: '全部发货' };
+    const shipmentDistribution = [1, 2, 3].map((s) => {
+      const found = shipmentDist.find((r) => getInt(r, 'shipmentStatus') === s);
+      return {
+        status: s,
+        label: shipmentLabels[s],
+        count: getInt(found, 'cnt'),
+        amountCny: getNum(found, 'amountCny').toFixed(2),
+        amountUsd: getNum(found, 'amountUsd').toFixed(2),
+      };
+    });
+
+    // 收款状态分布映射
+    const paymentLabels: Record<number, string> = { 1: '未收款', 2: '部分收款', 3: '已收齐' };
+    const paymentDistribution = [1, 2, 3].map((s) => {
+      const found = paymentDist.find((r) => getInt(r, 'paymentStatus') === s);
+      return {
+        status: s,
+        label: paymentLabels[s],
+        count: getInt(found, 'cnt'),
+        amountCny: getNum(found, 'amountCny').toFixed(2),
+        amountUsd: getNum(found, 'amountUsd').toFixed(2),
+      };
+    });
+
+    // 预估利润（CNY 优先，USD 由汇率派生）
+    const profitCny = getNum(profitRows[0], 'profitCny');
+    // 使用加权平均汇率派生 USD 利润
+    const avgRate = totalAmountCny > 0 ? totalAmountCny / (totalAmountUsd || 1) : 7;
+    const profitUsd = avgRate > 0 ? profitCny / avgRate : 0;
+
+    return {
+      orderCount: getInt(row, 'orderCount'),
+      totalAmountUsd: totalAmountUsd.toFixed(2),
+      totalAmountCny: totalAmountCny.toFixed(2),
+      receivedAmountUsd: receivedAmountUsd.toFixed(2),
+      receivedAmountCny: receivedAmountCny.toFixed(2),
+      unreceivedAmountUsd: (totalAmountUsd - receivedAmountUsd).toFixed(2),
+      unreceivedAmountCny: (totalAmountCny - receivedAmountCny).toFixed(2),
+      shipmentDistribution,
+      paymentDistribution,
+      estimatedProfitUsd: profitUsd.toFixed(2),
+      estimatedProfitCny: profitCny.toFixed(2),
     };
   }
 

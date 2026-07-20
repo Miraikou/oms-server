@@ -128,4 +128,13 @@ export class DashboardController {
     const salespersonId = await this.service.resolveSalespersonId(userId, viewMode);
     return this.service.getCommissionSummary(startDate, endDate, salespersonId);
   }
+
+  @Get('in-progress-kpi')
+  @ApiOperation({ summary: '进行中订单 KPI' })
+  getInProgressKpi(
+    @CurrentUser('sub') userId: string,
+    @Query('viewMode') viewMode?: string,
+  ) {
+    return this.service.getInProgressKpi(userId, viewMode);
+  }
 }
