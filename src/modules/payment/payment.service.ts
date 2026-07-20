@@ -52,10 +52,12 @@ export class PaymentService {
 			const orderRepo = manager.getRepository(SalesOrder);
 			const paymentRepo = manager.getRepository(Payment);
 
-			// 1. 校验订单
-			const order = await orderRepo.findOne({
-				where: { id: dto.orderId },
-			});
+			// 1. 校验订单（C1: 加行锁，防止并发收款 TOCTOU 超收）
+			const order = await orderRepo
+				.createQueryBuilder('o')
+				.setLock('pessimistic_write')
+				.where('o.id = :id', { id: dto.orderId })
+				.getOne();
 			if (!order) throw new BadRequestException('订单不存在');
 			if (order.status !== 1) {
 				throw new BadRequestException('订单已结束，无法收款');
@@ -107,6 +109,36 @@ export class PaymentService {
 				manager,
 			);
 
+			// 5.5 后续收款优先冲抵此前的直接退款（standaloneRefundedAmount）
+			// 冲抵额 = min(本次收款, 直接退款净额)，按订单币种比较；
+			// USD/CNY 按该比例同比例扣减，保留原退款内含汇率。
+			// receivedAmount 已按全额增加（现金制），此处仅单独调减 standalone，使利润恢复。
+			// 必须在提成计提检查之前执行，确保重新完成时读到的是冲抵后的利润。
+			const orderAfterReceive = await orderRepo.findOne({ where: { id: order.id } });
+			if (orderAfterReceive) {
+				const standaloneUsd = parseFloat(orderAfterReceive.standaloneRefundedAmountUsd || '0');
+				const standaloneCny = parseFloat(orderAfterReceive.standaloneRefundedAmountCny || '0');
+				const paymentInCurrency = currency === 'CNY'
+					? parseFloat(dualAmounts.amountCny)
+					: parseFloat(dualAmounts.amountUsd);
+				const standaloneInCurrency = currency === 'CNY' ? standaloneCny : standaloneUsd;
+				const offsetInCurrency = Math.min(paymentInCurrency, standaloneInCurrency);
+				if (offsetInCurrency > 0 && standaloneInCurrency > 0) {
+					const ratio = offsetInCurrency / standaloneInCurrency;
+					const offsetUsd = (standaloneUsd * ratio).toFixed(2);
+					const offsetCny = (standaloneCny * ratio).toFixed(2);
+					await this.salesOrderService.decreaseStandaloneRefundedAmount(
+						order.id,
+						offsetUsd,
+						offsetCny,
+						manager,
+					);
+					this.logger.log(
+						`收款冲抵直接退款: 订单 ${order.orderNo}, 冲抵 ${offsetInCurrency.toFixed(2)} ${currency}`,
+					);
+				}
+			}
+
 			// 6. 如果收款后订单变为已完成，触发提成计提（仅完成时计提一次）
 			const updatedOrder = await orderRepo.findOne({ where: { id: order.id } });
 			if (updatedOrder && updatedOrder.status === 2 && updatedOrder.salespersonId) {
@@ -124,8 +156,9 @@ export class PaymentService {
 	}
 
 	/**
-	 * 创建退款记录
-	 * 事务：校验订单 → 校验可退金额 → 生成退款单号 → 创建 Payment(type=2) → 扣减订单已收金额
+	 * 创建退款记录（直接退款）
+	 * 事务：校验订单 → 校验可退金额 → 生成退款单号 → 创建 Payment(type=2) → 扣减已收金额 → 重算状态 → 冲回提成
+	 * 直接退款会减少 receivedAmount，paymentStatus 和 status 随之变化
 	 */
 	async createRefund(dto: CreateRefundDto): Promise<Payment> {
 		const amountMicro = toMicroUnits(dto.amount);
@@ -135,10 +168,12 @@ export class PaymentService {
 			const orderRepo = manager.getRepository(SalesOrder);
 			const paymentRepo = manager.getRepository(Payment);
 
-			// 1. 校验订单
-			const order = await orderRepo.findOne({
-				where: { id: dto.orderId },
-			});
+			// 1. 校验订单（C1: 加行锁，防止并发退款 TOCTOU 超退）
+			const order = await orderRepo
+				.createQueryBuilder('o')
+				.setLock('pessimistic_write')
+				.where('o.id = :id', { id: dto.orderId })
+				.getOne();
 			if (!order) throw new BadRequestException('订单不存在');
 			if (order.status === 3) throw new BadRequestException('已取消订单无法退款');
 
@@ -183,24 +218,40 @@ export class PaymentService {
 			});
 			const savedPayment = await paymentRepo.save(payment);
 
-			// 5. 累加已退款金额（不扣减已收金额，保持收款记录完整）
-			await this.salesOrderService.increaseRefundedAmount(
+			// 5. 扣减已收金额 + 重算三维状态（直接退款减少 receivedAmount，paymentStatus/status 随之变化）
+			await this.salesOrderService.decreaseReceivedAmount(
 				dto.orderId,
 				dualAmounts.amountUsd,
 				dualAmounts.amountCny,
 				manager,
 			);
 
-			// 6. 退款后重算提成差额（如果订单已计提提成）
+			// 5.1 累加直接退款金额（用于利润计算，区别于退货导致的退款）
+			await this.salesOrderService.increaseStandaloneRefundedAmount(
+				dto.orderId,
+				dualAmounts.amountUsd,
+				dualAmounts.amountCny,
+				manager,
+			);
+
+			// 6. 退款后提成处理
 			if (order.salespersonId) {
-				await this.commissionService.recalculateOrderCommission(
-					order.id,
-					dualAmounts.amountUsd,
-					dualAmounts.amountCny,
-					savedPayment.id,
-					'', // 非退货场景，无 salesReturnId
-					manager,
-				);
+				// 重新读取订单获取 recalculateStatus 后的最新状态
+				const updatedOrder = await orderRepo.findOne({ where: { id: order.id } });
+				if (updatedOrder && updatedOrder.status === 1 && order.status === 2) {
+					// M1: 直接退款使已完成订单重开（2→1）：全额撤销提成（与退货路径一致）
+					await this.commissionService.revokeOrderCommission(order.id, manager);
+				} else if (updatedOrder && updatedOrder.status === 2) {
+					// 订单仍为已完成状态：差额重算
+					await this.commissionService.recalculateOrderCommission(
+						order.id,
+						dualAmounts.amountUsd,
+						dualAmounts.amountCny,
+						savedPayment.id,
+						'', // 非退货场景，无 salesReturnId
+						manager,
+					);
+				}
 			}
 
 			this.logger.log(

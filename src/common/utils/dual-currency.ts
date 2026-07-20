@@ -24,8 +24,18 @@ export function computeDualAmounts(
   const amt = Number(amount);
   const rate = Number(exchangeRate);
 
+  // L4: 无效输入必须抛错，防止静默生成零金额记录
   if (isNaN(amt) || isNaN(rate) || rate <= 0) {
-    return { amountUsd: '0', amountCny: '0' };
+    throw new Error(
+      `computeDualAmounts: 无效参数 amount=${amount}, exchangeRate=${exchangeRate}`,
+    );
+  }
+
+  // M2: 严格校验币种，防止 'usd'(小写)、'EUR' 等被静默按 CNY 处理
+  if (currency !== 'USD' && currency !== 'CNY') {
+    throw new Error(
+      `computeDualAmounts: 不支持的币种 "${currency}"，仅支持 USD 或 CNY`,
+    );
   }
 
   if (currency === 'USD') {
@@ -58,8 +68,18 @@ export function computeDualUnitPrice(
   const price = Number(unitPrice);
   const rate = Number(exchangeRate);
 
+  // L4: 无效输入必须抛错
   if (isNaN(price) || isNaN(rate) || rate <= 0) {
-    return { unitPriceUsd: '0', unitPriceCny: '0' };
+    throw new Error(
+      `computeDualUnitPrice: 无效参数 unitPrice=${unitPrice}, exchangeRate=${exchangeRate}`,
+    );
+  }
+
+  // M2: 严格校验币种
+  if (currency !== 'USD' && currency !== 'CNY') {
+    throw new Error(
+      `computeDualUnitPrice: 不支持的币种 "${currency}"，仅支持 USD 或 CNY`,
+    );
   }
 
   if (currency === 'USD') {
