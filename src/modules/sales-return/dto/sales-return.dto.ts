@@ -40,6 +40,10 @@ export class CreateSalesReturnDto {
   @IsIn([0, 1])
   restoreInventory: number;
 
+  @ApiProperty({ description: '退货类型：1=退货退款（不补发），2=退货换货（需补发），3=仅退款（不退货）', default: 1 })
+  @IsIn([1, 2, 3], { message: '退货类型必须为 1（退货退款）、2（退货换货）或 3（仅退款）' })
+  returnType: number = 1;
+
   @ApiPropertyOptional({ description: '退货原因' })
   @IsString()
   @IsOptional()

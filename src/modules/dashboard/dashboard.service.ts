@@ -380,28 +380,29 @@ export class DashboardService {
     const dateFormat = this.getDateFormat(granularity);
     return this.executeQuery(
       `SELECT DATE_FORMAT(order_date, '${dateFormat}') AS period,
-              COALESCE(SUM(gross_profit_cny - extra_cost_cny - blogger_commission_cny), 0) AS profitCny,
-              COALESCE(SUM(gross_profit_usd - extra_cost_usd - blogger_commission_usd), 0) AS profitUsd
-       FROM (
-         SELECT so.id, so.order_date,
-                COALESCE(sp.gp_cny, 0) AS gross_profit_cny,
-                COALESCE(sp.gp_usd, 0) AS gross_profit_usd,
-                COALESCE(ec.cost_cny, 0) AS extra_cost_cny,
-                COALESCE(ec.cost_usd, 0) AS extra_cost_usd,
-                COALESCE(so.total_amount_cny * so.blogger_commission_rate / 100, 0) AS blogger_commission_cny,
-                COALESCE(so.total_amount_usd * so.blogger_commission_rate / 100, 0) AS blogger_commission_usd
-         FROM sales_order so
-         LEFT JOIN (
-           SELECT s.order_id, SUM(si.gross_profit_cny) AS gp_cny, SUM(si.gross_profit_usd) AS gp_usd
-           FROM shipment_item si INNER JOIN shipment s ON si.shipment_id = s.id
-           GROUP BY s.order_id
-         ) sp ON so.id = sp.order_id
-         LEFT JOIN (
-           SELECT order_id, SUM(amount_cny) AS cost_cny, SUM(amount_usd) AS cost_usd
-           FROM sales_order_cost GROUP BY order_id
-         ) ec ON so.id = ec.order_id
-         WHERE so.status = 2 {dateFilter}
-       ) t
+              COALESCE(SUM(
+                so.total_amount_cny
+                - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+                - COALESCE(pc.cost_cny, 0)
+                - COALESCE(ec.cost_cny, 0)
+              ), 0) AS profitCny,
+              COALESCE(SUM(
+                so.total_amount_usd
+                - so.total_amount_usd * COALESCE(so.blogger_commission_rate, 0) / 100
+                - COALESCE(pc.cost_usd, 0)
+                - COALESCE(ec.cost_usd, 0)
+              ), 0) AS profitUsd
+       FROM sales_order so
+       LEFT JOIN (
+         SELECT s.order_id, SUM(si.total_cost_cny) AS cost_cny, SUM(si.total_cost_usd) AS cost_usd
+         FROM shipment_item si INNER JOIN shipment s ON si.shipment_id = s.id
+         GROUP BY s.order_id
+       ) pc ON so.id = pc.order_id
+       LEFT JOIN (
+         SELECT order_id, SUM(amount_cny) AS cost_cny, SUM(amount_usd) AS cost_usd
+         FROM sales_order_cost GROUP BY order_id
+       ) ec ON so.id = ec.order_id
+       WHERE so.status = 2 {dateFilter}
        GROUP BY period ORDER BY period ASC`,
       'so.order_date',
       startDate,

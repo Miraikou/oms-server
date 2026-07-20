@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager, IsNull, In } from 'typeorm';
 import { SalesOrder } from './entities/sales-order.entity';
@@ -6,6 +7,7 @@ import { SalesOrderItem } from './entities/sales-order-item.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { Inventory } from '@/modules/inventory/entities/inventory.entity';
+import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
 import { CommonContact } from '@/modules/common-contact/entities/common-contact.entity';
 import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
 import { SalesOrderCost } from './entities/sales-order-cost.entity';
@@ -55,6 +57,7 @@ export class SalesOrderService {
     private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -168,14 +171,37 @@ export class SalesOrderService {
       );
       await manager.save(savedItems);
 
-      // 7. 冻结库存（逐个商品，在同一事务中）
-      for (const item of items) {
-        await this.fifoService.freeze(
+      // 7. 冻结库存（逐个商品，在同一事务中）并记录估算产品成本
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const freezeResult = await this.fifoService.freeze(
           item.productId,
           item.productModelId,
           parseFloat(item.quantity),
           savedOrder.id,
           manager,
+        );
+
+        // 从冻结批次计算估算产品成本
+        let estCostCny = 0;
+        let estCostUsd = 0;
+        for (const fi of freezeResult.items) {
+          const batch = await manager.findOne(InventoryBatch, {
+            where: { id: fi.batchId },
+          });
+          if (batch) {
+            estCostCny += fi.quantity * parseFloat(batch.unitCostCny || '0');
+            estCostUsd += fi.quantity * parseFloat(batch.unitCostUsd || '0');
+          }
+        }
+
+        // 写入订单明细的估算成本字段
+        await manager.getRepository(SalesOrderItem).update(
+          { id: savedItems[i].id },
+          {
+            estimatedCostCny: estCostCny.toFixed(2),
+            estimatedCostUsd: estCostUsd.toFixed(2),
+          },
         );
       }
 
@@ -386,14 +412,36 @@ export class SalesOrderService {
 
         await manager.save(newItems);
 
-        // 冻结新商品（在同一事务中）
+        // 冻结新商品（在同一事务中）并记录估算产品成本
         for (const item of newItems) {
-          await this.fifoService.freeze(
+          const freezeResult = await this.fifoService.freeze(
             item.productId,
             item.productModelId,
             parseFloat(item.quantity),
             id,
             manager,
+          );
+
+          // 从冻结批次计算估算产品成本
+          let estCostCny = 0;
+          let estCostUsd = 0;
+          for (const fi of freezeResult.items) {
+            const batch = await manager.findOne(InventoryBatch, {
+              where: { id: fi.batchId },
+            });
+            if (batch) {
+              estCostCny += fi.quantity * parseFloat(batch.unitCostCny || '0');
+              estCostUsd += fi.quantity * parseFloat(batch.unitCostUsd || '0');
+            }
+          }
+
+          // 写入订单明细的估算成本字段
+          await manager.getRepository(SalesOrderItem).update(
+            { id: item.id },
+            {
+              estimatedCostCny: estCostCny.toFixed(2),
+              estimatedCostUsd: estCostUsd.toFixed(2),
+            },
           );
         }
 
@@ -561,6 +609,7 @@ export class SalesOrderService {
       const orderIds = list.map((o) => o.id);
 
       // 批量查询销售员的提成比例
+      const defaultRate = this.configService.get<number>('DEFAULT_COMMISSION_RATE', 40);
       const spIds = [...new Set(list.map((o) => o.salespersonId).filter(Boolean))];
       const spCommissionRateMap = new Map<string, number>();
       if (spIds.length > 0) {
@@ -569,7 +618,7 @@ export class SalesOrderService {
           [spIds],
         );
         for (const row of spRows) {
-          spCommissionRateMap.set(row.id, parseFloat(row.commissionRate || '0'));
+          spCommissionRateMap.set(row.id, parseFloat(row.commissionRate || String(defaultRate)));
         }
       }
 
@@ -600,6 +649,26 @@ export class SalesOrderService {
         extraCostMap.set(row.orderId, parseFloat(row.totalCny || '0'));
       }
 
+      // 批量查询未发货部分的估算产品成本（区分退货退款和退货换货）
+      // remaining = effectiveQty - netShipped = (qty - refundRet) - (shipped - exchangeRet)
+      //           = qty - shipped + returned - 2*refundRet
+      const unshippedEstRows = await this.dataSource.query(
+        `SELECT order_id AS orderId,
+                COALESCE(SUM(estimated_cost_cny * GREATEST(
+                  quantity - COALESCE(shipped_quantity, 0) + COALESCE(returned_quantity, 0) - 2 * COALESCE(refund_returned_quantity, 0)
+                , 0) / quantity), 0) AS estCostCny
+         FROM sales_order_item
+         WHERE order_id IN (?)
+           AND quantity > 0
+           AND (quantity - COALESCE(shipped_quantity, 0) + COALESCE(returned_quantity, 0) - 2 * COALESCE(refund_returned_quantity, 0)) > 0
+         GROUP BY order_id`,
+        [orderIds],
+      );
+      const unshippedEstCostMap = new Map<string, number>();
+      for (const row of unshippedEstRows) {
+        unshippedEstCostMap.set(row.orderId, parseFloat(row.estCostCny || '0'));
+      }
+
       for (const order of list) {
         // 博主佣金：根据订单金额 × 佣金比例计算（展示全额收款时的预期利润）
         const rate = parseFloat(order.bloggerCommissionRate || '0');
@@ -610,8 +679,8 @@ export class SalesOrderService {
         (order as any).bloggerCommissionAmountCny = bloggerCommissionCny.toFixed(2);
         (order as any).bloggerCommissionAmountUsd = bloggerCommissionUsd.toFixed(2);
 
-        // 销售利润 = 订单金额 - 博主佣金 - 产品成本 - 额外成本
-        const productCostCny = productCostMap.get(order.id) || 0;
+        // 销售利润 = 订单金额 - 博主佣金 - 产品成本(已发货实际+未发货估算) - 额外成本
+        const productCostCny = (productCostMap.get(order.id) || 0) + (unshippedEstCostMap.get(order.id) || 0);
         const extraCostCny = extraCostMap.get(order.id) || 0;
         const salesProfitCny = totalCny - bloggerCommissionCny - productCostCny - extraCostCny;
         const salesProfitUsd = exchangeRate > 0 ? salesProfitCny / exchangeRate : 0;
@@ -722,16 +791,21 @@ export class SalesOrderService {
     const items = await itemRepo.find({ where: { orderId } });
     if (items.length === 0) return;
 
-    // 计算发货状态（使用净发货量 = 已发 - 已退，退货会减少有效发货量）
+    // 计算发货状态（区分退货退款和退货换货）
+    // 退货退款：减少有效需求量（客户不再需要这些商品）
+    // 退货换货：不影响需求量（客户等待补发）
     let allShipped = true;
     let anyShipped = false;
     for (const item of items) {
       const qty = parseFloat(item.quantity);
       const shipped = parseFloat(item.shippedQuantity);
       const returned = parseFloat(item.returnedQuantity || '0');
-      const netShipped = shipped - returned;
+      const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
+      const exchangeReturned = returned - refundReturned; // 换货类退货（需补发）
+      const effectiveQty = qty - refundReturned;          // 有效需求量（扣除退款退货）
+      const netShipped = shipped - exchangeReturned;      // 净发货量（仅扣除换货退货）
       if (netShipped > 0) anyShipped = true;
-      if (netShipped < qty) allShipped = false;
+      if (effectiveQty > 0 && netShipped < effectiveQty) allShipped = false;
     }
 
     if (allShipped) {
@@ -865,14 +939,36 @@ export class SalesOrderService {
 
     const exchangeRate = parseFloat(order.exchangeRate || this.rateService.getDefaultRate());
 
-    // ── 产品成本（CNY，来自 FIFO，shipment_item.total_cost_cny）──
+    // ── 产品成本（CNY）= 已发货实际成本 + 未发货估算成本 ──
+    // 已发货实际成本来自 FIFO（shipment_item.total_cost_cny）
     const costResult = await this.shipmentItemRepo
       .createQueryBuilder('si')
       .innerJoin('shipment', 's', 's.id = si.shipment_id')
       .select('COALESCE(SUM(si.total_cost_cny), 0)', 'totalCost')
       .where('s.order_id = :orderId', { orderId })
       .getRawOne();
-    const productCostCny = parseFloat(costResult?.totalCost || '0');
+    const shippedActualCostCny = parseFloat(costResult?.totalCost || '0');
+
+    // 未发货部分使用冻结时的估算成本（区分退货退款和退货换货）
+    // remaining = effectiveQty - netShipped = (qty - refundReturned) - (shipped - exchangeReturned)
+    const orderItems = await this.itemRepo.find({ where: { orderId } });
+    let unshippedEstCostCny = 0;
+    for (const item of orderItems) {
+      const qty = parseFloat(item.quantity);
+      const shippedQty = parseFloat(item.shippedQuantity || '0');
+      const returned = parseFloat(item.returnedQuantity || '0');
+      const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
+      const exchangeReturned = returned - refundReturned;
+      const effectiveQty = qty - refundReturned;
+      const netShipped = shippedQty - exchangeReturned;
+      const remaining = Math.max(0, effectiveQty - netShipped);
+      const estCost = parseFloat(item.estimatedCostCny || '0');
+      if (qty > 0 && remaining > 0 && estCost > 0) {
+        unshippedEstCostCny += estCost * (remaining / qty);
+      }
+    }
+
+    const productCostCny = shippedActualCostCny + unshippedEstCostCny;
     const productCostUsd = exchangeRate > 0 ? productCostCny / exchangeRate : 0;
 
     // ── 额外成本（预存 amount_cny，直接 SUM）──
@@ -900,6 +996,7 @@ export class SalesOrderService {
     const f = (n: number) => n.toFixed(2);
 
     // ── 销售员提成 = 销售利润 × 提成比例 ──
+    const defaultRate = this.configService.get<number>('DEFAULT_COMMISSION_RATE', 40);
     let spCommissionRate = 0;
     if (order.salespersonId) {
       const spRow = await this.dataSource.query(
@@ -907,7 +1004,7 @@ export class SalesOrderService {
         [order.salespersonId],
       );
       if (spRow.length > 0) {
-        spCommissionRate = parseFloat(spRow[0].commissionRate || '40');
+        spCommissionRate = parseFloat(spRow[0].commissionRate || String(defaultRate));
       }
     }
     const salespersonCommissionCny = salesProfitCny * spCommissionRate / 100;

@@ -132,6 +132,7 @@ const validDto: CreateSalesReturnDto = {
   orderId: '202601010001',
   returnDate: '2026-01-15',
   restoreInventory: 1,
+  returnType: 1,
   reason: '质量问题',
   remark: undefined,
   refund: false,

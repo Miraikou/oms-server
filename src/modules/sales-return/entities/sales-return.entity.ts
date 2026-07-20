@@ -33,6 +33,14 @@ export class SalesReturn extends BaseEntity {
   })
   restoreInventory: number = 1;
 
+  @Column({
+    name: 'return_type',
+    type: 'tinyint',
+    default: 1,
+    comment: '退货类型：1=退货退款（不补发），2=退货换货（需补发），3=仅退款（不退货）',
+  })
+  returnType: number = 1;
+
   @Column({ type: 'varchar', length: 200, nullable: true, comment: '退货原因' })
   reason: string | null = null;
 

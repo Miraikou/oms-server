@@ -84,4 +84,34 @@ export class SalesOrderItem extends BaseEntity {
     comment: '已退货数量',
   })
   returnedQuantity: string = '0';
+
+  @Column({
+    name: 'refund_returned_quantity',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    default: 0,
+    comment: '退货退款数量（不再补发）',
+  })
+  refundReturnedQuantity: string = '0';
+
+  @Column({
+    name: 'estimated_cost_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '估算产品成本(USD)，冻结时FIFO批次成本合计',
+  })
+  estimatedCostUsd: string = '0';
+
+  @Column({
+    name: 'estimated_cost_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '估算产品成本(CNY)，冻结时FIFO批次成本合计',
+  })
+  estimatedCostCny: string = '0';
 }

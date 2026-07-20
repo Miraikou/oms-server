@@ -74,6 +74,9 @@ export class SalesReturnService {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('退货明细不能为空');
     }
+    if ((dto.returnType || 1) === 2 && dto.refund) {
+      throw new BadRequestException('退货换货不支持退款，请选择退货退款或仅退款类型');
+    }
 
     return this.dataSource.transaction(async (manager) => {
       // 1. 校验订单已发货
@@ -127,6 +130,7 @@ export class SalesReturnService {
         orderId: dto.orderId,
         returnDate: new Date(dto.returnDate),
         restoreInventory: dto.restoreInventory,
+        returnType: dto.returnType || 1,
         reason: dto.reason || null,
         remark: dto.remark || null,
         returnCostUsd: returnCostDual ? returnCostDual.amountUsd : null,
@@ -151,8 +155,8 @@ export class SalesReturnService {
         });
         await manager.save(returnItem);
 
-        // 4. 恢复库存到原批次
-        if (dto.restoreInventory === 1) {
+        // 4. 恢复库存到原批次（仅退款不退货，跳过库存恢复）
+        if (dto.restoreInventory === 1 && (dto.returnType || 1) !== 3) {
           const shipBatches = await manager.find(ShipmentItemBatch, {
             where: { shipmentItemId: dtoItem.shipmentItemId },
           });
@@ -267,16 +271,25 @@ export class SalesReturnService {
           }
         }
 
-        // 5. 更新订单明细 returnedQuantity（精确到发货明细对应的 orderItemId）
-        const orderItem = await manager.findOne(SalesOrderItem, {
-          where: { id: shipItem!.orderItemId },
-        });
-        if (orderItem) {
-          orderItem.returnedQuantity = (
-            parseFloat(orderItem.returnedQuantity) +
-            parseFloat(dtoItem.quantity)
-          ).toFixed(4);
-          await manager.save(orderItem);
+        // 5. 更新订单明细 returnedQuantity（仅退款不退货，跳过数量更新）
+        if ((dto.returnType || 1) !== 3) {
+          const orderItem = await manager.findOne(SalesOrderItem, {
+            where: { id: shipItem!.orderItemId },
+          });
+          if (orderItem) {
+            orderItem.returnedQuantity = (
+              parseFloat(orderItem.returnedQuantity) +
+              parseFloat(dtoItem.quantity)
+            ).toFixed(4);
+            // 退货退款（不补发）时累加 refundReturnedQuantity
+            if ((dto.returnType || 1) === 1) {
+              orderItem.refundReturnedQuantity = (
+                parseFloat(orderItem.refundReturnedQuantity || '0') +
+                parseFloat(dtoItem.quantity)
+              ).toFixed(4);
+            }
+            await manager.save(orderItem);
+          }
         }
       }
 
