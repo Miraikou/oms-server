@@ -167,18 +167,20 @@ export class DashboardService {
         [],
         spFilter,
       ),
-      // 利润：订单级统一公式（= 订单金额 − 博主佣金 − 产品成本 − 额外成本），仅已完成订单
+      // 利润：订单级统一公式（= 订单金额 − 博主佣金 − 已退款 − 产品成本 − 额外成本），仅已完成订单
       this.executeQuery(
         `SELECT
            COALESCE(SUM(
              so.total_amount_cny
              - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+             - COALESCE(so.refunded_amount_cny, 0)
              - COALESCE(pc.cost_cny, 0)
              - COALESCE(ec.cost_cny, 0)
            ), 0) AS totalProfitCny,
            COALESCE(SUM(
              so.total_amount_usd
              - so.total_amount_usd * COALESCE(so.blogger_commission_rate, 0) / 100
+             - COALESCE(so.refunded_amount_usd, 0)
              - COALESCE(pc.cost_usd, 0)
              - COALESCE(ec.cost_usd, 0)
            ), 0) AS totalProfitUsd
@@ -383,12 +385,14 @@ export class DashboardService {
               COALESCE(SUM(
                 so.total_amount_cny
                 - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+                - COALESCE(so.refunded_amount_cny, 0)
                 - COALESCE(pc.cost_cny, 0)
                 - COALESCE(ec.cost_cny, 0)
               ), 0) AS profitCny,
               COALESCE(SUM(
                 so.total_amount_usd
                 - so.total_amount_usd * COALESCE(so.blogger_commission_rate, 0) / 100
+                - COALESCE(so.refunded_amount_usd, 0)
                 - COALESCE(pc.cost_usd, 0)
                 - COALESCE(ec.cost_usd, 0)
               ), 0) AS profitUsd

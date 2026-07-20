@@ -91,8 +91,15 @@ export class ShipmentService {
       const shipQty = parseFloat(item.quantity);
       if (shipQty <= 0) throw new BadRequestException('发货数量必须大于零');
 
-      const remaining =
-        parseFloat(orderItem.quantity) - parseFloat(orderItem.shippedQuantity);
+      // 可发数量 = 有效需求量 - 净发货量（考虑退货换货需补发）
+      const qty = parseFloat(orderItem.quantity);
+      const shipped = parseFloat(orderItem.shippedQuantity);
+      const returned = parseFloat(orderItem.returnedQuantity || '0');
+      const refundReturned = parseFloat(orderItem.refundReturnedQuantity || '0');
+      const exchangeReturned = returned - refundReturned;
+      const effectiveQty = qty - refundReturned;
+      const netShipped = shipped - exchangeReturned;
+      const remaining = effectiveQty - netShipped;
       if (shipQty > remaining) {
         throw new BadRequestException(
           `发货数量 ${shipQty} 超过可发数量 ${remaining}`,
@@ -254,8 +261,15 @@ export class ShipmentService {
 
     const previewItems = [];
     for (const item of orderItems) {
-      const remaining =
-        parseFloat(item.quantity) - parseFloat(item.shippedQuantity);
+      // 可发数量 = 有效需求量 - 净发货量（考虑退货换货需补发）
+      const qty = parseFloat(item.quantity);
+      const shipped = parseFloat(item.shippedQuantity);
+      const returned = parseFloat(item.returnedQuantity || '0');
+      const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
+      const exchangeReturned = returned - refundReturned;
+      const effectiveQty = qty - refundReturned;
+      const netShipped = shipped - exchangeReturned;
+      const remaining = effectiveQty - netShipped;
       if (remaining <= 0) continue;
 
       // 查询预估 FIFO 批次（按 productModelId 过滤，null 也算独立型号）

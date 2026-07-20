@@ -55,18 +55,52 @@ export class CommissionService {
 			? manager.getRepository(CommissionLedger)
 			: this.ledgerRepo;
 
-		// 幂等校验：该订单是否已有计提分录
-		const existing = await ledgerRepo.findOne({
-			where: { salesOrderId: orderId, type: 1 },
-		});
-		if (existing) return null;
-
 		// 加载订单
 		const orderRepo = manager
 			? manager.getRepository(SalesOrder)
 			: this.orderRepo;
 		const order = await orderRepo.findOne({ where: { id: orderId } });
 		if (!order || order.status !== 2 || !order.salespersonId) return null;
+
+		// 幂等校验：该订单是否已有计提分录
+		const existing = await ledgerRepo.findOne({
+			where: { salesOrderId: orderId, type: 1 },
+		});
+		if (existing) {
+			// 重新完成场景（退货换货后补发再次完成）：重算利润，若变化则更新计提分录
+			const profit = await this.calcOrderProfit(orderId, manager);
+			const baseCny = Math.max(0, profit.salesProfitCny);
+			const baseUsd = Math.max(0, profit.salesProfitUsd);
+			const rate = parseFloat(existing.commissionRate || '0');
+			const newCommissionCny = this.calcCommission(String(baseCny), rate);
+			const newCommissionUsd = this.calcCommission(String(baseUsd), rate);
+
+			if (
+				existing.profitBaseCny !== baseCny.toFixed(2) ||
+				existing.profitBaseUsd !== baseUsd.toFixed(2)
+			) {
+				// 加上已冲回金额，避免双重计算：
+				// type=1 存储 (应有提成 + 已冲回)，使得 净提成 = type=1 - type=2 = 应有提成
+				const previousClawbackCny = await this.getTotalClawbackForOrder(orderId, manager);
+				const previousClawbackUsd = await this.getTotalClawbackForOrderUsd(orderId, manager);
+				const adjustedCommissionCny = (parseFloat(newCommissionCny) + previousClawbackCny).toFixed(2);
+				const adjustedCommissionUsd = (parseFloat(newCommissionUsd) + previousClawbackUsd).toFixed(2);
+
+				existing.profitBaseCny = baseCny.toFixed(2);
+				existing.profitBaseUsd = baseUsd.toFixed(2);
+				existing.commissionAmountCny = adjustedCommissionCny;
+				existing.commissionAmountUsd = adjustedCommissionUsd;
+				existing.receivedAmountUsd = order.receivedAmountUsd;
+				existing.receivedAmountCny = order.receivedAmountCny;
+				await ledgerRepo.save(existing);
+				this.logger.log(
+					`提成重算(重新完成): 订单 ${orderId}, ` +
+					`利润 ${baseCny.toFixed(2)} CNY, 净提成 ${newCommissionCny} CNY, ` +
+					`含已冲回 ${previousClawbackCny.toFixed(2)} CNY`,
+				);
+			}
+			return existing;
+		}
 
 		// 计算订单利润（与 getProfitSummary 逻辑完全一致）
 		const profit = await this.calcOrderProfit(orderId, manager);
@@ -125,11 +159,10 @@ export class CommissionService {
 	 *
 	 * 核心逻辑：
 	 * 1. 读取该订单的原始计提分录（type=1）
-	 * 2. 计算当前利润（退货场景：成本已变化；退款场景：收入减少）
-	 * 3. 调整后利润 = 当前利润 - 累计退款额
-	 * 4. 差额 = 原提成 - 调整后提成 - 已冲回金额 → 生成本次冲回分录
+	 * 2. 计算当前利润（calcOrderProfit 已包含 refundedAmount 扣减）
+	 * 3. 差额 = 原提成 - 当前应有提成 - 已冲回金额 → 生成本次冲回分录
 	 *
-	 * 支持多次退款/退货：每次基于累计调整量计算，不会重复扣减
+	 * 支持多次退款/退货：每次基于当前实际利润计算，不会重复扣减
 	 */
 	async recalculateOrderCommission(
 		orderId: string,
@@ -149,7 +182,7 @@ export class CommissionService {
 		});
 		if (!accrualEntry) return null;
 
-		// 2. 累计收入调整（退款减少收入）
+		// 2. 累计收入调整（仅用于审计追踪，不参与利润计算）
 		const currentAdjUsd = parseFloat(
 			accrualEntry.revenueAdjustmentUsd || '0',
 		);
@@ -159,7 +192,7 @@ export class CommissionService {
 		const newAdjUsd = currentAdjUsd + parseFloat(refundAmountUsd);
 		const newAdjCny = currentAdjCny + parseFloat(refundAmountCny);
 
-		// 3. 获取订单和当前利润
+		// 3. 获取订单和当前利润（calcOrderProfit 已扣减 refundedAmount）
 		const orderRepo = manager
 			? manager.getRepository(SalesOrder)
 			: this.orderRepo;
@@ -168,9 +201,9 @@ export class CommissionService {
 
 		const profit = await this.calcOrderProfit(orderId, manager);
 
-		// 4. 调整利润 = 当前利润 - 累计退款额（退款相当于减少收入）
-		const adjustedProfitCny = profit.salesProfitCny - newAdjCny;
-		const adjustedProfitUsd = profit.salesProfitUsd - newAdjUsd;
+		// 4. 当前利润即为调整后利润（refundedAmount 已在 calcOrderProfit 中扣减）
+		const adjustedProfitCny = profit.salesProfitCny;
+		const adjustedProfitUsd = profit.salesProfitUsd;
 
 		// 5. 计算应有提成 vs 已计提提成
 		const rate = parseFloat(accrualEntry.commissionRate || '0');
@@ -240,7 +273,7 @@ export class CommissionService {
 
 		const saved = await ledgerRepo.save(ledger);
 
-		// 8. 更新原计提分录的收入调整字段
+		// 8. 更新原计提分录的收入调整字段（审计追踪）
 		accrualEntry.revenueAdjustmentUsd = newAdjUsd.toFixed(2);
 		accrualEntry.revenueAdjustmentCny = newAdjCny.toFixed(2);
 		await ledgerRepo.save(accrualEntry);
@@ -679,11 +712,15 @@ export class CommissionService {
 		const bloggerCommissionCny = totalAmountCny * bloggerRate / 100;
 		const bloggerCommissionUsd = totalAmountUsd * bloggerRate / 100;
 
-		// 销售利润
+		// 已退款金额（退货退款/仅退款产生的退款，减少有效收入）
+		const refundedAmountCny = parseFloat(order.refundedAmountCny || '0');
+		const refundedAmountUsd = parseFloat(order.refundedAmountUsd || '0');
+
+		// 销售利润 = 订单金额 - 博主佣金 - 已退款 - 产品成本 - 额外成本
 		const salesProfitCny = totalAmountCny - bloggerCommissionCny
-			- productCostCny - extraCostCny;
+			- refundedAmountCny - productCostCny - extraCostCny;
 		const salesProfitUsd = totalAmountUsd - bloggerCommissionUsd
-			- productCostUsd - extraCostUsd;
+			- refundedAmountUsd - productCostUsd - extraCostUsd;
 
 		return {
 			totalAmountCny,

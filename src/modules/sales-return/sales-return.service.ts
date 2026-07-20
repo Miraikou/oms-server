@@ -84,6 +84,9 @@ export class SalesReturnService {
         where: { id: dto.orderId },
       });
       if (!order) throw new BadRequestException('订单不存在');
+      if (order.status === 3) {
+        throw new BadRequestException('已取消订单无法退货');
+      }
       if (order.shipmentStatus < 2) {
         throw new BadRequestException('订单尚未发货，无法退货');
       }
@@ -314,14 +317,17 @@ export class SalesReturnService {
           }
         }
 
-        // 校验退款金额不超过已收金额（同币种直接比较）
+        // 校验累计退款金额不超过已收金额（同币种直接比较）
         const currency = order.currency || 'USD';
         const receivedInCurrency = currency === 'CNY'
           ? parseFloat(order.receivedAmountCny || '0')
           : parseFloat(order.receivedAmountUsd || '0');
-        if (refundTotal > receivedInCurrency + 0.01) {
+        const alreadyRefunded = currency === 'CNY'
+          ? parseFloat(order.refundedAmountCny || '0')
+          : parseFloat(order.refundedAmountUsd || '0');
+        if (alreadyRefunded + refundTotal > receivedInCurrency + 0.01) {
           throw new BadRequestException(
-            `退款金额（${refundTotal.toFixed(2)}）超过已收金额（${receivedInCurrency.toFixed(2)}）`,
+            `累计退款金额（${(alreadyRefunded + refundTotal).toFixed(2)}）超过已收金额（${receivedInCurrency.toFixed(2)}）`,
           );
         }
 
@@ -343,8 +349,8 @@ export class SalesReturnService {
         });
         const savedPayment = await manager.save(payment);
 
-        // 扣减已收金额（使用退款记录的 USD/CNY 金额，保证汇率一致）
-        await this.salesOrderService.decreaseReceivedAmount(
+        // 累加已退款金额（不扣减已收金额，保持收款记录完整）
+        await this.salesOrderService.increaseRefundedAmount(
           dto.orderId,
           refundDual.amountUsd,
           refundDual.amountCny,
@@ -404,8 +410,18 @@ export class SalesReturnService {
         }
       }
 
-      // 8. 重算订单发货状态（退货减少净发货量，可能改变 shipmentStatus）
+      // 8. 重算订单三维状态
+      // type=1(退货退款)：effectiveQty 下降，可能使进行中订单满足完成条件
+      // type=2(退货换货)：netShipped 下降，可能使已完成订单重新打开
+      // type=3(仅退款)：不影响数量，状态不变（调用无副作用）
       await this.salesOrderService.recalculateStatus(dto.orderId, manager);
+
+      // 8.1 如果退货使订单从进行中变为已完成，触发提成计提
+      // 仅处理状态跃迁（1→2）；已完成订单(原 status=2)由 step 9 冲回处理，保留审计轨迹
+      const updatedOrder = await manager.findOne(SalesOrder, { where: { id: dto.orderId } });
+      if (updatedOrder && updatedOrder.status === 2 && order.status !== 2 && updatedOrder.salespersonId) {
+        await this.commissionService.accrueOrderCommission(dto.orderId, manager);
+      }
 
       // 9. 退货后重算提成差额（必须在退货成本累加之后调用，确保 calcOrderProfit 获取到最新成本）
       if (dto.refund && order.salespersonId) {

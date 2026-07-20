@@ -140,17 +140,20 @@ export class PaymentService {
 				where: { id: dto.orderId },
 			});
 			if (!order) throw new BadRequestException('订单不存在');
+			if (order.status === 3) throw new BadRequestException('已取消订单无法退款');
 
-			// 2. 校验可退金额（同币种直接比较）
+			// 2. 校验可退金额（累计退款不超过已收金额）
 			const currency = order.currency || 'USD';
 			const receivedOrder = currency === 'CNY' ? order.receivedAmountCny : order.receivedAmountUsd;
+			const alreadyRefunded = currency === 'CNY' ? (order.refundedAmountCny || '0') : (order.refundedAmountUsd || '0');
 			const receivedMicro = toMicroUnits(receivedOrder);
+			const refundedMicro = toMicroUnits(alreadyRefunded);
 			if (receivedMicro <= 0) {
 				throw new BadRequestException('该订单无已收款，无法退款');
 			}
-			if (amountMicro > receivedMicro) {
+			if (refundedMicro + amountMicro > receivedMicro) {
 				throw new BadRequestException(
-					`退款金额超出已收金额：已收 ${receivedOrder}，本次退 ${dto.amount}`,
+					`累计退款超出已收金额：已收 ${receivedOrder}，已退 ${alreadyRefunded}，本次退 ${dto.amount}`,
 				);
 			}
 
@@ -180,8 +183,8 @@ export class PaymentService {
 			});
 			const savedPayment = await paymentRepo.save(payment);
 
-			// 5. 扣减订单已收金额 + 重算三维状态（使用退款记录的 USD/CNY 金额，保证汇率一致）
-			await this.salesOrderService.decreaseReceivedAmount(
+			// 5. 累加已退款金额（不扣减已收金额，保持收款记录完整）
+			await this.salesOrderService.increaseRefundedAmount(
 				dto.orderId,
 				dualAmounts.amountUsd,
 				dualAmounts.amountCny,

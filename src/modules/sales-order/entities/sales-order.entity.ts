@@ -89,6 +89,26 @@ export class SalesOrder extends BaseEntity {
   })
   receivedAmountCny: string = '0';
 
+  @Column({
+    name: 'refunded_amount_usd',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '已退款金额（USD）',
+  })
+  refundedAmountUsd: string = '0';
+
+  @Column({
+    name: 'refunded_amount_cny',
+    type: 'decimal',
+    precision: 18,
+    scale: 2,
+    default: 0,
+    comment: '已退款金额（CNY）',
+  })
+  refundedAmountCny: string = '0';
+
   @Index('idx_shipment_status')
   @Column({
     name: 'shipment_status',
