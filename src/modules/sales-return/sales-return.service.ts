@@ -77,10 +77,15 @@ export class SalesReturnService {
     if ((dto.returnType || 1) === 2 && dto.refund) {
       throw new BadRequestException('退货换货不支持退款，请选择退货退款或仅退款类型');
     }
+    // E2: 拒绝重复的发货明细项，防止同一 shipmentItemId 出现多次绕过可退数量校验
+    const shipItemIdSet = new Set(dto.items.map((i) => i.shipmentItemId));
+    if (shipItemIdSet.size !== dto.items.length) {
+      throw new BadRequestException('退货明细中存在重复的发货明细项，请合并数量后重试');
+    }
 
     return this.dataSource.transaction(async (manager) => {
       // 1. 校验订单已发货
-      const order = await manager.findOne(SalesOrder, {
+      let order = await manager.findOne(SalesOrder, {
         where: { id: dto.orderId },
       });
       if (!order) throw new BadRequestException('订单不存在');
@@ -92,26 +97,56 @@ export class SalesReturnService {
       }
 
       // 2. 校验每个明细的退货数量
-      for (const item of dto.items) {
-        const shipItem = await manager.findOne(ShipmentItem, {
-          where: { id: item.shipmentItemId },
-        });
+      // 预取所有 ShipmentItem 以获取 orderItemId，按 orderItemId 排序后再加锁，
+      // 保证与 shipment 模块一致的锁序（SalesOrderItem 升序），消除 ABBA 死锁
+      const shipmentItemIds = dto.items.map((i) => i.shipmentItemId);
+      const shipItems = await manager.find(ShipmentItem, {
+        where: { id: In(shipmentItemIds) },
+      });
+      const shipItemMap = new Map(shipItems.map((si) => [si.id, si]));
+      const sortedItems = [...dto.items].sort((a, b) => {
+        const oidA = shipItemMap.get(a.shipmentItemId)?.orderItemId || '';
+        const oidB = shipItemMap.get(b.shipmentItemId)?.orderItemId || '';
+        return oidA.localeCompare(oidB);
+      });
+
+      const priorReturnedMap = new Map<string, number>(); // C3: 记录每个发货明细的历史退货量
+      for (const item of sortedItems) {
+        const shipItem = shipItemMap.get(item.shipmentItemId);
         if (!shipItem) {
           throw new BadRequestException(
             `发货明细 ${item.shipmentItemId} 不存在`,
           );
         }
+
+        // C2: 校验发货明细归属——必须属于当前退货订单
+        // P3: 加行锁（与 shipment 保持一致锁序：SalesOrderItem 先于 InventoryBatch，消除 ABBA 死锁）
+        const ownerItem = await manager
+          .createQueryBuilder(SalesOrderItem, 'oi')
+          .setLock('pessimistic_write')
+          .where('oi.id = :id', { id: shipItem.orderItemId })
+          .getOne();
+        if (!ownerItem || ownerItem.orderId !== dto.orderId) {
+          throw new BadRequestException(
+            `发货明细 ${item.shipmentItemId} 不属于订单 ${dto.orderId}`,
+          );
+        }
+
         const returnQty = parseFloat(item.quantity);
         if (returnQty <= 0) throw new BadRequestException('退货数量必须大于零');
 
-        // 查询该发货明细对应的历史退货数量
-        const existingReturns = await manager.find(SalesReturnItem, {
-          where: { shipmentItemId: item.shipmentItemId },
-        });
+        // C4: 加锁查询历史退货（InnoDB gap lock 防止并发退货幻影插入）
+        const existingReturns = await manager
+          .createQueryBuilder(SalesReturnItem, 'ri')
+          .setLock('pessimistic_write')
+          .where('ri.shipment_item_id = :sid', { sid: item.shipmentItemId })
+          .getMany();
         const totalReturned = existingReturns.reduce(
           (sum, r) => sum + parseFloat(r.quantity),
           0,
         );
+        priorReturnedMap.set(item.shipmentItemId, totalReturned);
+
         const returnable = parseFloat(shipItem.quantity) - totalReturned;
         if (returnQty > returnable) {
           throw new BadRequestException(
@@ -119,6 +154,20 @@ export class SalesReturnService {
           );
         }
       }
+
+      // H1: 提前锁定 SalesOrder，保证全局锁序 SalesOrderItem → SalesOrder → InventoryBatch → Inventory
+      // 消除与 shipment 并发时的 ABBA 死锁（shipment 锁序为 SalesOrderItem → SalesOrder → Batch → Inventory）
+      const lockedOrder = await manager
+        .createQueryBuilder(SalesOrder, 'o')
+        .setLock('pessimistic_write')
+        .where('o.id = :id', { id: dto.orderId })
+        .getOne();
+      // E1: 加锁后重验状态，防止 step 1 无锁读取与加锁之间的 TOCTOU 窗口
+      if (!lockedOrder || lockedOrder.status === 3) {
+        throw new BadRequestException('订单已取消，无法退货');
+      }
+      // 用当前读结果替代快照值，确保后续 step 6 退款校验和 step 8 状态比较使用最新数据
+      order = lockedOrder;
 
       // 3. 创建退货单 + 明细
       const returnNo = await this.sequenceService.generate('TH');
@@ -143,10 +192,8 @@ export class SalesReturnService {
       });
       const savedReturn = await manager.save(salesReturn);
 
-      for (const dtoItem of dto.items) {
-        const shipItem = await manager.findOne(ShipmentItem, {
-          where: { id: dtoItem.shipmentItemId },
-        });
+      for (const dtoItem of sortedItems) {
+        const shipItem = shipItemMap.get(dtoItem.shipmentItemId)!;
         const returnItem = manager.create(SalesReturnItem, {
           id: snowflake.nextId(),
           salesReturnId: savedReturn.id,
@@ -160,43 +207,80 @@ export class SalesReturnService {
 
         // 4. 恢复库存到原批次（仅退款不退货，跳过库存恢复）
         if (dto.restoreInventory === 1 && (dto.returnType || 1) !== 3) {
+          // 退货换货(type=2)：退回的货注定要补发，恢复到冻结库存（重新占用）
+          // 退货退款(type=1)：货回通用库存，恢复到可用库存
+          const isExchange = (dto.returnType || 1) === 2;
           const shipBatches = await manager.find(ShipmentItemBatch, {
             where: { shipmentItemId: dtoItem.shipmentItemId },
+            order: { id: 'ASC' },
           });
           const returnQty = parseFloat(dtoItem.quantity);
           let remaining = returnQty;
           let costReduction = 0;
           let costReductionUsd = 0;
 
+          // C3: 跳过历史退货已恢复的批次量（FIFO 顺序一致，避免重复恢复靠前批次）
+          let alreadyReturned = priorReturnedMap.get(dtoItem.shipmentItemId) || 0;
+
           // 按原批次比例恢复
           for (const sb of shipBatches) {
             if (remaining <= 0) break;
             const batchQty = parseFloat(sb.quantity);
-            const toRestore = Math.min(batchQty, remaining);
+            // 先扣除历史退货已占用的该批次额度
+            if (alreadyReturned >= batchQty) {
+              alreadyReturned -= batchQty;
+              continue;
+            }
+            const restorable = batchQty - alreadyReturned;
+            alreadyReturned = 0;
+            const toRestore = Math.min(restorable, remaining);
 
             // 按该批次实际成本累加扣减
             costReduction += toRestore * parseFloat(sb.unitCostCny || '0');
             costReductionUsd += toRestore * parseFloat(sb.unitCostUsd || '0');
 
-            // 恢复库存批次
-            const batch = await manager.findOne(InventoryBatch, {
-              where: { id: sb.inventoryBatchId },
-            });
+            // 恢复库存批次（加悲观锁防止并发退货/发货覆盖同一批次）
+            const batch = await manager
+              .createQueryBuilder(InventoryBatch, 'b')
+              .setLock('pessimistic_write')
+              .where('b.id = :id', { id: sb.inventoryBatchId })
+              .getOne();
             if (batch) {
               const beforeAvailable = parseFloat(batch.availableQuantity);
               const beforeFrozen = parseFloat(batch.frozenQuantity);
 
-              batch.availableQuantity = (beforeAvailable + toRestore).toFixed(
-                4,
-              );
-              batch.stockQuantity = (
-                parseFloat(batch.stockQuantity) + toRestore
-              ).toFixed(4);
+              if (isExchange) {
+                // M4: 退货换货也恢复到可用库存（补发走正常 freeze→deduct 路径）
+                // 若恢复到 frozen，补发无法消费该冻结量（shipment 从 available 冻结），导致库存搁浅
+                batch.availableQuantity = (beforeAvailable + toRestore).toFixed(4);
+                batch.stockQuantity = (
+                  parseFloat(batch.stockQuantity) + toRestore
+                ).toFixed(4);
+                const newAvailable = beforeAvailable + toRestore;
+                if (beforeFrozen > 0 && newAvailable > 0) {
+                  batch.freezeStatus = 2; // 部分冻结
+                } else if (beforeFrozen <= 0) {
+                  batch.freezeStatus = 1; // 无冻结
+                }
+              } else {
+                // 退货退款：恢复到可用库存，并重算冻结状态
+                batch.availableQuantity = (beforeAvailable + toRestore).toFixed(
+                  4,
+                );
+                batch.stockQuantity = (
+                  parseFloat(batch.stockQuantity) + toRestore
+                ).toFixed(4);
+                const newAvailable = beforeAvailable + toRestore;
+                if (beforeFrozen > 0 && newAvailable > 0) {
+                  batch.freezeStatus = 2; // 部分冻结
+                } else if (beforeFrozen <= 0) {
+                  batch.freezeStatus = 1; // 无冻结
+                }
+              }
 
               // 如果批次已耗尽，恢复为有效
               if (batch.status === 2) batch.status = 1;
 
-              batch.version += 1;
               await manager.save(batch);
 
               // 更新库存汇总（加悲观锁防止并发覆盖）
@@ -212,14 +296,20 @@ export class SalesReturnService {
                 .where('i.productId = :productId', { productId: shipItem!.productId })
                 .andWhere(invModelWhere, invModelParams)
                 .getOne();
+              // H3: 库存汇总行必须存在，否则批次与汇总静默分歧
+              if (!inventory) {
+                throw new BadRequestException(
+                  `库存汇总记录不存在（商品=${shipItem!.productId}），无法完成退货库存恢复`,
+                );
+              }
               if (inventory) {
+                // M4: 退货换货与退货退款均恢复到可用库存
                 inventory.availableQuantity = (
                   parseFloat(inventory.availableQuantity) + toRestore
                 ).toFixed(4);
                 inventory.stockQuantity = (
                   parseFloat(inventory.stockQuantity) + toRestore
                 ).toFixed(4);
-                inventory.version += 1;
                 await manager.save(inventory);
 
                 // 写库存流水
@@ -276,9 +366,12 @@ export class SalesReturnService {
 
         // 5. 更新订单明细 returnedQuantity（仅退款不退货，跳过数量更新）
         if ((dto.returnType || 1) !== 3) {
-          const orderItem = await manager.findOne(SalesOrderItem, {
-            where: { id: shipItem!.orderItemId },
-          });
+          // C4: 加行锁防止并发退货 lost-update
+          const orderItem = await manager
+            .createQueryBuilder(SalesOrderItem, 'oi')
+            .setLock('pessimistic_write')
+            .where('oi.id = :id', { id: shipItem!.orderItemId })
+            .getOne();
           if (orderItem) {
             orderItem.returnedQuantity = (
               parseFloat(orderItem.returnedQuantity) +
@@ -412,7 +505,7 @@ export class SalesReturnService {
 
       // 8. 重算订单三维状态
       // type=1(退货退款)：effectiveQty 下降，可能使进行中订单满足完成条件
-      // type=2(退货换货)：netShipped 下降，可能使已完成订单重新打开
+      // type=2(退货换货)：inCustomerHands 下降（returned 增加），可能使已完成订单重新打开
       // type=3(仅退款)：不影响数量，状态不变（调用无副作用）
       await this.salesOrderService.recalculateStatus(dto.orderId, manager);
 
@@ -423,8 +516,15 @@ export class SalesReturnService {
         await this.commissionService.accrueOrderCommission(dto.orderId, manager);
       }
 
+      // 8.2 M3: 如果退货使已完成订单重新打开（2→1），全额撤销提成
+      // 防止换货等场景下订单长期处于进行中而提成未被冲回
+      if (updatedOrder && updatedOrder.status === 1 && order.status === 2 && order.salespersonId) {
+        await this.commissionService.revokeOrderCommission(dto.orderId, manager);
+      }
+
       // 9. 退货后重算提成差额（必须在退货成本累加之后调用，确保 calcOrderProfit 获取到最新成本）
-      if (dto.refund && order.salespersonId) {
+      // P2: 仅在订单仍为已完成状态时重算；若 step 8.2 已全额撤销（2→1），不再触发差额计算
+      if (dto.refund && order.salespersonId && updatedOrder!.status === 2) {
         await this.commissionService.recalculateOrderCommission(
           order.id,
           refundAmountUsdStr!,
