@@ -937,7 +937,7 @@ export class SalesOrderService {
    * 产品成本 = SUM(shipment_item.totalCost) — CNY（FIFO 写入时已转 CNY）
    * 额外成本 = SUM(cost.amount_cny) — 预存 CNY
    * 博主佣金 = totalAmountCny × 佣金比例 / 100（CNY）
-   * 净额 = totalAmountCny - 博主佣金（CNY）
+   * 净额 = totalAmountCny - 博主佣金 - 已退款（CNY）
    * 销售利润 = 订单金额CNY - 博主佣金 - 已退款 - 产品成本CNY - 额外成本CNY
    * 利润率 = 销售利润 / 订单金额CNY × 100%
    *
@@ -990,17 +990,19 @@ export class SalesOrderService {
     const extraCostCny = parseFloat(extraCostResult?.totalCny || '0');
     const extraCostUsd = exchangeRate > 0 ? extraCostCny / exchangeRate : 0;
 
-    // ── 博主佣金 & 净额（使用订单金额 totalAmountCny 计算预期利润）──
+    // ── 博主佣金 & 已退款 & 净额 ──
     const totalAmountCny = parseFloat(order.totalAmountCny || '0');
     const commissionRate = parseFloat(order.bloggerCommissionRate || '0');
     const bloggerCommissionCny = totalAmountCny * commissionRate / 100;
-    const netAmountCny = totalAmountCny - bloggerCommissionCny;
     const bloggerCommissionUsd = exchangeRate > 0 ? bloggerCommissionCny / exchangeRate : 0;
-    const netAmountUsd = exchangeRate > 0 ? netAmountCny / exchangeRate : 0;
 
-    // ── 已退款金额（退货退款/仅退款产生的退款）──
+    // 已退款金额（退货退款/仅退款产生的退款）
     const refundedAmountCny = parseFloat(order.refundedAmountCny || '0');
     const refundedAmountUsd = exchangeRate > 0 ? refundedAmountCny / exchangeRate : 0;
+
+    // 净额 = 订单金额 - 博主佣金 - 已退款
+    const netAmountCny = totalAmountCny - bloggerCommissionCny - refundedAmountCny;
+    const netAmountUsd = exchangeRate > 0 ? netAmountCny / exchangeRate : 0;
 
     // ── 销售利润 & 利润率 ──
     const salesProfitCny = totalAmountCny - bloggerCommissionCny - refundedAmountCny - productCostCny - extraCostCny;
