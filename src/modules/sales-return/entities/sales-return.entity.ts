@@ -37,7 +37,7 @@ export class SalesReturn extends BaseEntity {
     name: 'return_type',
     type: 'tinyint',
     default: 1,
-    comment: '退货类型：1=退货退款（不补发），2=退货换货（需补发），3=仅退款（不退货）',
+    comment: '退货类型：1=退货退款（不补发），2=退货换货（需补发），3=仅退款（不退货），4=补发不退货（损坏等补发新货，不退回原货）',
   })
   returnType: number = 1;
 

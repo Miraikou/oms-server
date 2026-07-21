@@ -16,6 +16,7 @@ import { SalesReturnService } from './sales-return.service';
 import { SalesReturnController } from './sales-return.controller';
 import { SalesOrderModule } from '@/modules/sales-order/sales-order.module';
 import { PaymentModule } from '@/modules/payment/payment.module';
+import { InventoryModule } from '@/modules/inventory/inventory.module';
 import { RateModule } from '@/common/rate/rate.module';
 import { CommissionModule } from '@/modules/commission/commission.module';
 
@@ -40,6 +41,7 @@ import { CommissionModule } from '@/modules/commission/commission.module';
     ]),
     SalesOrderModule,
     PaymentModule,
+    InventoryModule,
     RateModule,
     CommissionModule,
   ],

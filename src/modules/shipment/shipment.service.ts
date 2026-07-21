@@ -10,6 +10,7 @@ import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.ent
 import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { Product } from '@/modules/product/entities/product.entity';
 import { SalesReturnItem } from '@/modules/sales-return/entities/sales-return-item.entity';
+import { SalesReturn } from '@/modules/sales-return/entities/sales-return.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
@@ -78,6 +79,23 @@ export class ShipmentService {
 			throw new BadRequestException('订单已结束，无法发货');
 		if (order.shipmentStatus === 3) {
 			throw new BadRequestException('订单已全部发货，无法再次发货');
+		}
+
+		// 补发发货单（type=2）前提校验：订单必须存在"补发不退货"(returnType=4)退货单，
+		// 防止把正常发货误标记为补发（补发明细销售金额按 0 计，误标会导致收入统计缺失）
+		const isReshipment = (dto.type || 1) === 2;
+		if (isReshipment) {
+			const reshipReturnCount = await this.dataSource
+				.createQueryBuilder()
+				.from(SalesReturn, 'r')
+				.where('r.order_id = :orderId', { orderId: dto.orderId })
+				.andWhere('r.return_type = 4')
+				.getCount();
+			if (reshipReturnCount === 0) {
+				throw new BadRequestException(
+					'该订单没有"补发不退货"记录，无法创建补发发货单，请先在客户退货中创建补发不退货单',
+				);
+			}
 		}
 
 		// 2. 校验每个明细的发货数量
@@ -176,6 +194,7 @@ export class ShipmentService {
 				trackingNo: dto.trackingNo,
 				shipmentDate: new Date(dto.shipmentDate),
 				status: 1,
+				type: isReshipment ? 2 : 1,
 				remark: dto.remark || null,
 			});
 			const savedShipment = await shipmentRepo.save(shipment);
@@ -193,16 +212,22 @@ export class ShipmentService {
 					orderCurrency === 'USD'
 						? orderItem.unitPriceUsd
 						: orderItem.unitPriceCny;
-				const unitPrices = computeDualUnitPrice(
-					originalUnitPrice,
-					orderCurrency,
-					orderRate,
-				);
-				const salesAmounts = computeDualAmounts(
-					shipQty * parseFloat(originalUnitPrice),
-					orderCurrency,
-					orderRate,
-				);
+				// 补发发货单不产生新收入：销售单价/销售金额按 0 计，毛利 = -成本，
+				// 真实反映补发是纯成本单据（避免按原单价显示导致误以为该单仍盈利）
+				const unitPrices = isReshipment
+					? { unitPriceUsd: '0.00', unitPriceCny: '0.00' }
+					: computeDualUnitPrice(
+							originalUnitPrice,
+							orderCurrency,
+							orderRate,
+						);
+				const salesAmounts = isReshipment
+					? { amountUsd: '0.00', amountCny: '0.00' }
+					: computeDualAmounts(
+							shipQty * parseFloat(originalUnitPrice),
+							orderCurrency,
+							orderRate,
+						);
 
 				// 创建发货明细
 				const shipmentItem = itemRepo.create({

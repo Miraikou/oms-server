@@ -3,6 +3,8 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  IsIn,
+  IsNumber,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -43,6 +45,16 @@ export class CreateShipmentDto {
   @IsString()
   @IsNotEmpty({ message: '发货日期不能为空' })
   shipmentDate: string;
+
+  @ApiPropertyOptional({
+    description: '发货类型：1=正常发货，2=补发（不退货补发）',
+    default: 1,
+  })
+  @IsOptional()
+  @IsNumber()
+  @IsIn([1, 2], { message: '发货类型必须为 1（正常发货）或 2（补发）' })
+  @Type(() => Number)
+  type?: number = 1;
 
   @ApiPropertyOptional({ description: '备注' })
   @IsString()

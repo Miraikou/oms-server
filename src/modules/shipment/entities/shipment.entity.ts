@@ -44,4 +44,11 @@ export class Shipment extends BaseEntity {
 
   @Column({ type: 'tinyint', default: 1, comment: '状态：1=已发货' })
   status: number = 1;
+
+  @Column({
+    type: 'tinyint',
+    default: 1,
+    comment: '发货类型：1=正常发货，2=补发（不退货补发，销售金额按 0 计）',
+  })
+  type: number = 1;
 }
