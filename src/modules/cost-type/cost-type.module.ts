@@ -18,6 +18,7 @@ export class CostTypeModule implements OnModuleInit {
   async onModuleInit() {
     const defaults = [
       '其他成本',
+      '客户退货成本',
       '扣关成本',
       '营销成本',
       '广告成本',
