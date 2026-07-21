@@ -206,10 +206,10 @@ export class SalesReturnService {
         await manager.save(returnItem);
 
         // 4. 恢复库存到原批次（仅退款不退货，跳过库存恢复）
-        if (dto.restoreInventory === 1 && (dto.returnType || 1) !== 3) {
+        if (dto.restoreInventory === 1 && dto.returnType !== 3) {
           // 退货换货(type=2)：退回的货注定要补发，恢复到冻结库存（重新占用）
           // 退货退款(type=1)：货回通用库存，恢复到可用库存
-          const isExchange = (dto.returnType || 1) === 2;
+          const isExchange = dto.returnType === 2;
           const shipBatches = await manager.find(ShipmentItemBatch, {
             where: { shipmentItemId: dtoItem.shipmentItemId },
             order: { id: 'ASC' },
@@ -250,20 +250,21 @@ export class SalesReturnService {
               const beforeFrozen = parseFloat(batch.frozenQuantity);
 
               if (isExchange) {
-                // M4: 退货换货也恢复到可用库存（补发走正常 freeze→deduct 路径）
-                // 若恢复到 frozen，补发无法消费该冻结量（shipment 从 available 冻结），导致库存搁浅
-                batch.availableQuantity = (beforeAvailable + toRestore).toFixed(4);
+                // 退货换货：货退回后仍需补发，恢复到【冻结库存】重新建立补发预留。
+                // 发货走 deductFrozen（从冻结池按 FIFO 扣减、不区分订单归属），若不冻结回补发预留池，
+                // 补发会占用其他订单的冻结量，导致其他订单发货时"冻结库存不足"。
+                batch.frozenQuantity = (beforeFrozen + toRestore).toFixed(4);
                 batch.stockQuantity = (
                   parseFloat(batch.stockQuantity) + toRestore
                 ).toFixed(4);
-                const newAvailable = beforeAvailable + toRestore;
-                if (beforeFrozen > 0 && newAvailable > 0) {
+                const newFrozen = beforeFrozen + toRestore;
+                if (newFrozen > 0 && beforeAvailable > 0) {
                   batch.freezeStatus = 2; // 部分冻结
-                } else if (beforeFrozen <= 0) {
-                  batch.freezeStatus = 1; // 无冻结
+                } else if (newFrozen > 0) {
+                  batch.freezeStatus = 3; // 全部冻结
                 }
               } else {
-                // 退货退款：恢复到可用库存，并重算冻结状态
+                // 退货退款：需求减少（refundReturned 增加），货回通用库存，恢复到可用库存
                 batch.availableQuantity = (beforeAvailable + toRestore).toFixed(
                   4,
                 );
@@ -303,10 +304,16 @@ export class SalesReturnService {
                 );
               }
               if (inventory) {
-                // M4: 退货换货与退货退款均恢复到可用库存
-                inventory.availableQuantity = (
-                  parseFloat(inventory.availableQuantity) + toRestore
-                ).toFixed(4);
+                // 换货恢复到冻结库存（补发预留），退款恢复到可用库存；实际库存均增加
+                if (isExchange) {
+                  inventory.frozenQuantity = (
+                    parseFloat(inventory.frozenQuantity) + toRestore
+                  ).toFixed(4);
+                } else {
+                  inventory.availableQuantity = (
+                    parseFloat(inventory.availableQuantity) + toRestore
+                  ).toFixed(4);
+                }
                 inventory.stockQuantity = (
                   parseFloat(inventory.stockQuantity) + toRestore
                 ).toFixed(4);
@@ -329,9 +336,9 @@ export class SalesReturnService {
                   flowCurrency: sb.currency || 'CNY',
                   exchangeRate: sb.exchangeRate || this.rateService.getDefaultRate(),
                   beforeAvailable: beforeAvailable.toFixed(4),
-                  afterAvailable: (beforeAvailable + toRestore).toFixed(4),
+                  afterAvailable: (isExchange ? beforeAvailable : beforeAvailable + toRestore).toFixed(4),
                   beforeFrozen: beforeFrozen.toFixed(4),
-                  afterFrozen: beforeFrozen.toFixed(4),
+                  afterFrozen: (isExchange ? beforeFrozen + toRestore : beforeFrozen).toFixed(4),
                 });
                 await manager.save(flow);
               }
