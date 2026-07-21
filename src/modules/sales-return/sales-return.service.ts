@@ -676,6 +676,9 @@ export class SalesReturnService {
     if (query.orderId) {
       qb.andWhere('r.orderId = :orderId', { orderId: query.orderId });
     }
+    if (query.orderNo) {
+      qb.andWhere('o.orderNo = :orderNo', { orderNo: query.orderNo });
+    }
     if (query.startDate) {
       qb.andWhere('r.returnDate >= :startDate', { startDate: query.startDate });
     }

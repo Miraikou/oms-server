@@ -92,6 +92,11 @@ export class QuerySalesReturnDto extends PaginationParamsDto {
   @IsOptional()
   orderId?: string;
 
+  @ApiPropertyOptional({ description: '订单号' })
+  @IsString()
+  @IsOptional()
+  orderNo?: string;
+
   @ApiPropertyOptional({ description: '开始日期' })
   @IsString()
   @IsOptional()
