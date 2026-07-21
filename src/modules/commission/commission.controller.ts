@@ -13,6 +13,7 @@ import {
 	SettleMonthDto,
 	QueryLedgerDto,
 	QuerySettlementDto,
+	QuerySummaryDto,
 	ConfirmSettlementDto,
 } from './dto/commission.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
@@ -68,13 +69,11 @@ export class CommissionController {
 	/**
 	 * 提成汇总统计
 	 * GET /api/commission/summary
+	 * 支持与提成分录列表相同的筛选条件
 	 */
 	@Get('summary')
-	async getSummary(
-		@Query('startDate') startDate?: string,
-		@Query('endDate') endDate?: string,
-	) {
-		return this.commissionService.getSummary(startDate, endDate);
+	async getSummary(@Query() query: QuerySummaryDto) {
+		return this.commissionService.getSummary(query);
 	}
 
 	/**

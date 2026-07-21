@@ -13,6 +13,7 @@ import { snowflake } from '@/common/utils/snowflake';
 import type {
 	QueryLedgerDto,
 	QuerySettlementDto,
+	QuerySummaryDto,
 } from './dto/commission.dto';
 
 /**
@@ -700,36 +701,64 @@ export class CommissionService {
 
 	/**
 	 * 提成汇总统计
+	 * 支持与提成分录列表相同的筛选条件（销售员/类型/状态/结算月份/日期范围），
+	 * 所有条件统一应用到 计提/冲回/待结算 三条聚合查询，保证统计与列表同口径。
 	 */
-	async getSummary(startDate?: string, endDate?: string) {
+	async getSummary(query: QuerySummaryDto) {
+		const conditions: string[] = [];
 		const params: unknown[] = [];
-		let dateFilter = '';
-		if (startDate && endDate) {
-			dateFilter = 'AND created_time >= ? AND created_time <= ?';
-			params.push(startDate, endDate);
+
+		if (query.salespersonId) {
+			conditions.push('salesperson_id = ?');
+			params.push(query.salespersonId);
+		}
+		if (query.type !== undefined) {
+			conditions.push('type = ?');
+			params.push(query.type);
+		}
+		if (query.status !== undefined) {
+			conditions.push('status = ?');
+			params.push(query.status);
+		}
+		if (query.settleMonth) {
+			conditions.push('settle_month = ?');
+			params.push(query.settleMonth);
+		}
+		if (query.startDate) {
+			conditions.push('created_time >= ?');
+			params.push(query.startDate);
+		}
+		if (query.endDate) {
+			conditions.push('created_time <= ?');
+			params.push(query.endDate);
 		}
 
-		// 当月计提总额
+		const where = conditions.length
+			? `AND ${conditions.join(' AND ')}`
+			: '';
+
+		// 计提总额（type=1）
 		const earned = await this.dataSource.query(
 			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
 			        COALESCE(SUM(commission_amount_usd), 0) AS totalUsd
-			 FROM commission_ledger WHERE type = 1 ${dateFilter}`,
+			 FROM commission_ledger WHERE type = 1 ${where}`,
 			params,
 		);
 
-		// 当月冲回总额（H2: 用 -SUM 替代 SUM(ABS)，与核心账本逻辑一致）
+		// 冲回总额（H2: 用 -SUM 替代 SUM(ABS)，与核心账本逻辑一致）
 		const clawback = await this.dataSource.query(
 			`SELECT COALESCE(-SUM(commission_amount_cny), 0) AS total,
 			        COALESCE(-SUM(commission_amount_usd), 0) AS totalUsd
-			 FROM commission_ledger WHERE type = 2 ${dateFilter}`,
+			 FROM commission_ledger WHERE type = 2 ${where}`,
 			params,
 		);
 
-		// 待结算总额（所有未结算的）
+		// 待结算总额（status=1，同样遵循筛选条件）
 		const pending = await this.dataSource.query(
 			`SELECT COALESCE(SUM(commission_amount_cny), 0) AS total,
 			        COALESCE(SUM(commission_amount_usd), 0) AS totalUsd
-			 FROM commission_ledger WHERE status = 1`,
+			 FROM commission_ledger WHERE status = 1 ${where}`,
+			params,
 		);
 
 		const monthEarned = parseFloat(earned[0]?.total || '0');

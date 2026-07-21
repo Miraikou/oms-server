@@ -83,6 +83,38 @@ export class QuerySettlementDto {
 }
 
 /**
+ * 提成汇总统计查询
+ * 与提成分录列表使用相同的筛选口径（不含分页）
+ */
+export class QuerySummaryDto {
+	@IsOptional()
+	@IsString()
+	salespersonId?: string;
+
+	@IsOptional()
+	@IsNumber()
+	@Type(() => Number)
+	type?: number; // 1=计提 2=冲回
+
+	@IsOptional()
+	@IsNumber()
+	@Type(() => Number)
+	status?: number; // 1=待结算 2=已结算
+
+	@IsOptional()
+	@IsString()
+	settleMonth?: string; // YYYY-MM
+
+	@IsOptional()
+	@IsString()
+	startDate?: string;
+
+	@IsOptional()
+	@IsString()
+	endDate?: string;
+}
+
+/**
  * 确认发放
  */
 export class ConfirmSettlementDto {
