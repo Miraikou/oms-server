@@ -458,6 +458,34 @@ export class CommissionService {
 			throw new BadRequestException('月份格式错误，应为 YYYY-MM');
 		}
 
+		// 前置校验1：不能结算当月或未来月份（当月分录可能仍在产生）
+		const now = new Date();
+		const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+		if (month >= currentMonth) {
+			throw new BadRequestException('当月尚未结束，不能结算');
+		}
+
+		// 前置校验2：前序月份必须已结算（防止跳月导致负数结余滚入错位）
+		// YYYY-MM 字符串比较天然支持跨年（'2026-12' < '2027-01'）
+		const unsettled = await this.dataSource.query(
+			`SELECT DISTINCT DATE_FORMAT(l.created_time, '%Y-%m') AS m
+			 FROM commission_ledger l
+			 WHERE DATE_FORMAT(l.created_time, '%Y-%m') < ?
+			   AND NOT EXISTS (
+			     SELECT 1 FROM commission_settlement s
+			     WHERE s.settle_month = DATE_FORMAT(l.created_time, '%Y-%m')
+			   )
+			 ORDER BY m
+			 LIMIT 1`,
+			[month],
+		);
+		if (unsettled.length > 0) {
+			const [year, mon] = (unsettled[0].m as string).split('-');
+			throw new BadRequestException(
+				`${year}年${mon}月还未结算，请先结算前面月份`,
+			);
+		}
+
 		return this.dataSource.transaction(async (manager: EntityManager) => {
 			const settlementRepo = manager.getRepository(CommissionSettlement);
 
