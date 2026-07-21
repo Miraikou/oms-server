@@ -71,6 +71,11 @@ export class QueryShipmentDto extends PaginationParamsDto {
   @IsOptional()
   orderId?: string;
 
+  @ApiPropertyOptional({ description: '订单号' })
+  @IsString()
+  @IsOptional()
+  orderNo?: string;
+
   @ApiPropertyOptional({ description: '快递公司 ID' })
   @IsString()
   @IsOptional()
