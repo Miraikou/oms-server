@@ -96,6 +96,14 @@ export class SalesOrderController {
     return this.orderService.cancel(id);
   }
 
+  @Post(':id/terminate')
+  @RequirePermission('order:terminate')
+  @UseGuards(PermissionGuard)
+  @ApiOperation({ summary: '终止订单（部分发货后弃购未发部分，解冻+退款+完成）' })
+  terminate(@Param('id') id: string) {
+    return this.orderService.terminate(id);
+  }
+
   // ========== 订单成本接口 ==========
 
   @Get(':orderId/costs')

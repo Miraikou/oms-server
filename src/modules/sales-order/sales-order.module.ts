@@ -18,6 +18,7 @@ import { SalesOrderController } from './sales-order.controller';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
 import { RateModule as CommonRateModule } from '@/common/rate/rate.module';
 import { DashboardModule } from '@/modules/dashboard/dashboard.module';
+import { CommissionModule } from '@/modules/commission/commission.module';
 
 /**
  * 销售订单模块
@@ -42,6 +43,7 @@ import { DashboardModule } from '@/modules/dashboard/dashboard.module';
     InventoryModule,
     CommonRateModule,
     DashboardModule,
+    CommissionModule,
   ],
   controllers: [SalesOrderController],
   providers: [SalesOrderService, SalesOrderCostService],

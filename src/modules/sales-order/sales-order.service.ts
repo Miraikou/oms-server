@@ -23,6 +23,7 @@ import type {
   QuerySalesOrderDto,
 } from './dto/sales-order.dto';
 import { RateService } from '@/common/rate/rate.service';
+import { CommissionService } from '@/modules/commission/commission.service';
 
 /**
  * 订单服务 ⭐
@@ -57,6 +58,7 @@ export class SalesOrderService {
     private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
+    private readonly commissionService: CommissionService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -778,6 +780,197 @@ export class SalesOrderService {
         refundableAmount: order.receivedAmountUsd,
         refundableAmountCny: order.receivedAmountCny,
       };
+    });
+  }
+
+  /**
+   * 终止订单（部分发货后客户弃购未发部分）⭐
+   * 适用场景：订单已部分发货，客户不再需要剩余未发的货品
+   * - 仅允许 status=1（进行中）且 shipmentStatus=2（部分发货）
+   * - 逐明细：保留量 = max(0, 已发 - 已退)，弃购量 = 剩余待发量
+   * - 解冻弃购量对应的冻结库存（释放回可用库存，不占用其他订单冻结额度）
+   * - 收缩明细数量到保留量，同步更新明细金额与订单总金额
+   * - 若已收 > 新总额：事务内生成退款记录 Payment(type=2) 并扣减已收金额
+   *   注意：不调用 increaseStandaloneRefundedAmount —— 总金额已收缩，
+   *   再记直接退款会在利润计算中双重扣减
+   * - recalculateStatus → 满足"全部发货 + 已收款"则订单完成 → 计提提成（同发货模式）
+   *
+   * 加锁顺序与发货/退货一致：SalesOrderItem → SalesOrder → Inventory，防止 ABBA 死锁
+   * 整个操作在事务中完成，保证原子性
+   */
+  async terminate(id: string): Promise<{
+    order: SalesOrder;
+    cancelledItems: Array<{
+      productId: string;
+      productName: string;
+      quantity: number;
+    }>;
+    refundPayment: Payment | null;
+  }> {
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const itemRepo = manager.getRepository(SalesOrderItem);
+
+      // 1. 先锁定订单明细（按 id 排序，与发货/退货加锁顺序一致，防 ABBA 死锁）
+      const rawItems = await itemRepo.find({ where: { orderId: id } });
+      if (rawItems.length === 0) {
+        throw new BadRequestException('订单不存在或无明细');
+      }
+      const sorted = [...rawItems].sort((a, b) => a.id.localeCompare(b.id));
+      const items: SalesOrderItem[] = [];
+      for (const it of sorted) {
+        const locked = await manager
+          .createQueryBuilder(SalesOrderItem, 'oi')
+          .setLock('pessimistic_write')
+          .where('oi.id = :id', { id: it.id })
+          .getOne();
+        if (locked) items.push(locked);
+      }
+
+      // 2. 再锁定订单，重验状态（消除 TOCTOU 窗口）
+      const order = await manager
+        .createQueryBuilder(SalesOrder, 'o')
+        .setLock('pessimistic_write')
+        .where('o.id = :id', { id })
+        .getOne();
+      if (!order) throw new BadRequestException('订单不存在');
+      if (order.status === 2)
+        throw new BadRequestException('订单已完成，无需终止');
+      if (order.status === 3)
+        throw new BadRequestException('订单已取消，无需终止');
+      if (order.shipmentStatus !== 2)
+        throw new BadRequestException(
+          '仅部分发货的订单可以终止：待发货订单请使用取消，全部发货订单无需终止',
+        );
+
+      // 3. 逐明细：计算弃购量 → 解冻 → 收缩数量
+      const cancelledItems: Array<{
+        productId: string;
+        productName: string;
+        quantity: number;
+      }> = [];
+      let hasCancellation = false;
+      for (const item of items) {
+        const qty = parseFloat(item.quantity);
+        const shipped = parseFloat(item.shippedQuantity || '0');
+        const returned = parseFloat(item.returnedQuantity || '0');
+        const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
+        const effectiveQty = qty - refundReturned; // 有效需求量
+        const inCustomerHands = Math.max(0, shipped - returned); // 客户持有量
+        const remaining = effectiveQty - inCustomerHands; // 剩余待发（弃购）量
+        if (remaining <= 0) continue;
+
+        hasCancellation = true;
+
+        // 解冻弃购量（与取消订单解冻公式一致，对退货换货场景同样正确）
+        await this.fifoService.unfreeze(
+          item.productId,
+          item.productModelId,
+          remaining,
+          id,
+          manager,
+        );
+
+        // 收缩数量到保留量：新数量 = 保留量 + 退款退货量（保持有效需求量 = 客户持有量）
+        const newQty = inCustomerHands + refundReturned;
+        item.quantity = newQty.toFixed(4);
+        item.amountUsd = (newQty * parseFloat(item.unitPriceUsd)).toFixed(2);
+        item.amountCny = (newQty * parseFloat(item.unitPriceCny)).toFixed(2);
+        await itemRepo.save(item);
+
+        cancelledItems.push({
+          productId: item.productId,
+          productName: '',
+          quantity: remaining,
+        });
+      }
+
+      if (!hasCancellation) {
+        throw new BadRequestException('该订单没有可终止的未发货数量');
+      }
+
+      // 填充商品名称（用于备注审计）
+      const productIds = [...new Set(cancelledItems.map((c) => c.productId))];
+      const products = await manager
+        .getRepository(Product)
+        .find({ where: { id: In(productIds) } });
+      const nameMap = new Map(products.map((p) => [p.id, p.productName]));
+      for (const c of cancelledItems) {
+        c.productName = nameMap.get(c.productId) || c.productId;
+      }
+
+      // 4. 重算订单总金额（收缩后的明细金额之和）
+      let newTotalUsd = 0;
+      let newTotalCny = 0;
+      for (const item of items) {
+        newTotalUsd += parseFloat(item.amountUsd);
+        newTotalCny += parseFloat(item.amountCny);
+      }
+      order.totalAmountUsd = newTotalUsd.toFixed(2);
+      order.totalAmountCny = newTotalCny.toFixed(2);
+
+      // 5. 退款：已收超出新总额的部分退还（按订单币种比较，避免汇率精度漂移）
+      const currency = order.currency || 'USD';
+      const exchangeRate = parseFloat(order.exchangeRate || '7');
+      const receivedOrder = parseFloat(
+        currency === 'CNY' ? order.receivedAmountCny : order.receivedAmountUsd,
+      );
+      const newTotalOrder = currency === 'CNY' ? newTotalCny : newTotalUsd;
+
+      let refundPayment: Payment | null = null;
+      const overpaid = receivedOrder - newTotalOrder;
+      if (overpaid > 0.009) {
+        const paymentNo = await this.sequenceService.generate('TK');
+        const refundDual = computeDualAmounts(overpaid, currency, exchangeRate);
+        refundPayment = manager.getRepository(Payment).create({
+          id: snowflake.nextId(),
+          paymentNo,
+          type: 2,
+          orderId: id,
+          paymentDate: new Date(),
+          amountUsd: refundDual.amountUsd,
+          currency,
+          exchangeRate: exchangeRate.toFixed(4),
+          amountCny: refundDual.amountCny,
+          remark: '订单终止退还超收金额',
+        });
+        await manager.getRepository(Payment).save(refundPayment);
+
+        // 扣减已收金额至新总额（不记 standaloneRefundedAmount，避免与已收缩总额双重扣减）
+        order.receivedAmountUsd = Math.max(
+          0,
+          parseFloat(order.receivedAmountUsd || '0') -
+            parseFloat(refundDual.amountUsd),
+        ).toFixed(2);
+        order.receivedAmountCny = Math.max(
+          0,
+          parseFloat(order.receivedAmountCny || '0') -
+            parseFloat(refundDual.amountCny),
+        ).toFixed(2);
+      }
+
+      // 6. 记录弃购明细到备注（保留审计轨迹）
+      const cancelDesc = cancelledItems
+        .map((c) => `${c.productName}×${c.quantity}`)
+        .join('、');
+      order.remark = `${order.remark ? order.remark + '；' : ''}客户弃购终止：${cancelDesc}`;
+      await manager.save(order);
+
+      // 7. 重算三维状态（满足"全部发货 + 已收款"→ 已完成）
+      await this.recalculateStatus(id, manager);
+
+      // 8. 若订单完成则计提提成（同发货模块模式）
+      const updatedOrder = await manager
+        .getRepository(SalesOrder)
+        .findOne({ where: { id } });
+      if (updatedOrder && updatedOrder.status === 2 && updatedOrder.salespersonId) {
+        await this.commissionService.accrueOrderCommission(id, manager);
+      }
+
+      this.logger.log(
+        `订单终止: ${order.orderNo}, 弃购 ${cancelledItems.length} 项, 退款: ${refundPayment ? refundPayment.paymentNo : '无'}`,
+      );
+
+      return { order: updatedOrder || order, cancelledItems, refundPayment };
     });
   }
 

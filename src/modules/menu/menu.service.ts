@@ -43,6 +43,7 @@ const DEFAULT_MENUS = [
 					{ name: '编辑', permission: 'order:edit' },
 					{ name: '删除', permission: 'order:delete' },
 					{ name: '取消', permission: 'order:cancel' },
+					{ name: '终止', permission: 'order:terminate' },
 					{ name: '导入', permission: 'order:import' },
 					{ name: '导出', permission: 'order:export' },
 					{ name: '查看全局数据', permission: 'order:view-all' },
