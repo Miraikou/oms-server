@@ -96,42 +96,10 @@ const DEFAULT_MENUS = [
 		],
 	},
 	{
-		menuName: '商品管理',
-		menuType: 0,
-		icon: 'AppstoreOutlined',
-		sortNo: 5,
-		children: [
-			{
-				menuName: '商品管理',
-				menuType: 1,
-				path: '/products',
-				sortNo: 1,
-				buttons: [
-					{ name: '查询', permission: 'product:query' },
-					{ name: '新增', permission: 'product:create' },
-					{ name: '编辑', permission: 'product:edit' },
-					{ name: '导入', permission: 'product:import' },
-					{ name: '导出', permission: 'product:export' },
-				],
-			},
-			{
-				menuName: '商品分类',
-				menuType: 1,
-				path: '/categories',
-				sortNo: 2,
-				buttons: [
-					{ name: '查询', permission: 'category:query' },
-					{ name: '新增', permission: 'category:create' },
-					{ name: '编辑', permission: 'category:edit' },
-				],
-			},
-		],
-	},
-	{
 		menuName: '采购管理',
 		menuType: 0,
 		icon: 'ShopOutlined',
-		sortNo: 6,
+		sortNo: 2,
 		children: [
 			{
 				menuName: '采购订单',
@@ -190,7 +158,7 @@ const DEFAULT_MENUS = [
 		menuName: '库存管理',
 		menuType: 0,
 		icon: 'InboxOutlined',
-		sortNo: 7,
+		sortNo: 3,
 		children: [
 			{
 				menuName: '当前库存',
@@ -226,7 +194,7 @@ const DEFAULT_MENUS = [
 		menuName: '财务管理',
 		menuType: 0,
 		icon: 'AccountBookOutlined',
-		sortNo: 8,
+		sortNo: 4,
 		children: [
 			{
 				menuName: '提成管理',
@@ -255,10 +223,42 @@ const DEFAULT_MENUS = [
 		],
 	},
 	{
+		menuName: '商品管理',
+		menuType: 0,
+		icon: 'AppstoreOutlined',
+		sortNo: 5,
+		children: [
+			{
+				menuName: '商品管理',
+				menuType: 1,
+				path: '/products',
+				sortNo: 1,
+				buttons: [
+					{ name: '查询', permission: 'product:query' },
+					{ name: '新增', permission: 'product:create' },
+					{ name: '编辑', permission: 'product:edit' },
+					{ name: '导入', permission: 'product:import' },
+					{ name: '导出', permission: 'product:export' },
+				],
+			},
+			{
+				menuName: '商品分类',
+				menuType: 1,
+				path: '/categories',
+				sortNo: 2,
+				buttons: [
+					{ name: '查询', permission: 'category:query' },
+					{ name: '新增', permission: 'category:create' },
+					{ name: '编辑', permission: 'category:edit' },
+				],
+			},
+		],
+	},
+	{
 		menuName: '基础资料',
 		menuType: 0,
 		icon: 'DatabaseOutlined',
-		sortNo: 9,
+		sortNo: 6,
 		children: [
 			{
 				menuName: '快递公司',
@@ -327,7 +327,7 @@ const DEFAULT_MENUS = [
 		menuName: '系统管理',
 		menuType: 0,
 		icon: 'SettingOutlined',
-		sortNo: 10,
+		sortNo: 7,
 		children: [
 			{
 				menuName: '用户管理',
