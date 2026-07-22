@@ -231,8 +231,8 @@ describe('SalesOrderService', () => {
       const result = await service.findAll({
         orderNo: 'SO',
         status: 1,
-        shipmentStatus: 2,
-        paymentStatus: 1,
+        shipmentStatus: [2],
+        paymentStatus: [1],
         salespersonId: '1001',
         startDate: '2026-01-01',
         endDate: '2026-12-31',

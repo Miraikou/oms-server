@@ -427,13 +427,13 @@ export class SalesOrderService {
     if (query.status !== undefined) {
       qb.andWhere('so.status = :status', { status: query.status });
     }
-    if (query.shipmentStatus !== undefined) {
-      qb.andWhere('so.shipmentStatus = :shipmentStatus', {
+    if (query.shipmentStatus?.length) {
+      qb.andWhere('so.shipmentStatus IN (:...shipmentStatus)', {
         shipmentStatus: query.shipmentStatus,
       });
     }
-    if (query.paymentStatus !== undefined) {
-      qb.andWhere('so.paymentStatus = :paymentStatus', {
+    if (query.paymentStatus?.length) {
+      qb.andWhere('so.paymentStatus IN (:...paymentStatus)', {
         paymentStatus: query.paymentStatus,
       });
     }

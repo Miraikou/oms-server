@@ -8,7 +8,7 @@ import {
   ValidateNested,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 
@@ -218,6 +218,12 @@ export class UpdateSalesOrderDto {
   costs?: CreateSalesOrderCostDto[];
 }
 
+/** 将查询参数归一化为数字数组（兼容单值与数组两种传参形式） */
+function toNumberArray(value: unknown): number[] | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return (Array.isArray(value) ? value : [value]).map((v) => Number(v));
+}
+
 /** 订单查询 DTO */
 export class QuerySalesOrderDto extends PaginationParamsDto {
   @ApiPropertyOptional({ description: '订单编号（模糊）' })
@@ -231,17 +237,19 @@ export class QuerySalesOrderDto extends PaginationParamsDto {
   @IsOptional()
   status?: number;
 
-  @ApiPropertyOptional({ description: '发货状态' })
-  @Type(() => Number)
-  @IsInt()
+  @ApiPropertyOptional({ description: '发货状态（支持多选）', type: [Number] })
+  @Transform(({ value }) => toNumberArray(value))
+  @IsArray()
+  @IsInt({ each: true })
   @IsOptional()
-  shipmentStatus?: number;
+  shipmentStatus?: number[];
 
-  @ApiPropertyOptional({ description: '收款状态' })
-  @Type(() => Number)
-  @IsInt()
+  @ApiPropertyOptional({ description: '收款状态（支持多选）', type: [Number] })
+  @Transform(({ value }) => toNumberArray(value))
+  @IsArray()
+  @IsInt({ each: true })
   @IsOptional()
-  paymentStatus?: number;
+  paymentStatus?: number[];
 
   @ApiPropertyOptional({ description: '销售员 ID' })
   @IsString()
