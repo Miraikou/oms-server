@@ -179,12 +179,14 @@ export class DashboardService {
              - COALESCE(ec.cost_cny, 0)
            ), 0) AS totalProfitCny,
            COALESCE(SUM(
-             so.total_amount_usd
-             - so.total_amount_usd * COALESCE(so.blogger_commission_rate, 0) / 100
-             - COALESCE(so.refunded_amount_usd, 0)
-             - COALESCE(so.standalone_refunded_amount_usd, 0)
-             - COALESCE(pc.cost_usd, 0)
-             - COALESCE(ec.cost_usd, 0)
+             CASE WHEN so.exchange_rate > 0 THEN (
+               so.total_amount_cny
+               - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+               - COALESCE(so.refunded_amount_cny, 0)
+               - COALESCE(so.standalone_refunded_amount_cny, 0)
+               - COALESCE(pc.cost_cny, 0)
+               - COALESCE(ec.cost_cny, 0)
+             ) / so.exchange_rate ELSE 0 END
            ), 0) AS totalProfitUsd
          FROM sales_order so
          LEFT JOIN (
@@ -311,8 +313,8 @@ export class DashboardService {
         [...dateParams, ...spParams],
       ),
       this.dataSource.query(
-        `SELECT COALESCE(SUM(ABS(commission_amount_cny)), 0) AS total,
-                COALESCE(SUM(ABS(commission_amount_usd)), 0) AS totalUsd
+        `SELECT COALESCE(-SUM(commission_amount_cny), 0) AS total,
+                COALESCE(-SUM(commission_amount_usd), 0) AS totalUsd
          FROM commission_ledger WHERE type = 2 ${dateFilter} ${spFilter}`,
         [...dateParams, ...spParams],
       ),
@@ -393,12 +395,14 @@ export class DashboardService {
                 - COALESCE(ec.cost_cny, 0)
               ), 0) AS profitCny,
               COALESCE(SUM(
-                so.total_amount_usd
-                - so.total_amount_usd * COALESCE(so.blogger_commission_rate, 0) / 100
-                - COALESCE(so.refunded_amount_usd, 0)
-                - COALESCE(so.standalone_refunded_amount_usd, 0)
-                - COALESCE(pc.cost_usd, 0)
-                - COALESCE(ec.cost_usd, 0)
+                CASE WHEN so.exchange_rate > 0 THEN (
+                  so.total_amount_cny
+                  - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+                  - COALESCE(so.refunded_amount_cny, 0)
+                  - COALESCE(so.standalone_refunded_amount_cny, 0)
+                  - COALESCE(pc.cost_cny, 0)
+                  - COALESCE(ec.cost_cny, 0)
+                ) / so.exchange_rate ELSE 0 END
               ), 0) AS profitUsd
        FROM sales_order so
        LEFT JOIN (
@@ -760,13 +764,15 @@ export class DashboardService {
              - COALESCE(ec.cost_cny, 0)
            ), 0) AS profitCny,
            COALESCE(SUM(
-             so.total_amount_cny
-             - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
-             - COALESCE(so.refunded_amount_cny, 0)
-             - COALESCE(so.standalone_refunded_amount_cny, 0)
-             - COALESCE(pc.cost_cny, 0)
-             - COALESCE(ec.cost_cny, 0)
-           ) / 1, 0) AS profitUsd
+             CASE WHEN so.exchange_rate > 0 THEN (
+               so.total_amount_cny
+               - so.total_amount_cny * COALESCE(so.blogger_commission_rate, 0) / 100
+               - COALESCE(so.refunded_amount_cny, 0)
+               - COALESCE(so.standalone_refunded_amount_cny, 0)
+               - COALESCE(pc.cost_cny, 0)
+               - COALESCE(ec.cost_cny, 0)
+             ) / so.exchange_rate ELSE 0 END
+           ), 0) AS profitUsd
          FROM sales_order so
          LEFT JOIN (
            SELECT s.order_id, SUM(si.total_cost_cny) AS cost_cny
@@ -814,11 +820,9 @@ export class DashboardService {
       };
     });
 
-    // 预估利润（CNY 优先，USD 由汇率派生）
+    // 预估利润（CNY 为本币，USD 已在 SQL 中按逐单 CNY÷订单汇率派生，与 getOverview 口径一致）
     const profitCny = getNum(profitRows[0], 'profitCny');
-    // 使用加权平均汇率派生 USD 利润
-    const avgRate = totalAmountCny > 0 ? totalAmountCny / (totalAmountUsd || 1) : 7;
-    const profitUsd = avgRate > 0 ? profitCny / avgRate : 0;
+    const profitUsd = getNum(profitRows[0], 'profitUsd');
 
     return {
       orderCount: getInt(row, 'orderCount'),
