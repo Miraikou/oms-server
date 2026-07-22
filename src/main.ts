@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -9,7 +10,10 @@ import { UserContextInterceptor } from './common/interceptors/user-context.inter
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Express 5 默认 query parser 为 'simple'（node querystring），不支持 a[]=1&a[]=2 数组语法，
+  // 括号会被当作字面键名（'status[]'）导致 DTO 取不到值；恢复 'extended'（qs）以支持数组查询参数
+  app.set('query parser', 'extended');
   const configService = app.get(ConfigService);
 
   // 全局 API 前缀
