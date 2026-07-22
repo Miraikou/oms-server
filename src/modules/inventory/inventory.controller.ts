@@ -16,6 +16,7 @@ import { InventoryFlow } from './entities/inventory-flow.entity';
 import { Product } from '@/modules/product/entities/product.entity';
 import { ProductModel } from '@/modules/product/entities/product-model.entity';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SystemConfigService } from '@/modules/system-config/system-config.service';
 import { QueryInventoryDto, QueryInventoryTreeDto } from './dto/inventory-adjustment.dto';
 
 @ApiTags('库存管理')
@@ -34,6 +35,7 @@ export class InventoryController {
     private readonly productRepo: Repository<Product>,
     @InjectRepository(ProductModel)
     private readonly productModelRepo: Repository<ProductModel>,
+    private readonly systemConfigService: SystemConfigService,
   ) {}
 
   @Get()
@@ -296,11 +298,17 @@ export class InventoryController {
   @Get('warnings')
   @ApiOperation({ summary: '库存预警（低库存商品）' })
   async getWarnings() {
+    // 混合阈值：优先用每条记录的 minimum_stock（>0 时），否则回退到全局 LOW_STOCK_WARNING
+    const lowStockRaw =
+      await this.systemConfigService.getByKey('LOW_STOCK_WARNING');
+    const lowStock = parseFloat(lowStockRaw || '0') || 0;
+    const effective = `CASE WHEN CAST(inv.minimum_stock AS DECIMAL(18,4)) > 0 THEN CAST(inv.minimum_stock AS DECIMAL(18,4)) ELSE :lowStock END`;
     const items = await this.inventoryRepo
       .createQueryBuilder('inv')
-      .where('inv.availableQuantity <= inv.minimumStock')
-      .andWhere('inv.minimumStock > 0')
-      .orderBy('inv.availableQuantity', 'ASC')
+      .where(`CAST(inv.available_quantity AS DECIMAL(18,4)) <= ${effective}`)
+      .andWhere(`${effective} > 0`)
+      .setParameter('lowStock', lowStock)
+      .orderBy('inv.available_quantity', 'ASC')
       .getMany();
     return items;
   }

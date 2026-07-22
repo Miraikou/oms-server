@@ -15,6 +15,7 @@ import { InventoryBatchController } from './inventory-batch.controller';
 import { InventoryFlowController } from './inventory-flow.controller';
 import { InventoryAdjustmentController } from './inventory-adjustment.controller';
 import { RateModule } from '@/common/rate/rate.module';
+import { SystemConfigModule } from '@/modules/system-config/system-config.module';
 
 /**
  * 库存管理模块
@@ -32,6 +33,7 @@ import { RateModule } from '@/common/rate/rate.module';
       ProductModel,
     ]),
     RateModule,
+    SystemConfigModule,
   ],
   controllers: [
     InventoryController,

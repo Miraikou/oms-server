@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RateService } from '@/common/rate/rate.service';
+import { SystemConfigService } from '@/modules/system-config/system-config.service';
 import { Salesperson } from '@/modules/salesperson/entities/salesperson.entity';
 
 /** 查询结果行（TypeORM raw query 返回类型） */
@@ -35,6 +36,7 @@ export class DashboardService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
+    private readonly systemConfigService: SystemConfigService,
     @InjectRepository(Salesperson)
     private readonly salespersonRepo: Repository<Salesperson>,
   ) {}
@@ -659,6 +661,11 @@ export class DashboardService {
     const spParams: unknown[] = salespersonId ? [salespersonId] : [];
     const spFilter = salespersonId ? 'AND salesperson_id = ?' : '';
 
+    // 库存预警采用混合阈值：优先用每条记录的 minimum_stock（>0 时），否则回退到全局 LOW_STOCK_WARNING
+    const lowStockRaw = await this.systemConfigService.getByKey('LOW_STOCK_WARNING');
+    const lowStock = parseFloat(lowStockRaw || '0') || 0;
+    const effectiveThreshold = `CASE WHEN CAST(minimum_stock AS DECIMAL(18,4)) > 0 THEN CAST(minimum_stock AS DECIMAL(18,4)) ELSE ? END`;
+
     const [pendingShipment, pendingPayment, pendingReceipt, inventoryWarnings] =
       (await Promise.all([
         this.dataSource.query(
@@ -678,7 +685,9 @@ export class DashboardService {
           ? Promise.resolve([{ count: '0' }])
           : this.dataSource.query(
               `SELECT COUNT(*) AS count FROM inventory
-             WHERE CAST(available_quantity AS DECIMAL(18,4)) < CAST(minimum_stock AS DECIMAL(18,4))`,
+             WHERE CAST(available_quantity AS DECIMAL(18,4)) <= ${effectiveThreshold}
+               AND ${effectiveThreshold} > 0`,
+              [lowStock, lowStock],
             ),
       ])) as [CountResult, CountResult, CountResult, CountResult];
 
