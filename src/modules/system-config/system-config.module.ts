@@ -23,12 +23,12 @@ export class SystemConfigModule implements OnModuleInit {
         configValue: '40',
         valueType: 'NUMBER',
       },
-      {
-        configKey: 'DEFAULT_CURRENCY',
-        configName: '默认收款币种',
-        configValue: 'USD',
-        valueType: 'STRING',
-      },
+      // {
+      //   configKey: 'DEFAULT_CURRENCY',
+      //   configName: '默认收款币种',
+      //   configValue: 'USD',
+      //   valueType: 'STRING',
+      // },
       {
         configKey: 'LOW_STOCK_WARNING',
         configName: '库存预警阈值',
