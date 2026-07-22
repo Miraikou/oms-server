@@ -3,9 +3,10 @@ import {
 	IsOptional,
 	IsString,
 	IsArray,
+	IsInt,
 	ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 
@@ -104,6 +105,12 @@ export class UpdatePurchaseOrderDto {
 	items?: CreatePurchaseOrderItemDto[];
 }
 
+/** 将查询参数归一化为数字数组（兼容单值与数组两种传参形式） */
+function toNumberArray(value: unknown): number[] | undefined {
+	if (value === undefined || value === null || value === '') return undefined;
+	return (Array.isArray(value) ? value : [value]).map((v) => Number(v));
+}
+
 /** 查询采购单 DTO */
 export class QueryPurchaseOrderDto extends PaginationParamsDto {
 	@ApiPropertyOptional({ description: '采购单号' })
@@ -116,9 +123,12 @@ export class QueryPurchaseOrderDto extends PaginationParamsDto {
 	@IsOptional()
 	supplierId?: string;
 
-	@ApiPropertyOptional({ description: '状态' })
+	@ApiPropertyOptional({ description: '状态（支持多选）', type: [Number] })
+	@Transform(({ value }) => toNumberArray(value))
+	@IsArray()
+	@IsInt({ each: true })
 	@IsOptional()
-	status?: number;
+	status?: number[];
 
 	@ApiPropertyOptional({ description: '退货状态' })
 	@IsOptional()

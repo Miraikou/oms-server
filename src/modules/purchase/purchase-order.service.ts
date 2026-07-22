@@ -308,8 +308,8 @@ export class PurchaseOrderService {
 				supplierId: query.supplierId,
 			});
 		}
-		if (query.status !== undefined) {
-			qb.andWhere('po.status = :status', { status: query.status });
+		if (query.status?.length) {
+			qb.andWhere('po.status IN (:...status)', { status: query.status });
 		}
 		if (query.returnStatus !== undefined) {
 			qb.andWhere('po.returnStatus = :returnStatus', {
