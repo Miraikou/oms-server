@@ -96,6 +96,16 @@ export class SalesOrderItem extends BaseEntity {
   refundReturnedQuantity: string = '0';
 
   @Column({
+    name: 'refund_only_quantity',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    default: 0,
+    comment: '仅退款数量（货未退回，客户仍持有，不影响客户持有量）',
+  })
+  refundOnlyQuantity: string = '0';
+
+  @Column({
     name: 'estimated_cost_usd',
     type: 'decimal',
     precision: 18,

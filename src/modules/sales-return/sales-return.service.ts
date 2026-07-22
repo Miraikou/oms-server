@@ -342,15 +342,21 @@ export class SalesReturnService {
           }
         }
 
-        // 5. 更新订单明细 returnedQuantity（仅退款不退货，跳过数量更新）
-        if ((dto.returnType || 1) !== 3) {
-          // C4: 加行锁防止并发退货 lost-update
-          const orderItem = await manager
-            .createQueryBuilder(SalesOrderItem, 'oi')
-            .setLock('pessimistic_write')
-            .where('oi.id = :id', { id: shipItem!.orderItemId })
-            .getOne();
-          if (orderItem) {
+        // 5. 更新订单明细数量（C4: 加行锁防止并发退货 lost-update）
+        //    - 退货退款(1)/退货换货(2)/补发不退货(4)：货实际退回或换出，累加 returnedQuantity（影响客户持有量）
+        //    - 仅退款(3)：货未退回、客户仍持有，累加独立的 refundOnlyQuantity，不影响 returnedQuantity/客户持有量
+        const orderItem = await manager
+          .createQueryBuilder(SalesOrderItem, 'oi')
+          .setLock('pessimistic_write')
+          .where('oi.id = :id', { id: shipItem!.orderItemId })
+          .getOne();
+        if (orderItem) {
+          if ((dto.returnType || 1) === 3) {
+            orderItem.refundOnlyQuantity = (
+              parseFloat(orderItem.refundOnlyQuantity || '0') +
+              parseFloat(dtoItem.quantity)
+            ).toFixed(4);
+          } else {
             orderItem.returnedQuantity = (
               parseFloat(orderItem.returnedQuantity) +
               parseFloat(dtoItem.quantity)
@@ -362,8 +368,8 @@ export class SalesReturnService {
                 parseFloat(dtoItem.quantity)
               ).toFixed(4);
             }
-            await manager.save(orderItem);
           }
+          await manager.save(orderItem);
         }
       }
 

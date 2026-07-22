@@ -357,6 +357,48 @@ describe('SalesReturnService', () => {
       expect(result.returnNo).toBe('TH202601010001')
     })
 
+    it('仅退款（returnType=3）累加 refundOnlyQuantity 且不恢复库存、不计入已退货', async () => {
+      const dto = { ...validDto, returnType: 3, refund: false, restoreInventory: 1 }
+      // 使用独立的订单明细对象，避免与其他用例共享可变状态
+      const freshOrderItem = {
+        id: 'OI001',
+        orderId: '202601010001',
+        returnedQuantity: '0.0000',
+        refundReturnedQuantity: '0.0000',
+        refundOnlyQuantity: '0.0000',
+      }
+      mockManager.findOne
+        .mockResolvedValueOnce(mockOrder) // step1 SalesOrder
+        .mockResolvedValueOnce(mockUpdatedOrder) // step8 SalesOrder
+      // 仅退款不恢复库存，find 仅 step2 一次
+      mockManager.find.mockResolvedValueOnce([mockShipItem])
+      orderItemQB.getOne
+        .mockResolvedValueOnce(mockOwnerItem) // 归属校验
+        .mockResolvedValueOnce(freshOrderItem) // step5 更新 refundOnlyQuantity
+      returnItemQB.getMany.mockResolvedValueOnce([]) // 无历史退货
+      orderQB.getOne.mockResolvedValueOnce(mockOrder) // step3 加锁重验
+
+      const result = await service.create(dto)
+
+      // ⭐ 仅退款核心断言：累加 refundOnlyQuantity，returnedQuantity 保持不变
+      expect(mockManager.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'OI001',
+          refundOnlyQuantity: '5.0000',
+          returnedQuantity: '0.0000', // 实物未退回，已退货不变
+        }),
+      )
+      // 仅退款不恢复库存（即使 restoreInventory=1）
+      expect(batchQB.getOne).not.toHaveBeenCalled()
+      expect(inventoryQB.getOne).not.toHaveBeenCalled()
+      // 不创建库存流水
+      expect(mockManager.create).not.toHaveBeenCalledWith(
+        InventoryFlow,
+        expect.anything(),
+      )
+      expect(result.returnNo).toBe('TH202601010001')
+    })
+
     it('退货明细为空应抛出 BadRequestException', async () => {
       const dto = { ...validDto, items: [] }
 
