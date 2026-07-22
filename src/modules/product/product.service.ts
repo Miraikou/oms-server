@@ -43,6 +43,7 @@ export class ProductService extends BaseCrudService<Product> {
             modelName: m.modelName as string,
             status: typeof m.status === 'number' ? m.status : 1,
             remark: (m.remark as string) || null,
+            minimumStock: m.minimumStock == null ? null : String(m.minimumStock),
           }),
         );
         await manager.save(ProductModel, entities);
@@ -89,6 +90,7 @@ export class ProductService extends BaseCrudService<Product> {
               modelName: m.modelName as string,
               remark: (m.remark as string) || null,
               status: typeof m.status === 'number' ? m.status : 1,
+              minimumStock: m.minimumStock == null ? null : String(m.minimumStock),
             });
           } else {
             // 检查是否有同名已软删除型号，有则恢复（保留原ID，确保下游单据引用不受影响）
@@ -103,6 +105,7 @@ export class ProductService extends BaseCrudService<Product> {
                 isDeleted: 0,
                 remark: (m.remark as string) || null,
                 status: typeof m.status === 'number' ? m.status : 1,
+                minimumStock: m.minimumStock == null ? null : String(m.minimumStock),
               });
             } else {
               const newModel = manager.create(ProductModel, {
@@ -110,6 +113,7 @@ export class ProductService extends BaseCrudService<Product> {
                 productId: id,
                 modelName: m.modelName as string,
                 remark: (m.remark as string) || null,
+                minimumStock: m.minimumStock == null ? null : String(m.minimumStock),
               });
               await manager.save(ProductModel, newModel);
             }

@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsString,
   IsIn,
+  IsNumber,
   IsArray,
   ValidateNested,
 } from 'class-validator';
@@ -26,6 +27,13 @@ export class CreateProductModelInlineDto {
   @IsIn([0, 1])
   @IsOptional()
   status?: number;
+
+  @ApiPropertyOptional({
+    description: '最低库存预警值（留空=使用全局阈值 LOW_STOCK_WARNING，0=库存为0时预警，负数=不预警）',
+  })
+  @IsNumber()
+  @IsOptional()
+  minimumStock?: number | null;
 }
 
 /** 编辑商品时内嵌的型号 DTO（含可选 id，用于区分新增/更新） */
