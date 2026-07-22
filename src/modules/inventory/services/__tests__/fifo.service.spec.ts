@@ -115,7 +115,7 @@ describe('FifoService', () => {
       });
 
       mockQB.getMany.mockResolvedValue([batch]);
-      mockManager.findOne.mockResolvedValue(inventory);
+      mockQB.getOne.mockResolvedValue(inventory);
 
       const result = await service.consume('prod-1', null, 50, 'biz-1');
 
@@ -149,7 +149,7 @@ describe('FifoService', () => {
       });
 
       mockQB.getMany.mockResolvedValue([batch1, batch2]);
-      mockManager.findOne.mockResolvedValue(inventory);
+      mockQB.getOne.mockResolvedValue(inventory);
 
       const result = await service.consume('prod-1', null, 50, 'biz-1');
 
@@ -196,7 +196,7 @@ describe('FifoService', () => {
       });
 
       mockQB.getMany.mockResolvedValue([batch]);
-      mockManager.findOne.mockResolvedValue(inventory);
+      mockQB.getOne.mockResolvedValue(inventory);
 
       await service.consume('prod-1', null, 30, 'biz-1');
 
@@ -218,172 +218,13 @@ describe('FifoService', () => {
       });
 
       mockQB.getMany.mockResolvedValue([batch]);
-      mockManager.findOne.mockResolvedValue(inventory);
+      mockQB.getOne.mockResolvedValue(inventory);
 
       await service.consume('prod-1', null, 50, 'biz-1');
 
       // batch save 应在 inventory save 之前
       const batchSave = savedEntities.find((e) => e.id === 'batch-1');
       expect(batchSave.status).toBe(2);
-    });
-  });
-
-  // ═══════════════════════════════════════════════
-  // freeze 测试
-  // ═══════════════════════════════════════════════
-
-  describe('freeze', () => {
-    it('应正确冻结库存（available → frozen）', async () => {
-      const batch = makeBatch({
-        availableQuantity: '100.0000',
-        frozenQuantity: '0.0000',
-      });
-      const inventory = makeInventory({
-        availableQuantity: '100.0000',
-        frozenQuantity: '0.0000',
-      });
-
-      mockQB.getMany.mockResolvedValue([batch]);
-      mockManager.findOne.mockResolvedValue(inventory);
-
-      const result = await service.freeze('prod-1', null, 30, 'order-1');
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].quantity).toBe(30);
-
-      // 验证批次 available 减少，frozen 增加
-      const batchSave = savedEntities.find((e) => e.id === 'batch-1');
-      expect(batchSave.availableQuantity).toBe('70.0000');
-      expect(batchSave.frozenQuantity).toBe('30.0000');
-    });
-
-    it('可销售库存不足时应拒绝冻结', async () => {
-      const batch = makeBatch({ availableQuantity: '10.0000' });
-      mockQB.getMany.mockResolvedValue([batch]);
-
-      await expect(service.freeze('prod-1', null, 50, 'order-1')).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('冻结数量 <= 0 时应抛出异常', async () => {
-      await expect(service.freeze('prod-1', null, 0, 'order-1')).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('跨批次冻结应按 FIFO 顺序', async () => {
-      const batch1 = makeBatch({
-        id: 'b1',
-        availableQuantity: '20.0000',
-        frozenQuantity: '0.0000',
-        inboundTime: new Date('2026-01-01'),
-      });
-      const batch2 = makeBatch({
-        id: 'b2',
-        availableQuantity: '80.0000',
-        frozenQuantity: '0.0000',
-        inboundTime: new Date('2026-02-01'),
-      });
-      const inventory = makeInventory({
-        availableQuantity: '100.0000',
-        frozenQuantity: '0.0000',
-      });
-
-      mockQB.getMany.mockResolvedValue([batch1, batch2]);
-      mockManager.findOne.mockResolvedValue(inventory);
-
-      const result = await service.freeze('prod-1', null, 50, 'order-1');
-
-      expect(result.items).toHaveLength(2);
-      expect(result.items[0].batchId).toBe('b1');
-      expect(result.items[0].quantity).toBe(20);
-      expect(result.items[1].batchId).toBe('b2');
-      expect(result.items[1].quantity).toBe(30);
-    });
-  });
-
-  // ═══════════════════════════════════════════════
-  // unfreeze 测试
-  // ═══════════════════════════════════════════════
-
-  describe('unfreeze', () => {
-    it('应正确解冻库存（frozen → available）', async () => {
-      const batch = makeBatch({
-        availableQuantity: '70.0000',
-        frozenQuantity: '30.0000',
-        freezeStatus: 2,
-      });
-      const inventory = makeInventory({
-        availableQuantity: '70.0000',
-        frozenQuantity: '30.0000',
-      });
-
-      mockQB.getMany.mockResolvedValue([batch]);
-      mockManager.findOne.mockResolvedValue(inventory);
-
-      const result = await service.unfreeze('prod-1', null, 30, 'order-1');
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].quantity).toBe(30);
-
-      const batchSave = savedEntities.find((e) => e.id === 'batch-1');
-      expect(batchSave.frozenQuantity).toBe('0.0000');
-      expect(batchSave.availableQuantity).toBe('100.0000');
-      expect(batchSave.freezeStatus).toBe(1); // 恢复正常
-    });
-
-    it('冻结库存不足时应拒绝解冻', async () => {
-      const batch = makeBatch({ frozenQuantity: '10.0000' });
-      mockQB.getMany.mockResolvedValue([batch]);
-
-      await expect(service.unfreeze('prod-1', null, 50, 'order-1')).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-  });
-
-  // ═══════════════════════════════════════════════
-  // deductFrozen 测试
-  // ═══════════════════════════════════════════════
-
-  describe('deductFrozen', () => {
-    it('应从冻结库存中扣减', async () => {
-      const batch = makeBatch({
-        availableQuantity: '70.0000',
-        frozenQuantity: '30.0000',
-        stockQuantity: '100.0000',
-        unitCostUsd: '50.00',
-      });
-      const inventory = makeInventory({
-        availableQuantity: '70.0000',
-        frozenQuantity: '30.0000',
-        stockQuantity: '100.0000',
-      });
-
-      mockQB.getMany.mockResolvedValue([batch]);
-      mockManager.findOne.mockResolvedValue(inventory);
-
-      const result = await service.deductFrozen('prod-1', null, 30, 'shipment-1');
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].quantity).toBe(30);
-      expect(result.items[0].totalCostUsd).toBe('1500.00'); // 30 * 50
-      expect(result.totalCostUsd).toBe('1500.00');
-
-      // 验证批次 frozen 减少，stock 减少，available 不变
-      const batchSave = savedEntities.find((e) => e.id === 'batch-1');
-      expect(batchSave.frozenQuantity).toBe('0.0000');
-      expect(batchSave.stockQuantity).toBe('70.0000');
-    });
-
-    it('冻结库存不足时应拒绝扣减', async () => {
-      const batch = makeBatch({ frozenQuantity: '10.0000' });
-      mockQB.getMany.mockResolvedValue([batch]);
-
-      await expect(
-        service.deductFrozen('prod-1', null, 50, 'shipment-1'),
-      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -444,7 +285,7 @@ describe('FifoService', () => {
       });
 
       mockQB.getMany.mockResolvedValue([batch]);
-      mockManager.findOne.mockResolvedValue(inventory);
+      mockQB.getOne.mockResolvedValue(inventory);
 
       const result = await service.consume('prod-1', null, 10, 'biz-1');
 

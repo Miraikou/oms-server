@@ -77,7 +77,7 @@ export class SalesOrderController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: '新建订单（含库存冻结）' })
+  @ApiOperation({ summary: '新建订单（无预留模型：下单不占用库存）' })
   create(@Body() dto: CreateSalesOrderDto) {
     return this.orderService.create(dto);
   }
@@ -91,7 +91,7 @@ export class SalesOrderController {
   @Post(':id/cancel')
   @RequirePermission('order:cancel')
   @UseGuards(PermissionGuard)
-  @ApiOperation({ summary: '取消订单（含库存解冻）' })
+  @ApiOperation({ summary: '取消订单（不占用库存，无需解冻）' })
   cancel(@Param('id') id: string) {
     return this.orderService.cancel(id);
   }
@@ -99,7 +99,7 @@ export class SalesOrderController {
   @Post(':id/terminate')
   @RequirePermission('order:terminate')
   @UseGuards(PermissionGuard)
-  @ApiOperation({ summary: '终止订单（部分发货后弃购未发部分，解冻+退款+完成）' })
+  @ApiOperation({ summary: '终止订单（部分发货后弃购未发部分，退款+完成）' })
   terminate(@Param('id') id: string) {
     return this.orderService.terminate(id);
   }

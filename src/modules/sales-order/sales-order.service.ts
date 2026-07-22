@@ -1,13 +1,10 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager, IsNull, In } from 'typeorm';
+import { Repository, DataSource, EntityManager, In } from 'typeorm';
 import { SalesOrder } from './entities/sales-order.entity';
 import { SalesOrderItem } from './entities/sales-order-item.entity';
 import { SequenceService } from '@/common/services/sequence.service';
-import { FifoService } from '@/modules/inventory/services/fifo.service';
-import { Inventory } from '@/modules/inventory/entities/inventory.entity';
-import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity';
 import { CommonContact } from '@/modules/common-contact/entities/common-contact.entity';
 import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
 import { SalesOrderCost } from './entities/sales-order-cost.entity';
@@ -27,7 +24,7 @@ import { CommissionService } from '@/modules/commission/commission.service';
 
 /**
  * 订单服务 ⭐
- * 负责订单全生命周期管理：创建（含库存冻结）、修改、取消、三维状态计算
+ * 负责订单全生命周期管理：创建、修改、取消、三维状态计算
  */
 @Injectable()
 export class SalesOrderService {
@@ -38,8 +35,6 @@ export class SalesOrderService {
     private readonly orderRepo: Repository<SalesOrder>,
     @InjectRepository(SalesOrderItem)
     private readonly itemRepo: Repository<SalesOrderItem>,
-    @InjectRepository(Inventory)
-    private readonly inventoryRepo: Repository<Inventory>,
     @InjectRepository(CommonContact)
     private readonly contactRepo: Repository<CommonContact>,
     @InjectRepository(ShipmentItem)
@@ -50,12 +45,9 @@ export class SalesOrderService {
     private readonly costTypeRepo: Repository<CostType>,
     @InjectRepository(Payment)
     private readonly paymentRepo: Repository<Payment>,
-    @InjectRepository(Product)
-    private readonly productRepo: Repository<Product>,
     @InjectRepository(ProductModel)
     private readonly productModelRepo: Repository<ProductModel>,
     private readonly sequenceService: SequenceService,
-    private readonly fifoService: FifoService,
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
     private readonly commissionService: CommissionService,
@@ -63,8 +55,8 @@ export class SalesOrderService {
   ) {}
 
   /**
-   * 创建订单
-   * 事务流程：生成订单号 → 创建主表+明细 → 检查库存 → 冻结库存 → 计算总金额 → upsert 联系人
+   * 创建订单（无预留模型：下单不校验/不占用库存，发货时才扣减可用库存）
+   * 事务流程：生成订单号 → 创建主表+明细 → 计算总金额 → upsert 联系人
    */
   async create(dto: CreateSalesOrderDto): Promise<SalesOrder> {
     if (!dto.items || dto.items.length === 0) {
@@ -109,40 +101,7 @@ export class SalesOrderService {
         };
       });
 
-      // 4. 检查库存并对每个商品冻结
-      // 获取商品名称用于错误提示
-      const productIds = [...new Set(items.map((i) => i.productId))];
-      const products = await this.productRepo.find({
-        where: { id: In(productIds) },
-      });
-      const productNameMap = new Map(
-        products.map((p) => [p.id, p.productName]),
-      );
-
-      for (const item of items) {
-        const invWhere: any = { productId: item.productId };
-        if (item.productModelId) {
-          invWhere.productModelId = item.productModelId;
-        } else {
-          invWhere.productModelId = IsNull();
-        }
-        const inventory = await manager.findOne(Inventory, {
-          where: invWhere,
-        });
-        const productName = productNameMap.get(item.productId) || item.productId;
-        if (!inventory) {
-          throw new BadRequestException(`商品 ${productName} 无库存记录`);
-        }
-        const available = parseFloat(inventory.availableQuantity);
-        const needed = parseFloat(item.quantity);
-        if (available < needed) {
-          throw new BadRequestException(
-            `商品 ${productName} 库存不足：需要 ${needed}，可用 ${available}`,
-          );
-        }
-      }
-
-      // 5. 创建主表
+      // 4. 创建主表（无预留模型：下单不校验/不占用库存，发货时才扣减可用库存）
       const order = this.orderRepo.create({
         id: snowflake.nextId(),
         orderNo,
@@ -173,41 +132,7 @@ export class SalesOrderService {
       );
       await manager.save(savedItems);
 
-      // 7. 冻结库存（逐个商品，在同一事务中）并记录估算产品成本
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const freezeResult = await this.fifoService.freeze(
-          item.productId,
-          item.productModelId,
-          parseFloat(item.quantity),
-          savedOrder.id,
-          manager,
-        );
-
-        // 从冻结批次计算估算产品成本
-        let estCostCny = 0;
-        let estCostUsd = 0;
-        for (const fi of freezeResult.items) {
-          const batch = await manager.findOne(InventoryBatch, {
-            where: { id: fi.batchId },
-          });
-          if (batch) {
-            estCostCny += fi.quantity * parseFloat(batch.unitCostCny || '0');
-            estCostUsd += fi.quantity * parseFloat(batch.unitCostUsd || '0');
-          }
-        }
-
-        // 写入订单明细的估算成本字段
-        await manager.getRepository(SalesOrderItem).update(
-          { id: savedItems[i].id },
-          {
-            estimatedCostCny: estCostCny.toFixed(2),
-            estimatedCostUsd: estCostUsd.toFixed(2),
-          },
-        );
-      }
-
-      // 8. 同步创建成本记录（可选）
+      // 7. 同步创建成本记录（可选）
       if (dto.costs && dto.costs.length > 0) {
         // 校验成本类型是否重复
         const costTypeIds = dto.costs.map((c) => c.costTypeId);
@@ -301,7 +226,7 @@ export class SalesOrderService {
 
   /**
    * 修改订单（仅待发货状态可修改）
-   * 修改明细需先解冻旧商品→重新冻结新商品
+   * 无预留模型：修改明细不涉及库存操作
    * 整个操作在事务中完成，保证原子性
    */
   async update(id: string, dto: UpdateSalesOrderDto): Promise<SalesOrder> {
@@ -338,17 +263,6 @@ export class SalesOrderService {
       let itemsChanged = false;
       if (dto.items && dto.items.length > 0) {
         itemsChanged = true;
-        // 获取旧明细用于解冻
-        const oldItems = await manager.find(SalesOrderItem, { where: { orderId: id } });
-
-        // 解冻旧商品（在同一事务中）
-        for (const oldItem of oldItems) {
-          const qty = parseFloat(oldItem.quantity) - parseFloat(oldItem.shippedQuantity || '0');
-          if (qty > 0) {
-            await this.fifoService.unfreeze(oldItem.productId, oldItem.productModelId, qty, id, manager);
-          }
-        }
-
         // 删除旧明细
         await manager.getRepository(SalesOrderItem).delete({ orderId: id });
 
@@ -380,72 +294,7 @@ export class SalesOrderService {
           });
         });
 
-        // 检查库存
-        const productIds = [...new Set(newItems.map((i) => i.productId))];
-        const products = await this.productRepo.find({
-          where: { id: In(productIds) },
-        });
-        const productNameMap = new Map(
-          products.map((p) => [p.id, p.productName]),
-        );
-
-        for (const item of newItems) {
-          const invWhere: any = { productId: item.productId };
-          if (item.productModelId) {
-            invWhere.productModelId = item.productModelId;
-          } else {
-            invWhere.productModelId = IsNull();
-          }
-          const inventory = await manager.findOne(Inventory, {
-            where: invWhere,
-          });
-          const productName = productNameMap.get(item.productId) || item.productId;
-          if (!inventory) {
-            throw new BadRequestException(`商品 ${productName} 无库存记录`);
-          }
-          const available = parseFloat(inventory.availableQuantity);
-          const needed = parseFloat(item.quantity);
-          if (available < needed) {
-            throw new BadRequestException(
-              `商品 ${productName} 库存不足：需要 ${needed}，可用 ${available}`,
-            );
-          }
-        }
-
         await manager.save(newItems);
-
-        // 冻结新商品（在同一事务中）并记录估算产品成本
-        for (const item of newItems) {
-          const freezeResult = await this.fifoService.freeze(
-            item.productId,
-            item.productModelId,
-            parseFloat(item.quantity),
-            id,
-            manager,
-          );
-
-          // 从冻结批次计算估算产品成本
-          let estCostCny = 0;
-          let estCostUsd = 0;
-          for (const fi of freezeResult.items) {
-            const batch = await manager.findOne(InventoryBatch, {
-              where: { id: fi.batchId },
-            });
-            if (batch) {
-              estCostCny += fi.quantity * parseFloat(batch.unitCostCny || '0');
-              estCostUsd += fi.quantity * parseFloat(batch.unitCostUsd || '0');
-            }
-          }
-
-          // 写入订单明细的估算成本字段
-          await manager.getRepository(SalesOrderItem).update(
-            { id: item.id },
-            {
-              estimatedCostCny: estCostCny.toFixed(2),
-              estimatedCostUsd: estCostUsd.toFixed(2),
-            },
-          );
-        }
 
         // 商品总价变更后，校验已收金额不能超出新总价（同币种直接比较）
         const currency = orderCurrency;
@@ -651,26 +500,6 @@ export class SalesOrderService {
         extraCostMap.set(row.orderId, parseFloat(row.totalCny || '0'));
       }
 
-      // 批量查询未发货部分的估算产品成本
-      // P5: remaining = effectiveQty - GREATEST(inCustomerHands, 0)
-      //           = (qty - refundRet) - GREATEST(shipped - returned, 0)
-      const unshippedEstRows = await this.dataSource.query(
-        `SELECT order_id AS orderId,
-                COALESCE(SUM(estimated_cost_cny * GREATEST(
-                  quantity - COALESCE(refund_returned_quantity, 0) - GREATEST(COALESCE(shipped_quantity, 0) - COALESCE(returned_quantity, 0), 0)
-                , 0) / quantity), 0) AS estCostCny
-         FROM sales_order_item
-         WHERE order_id IN (?)
-           AND quantity > 0
-           AND (quantity - COALESCE(refund_returned_quantity, 0) - GREATEST(COALESCE(shipped_quantity, 0) - COALESCE(returned_quantity, 0), 0)) > 0
-         GROUP BY order_id`,
-        [orderIds],
-      );
-      const unshippedEstCostMap = new Map<string, number>();
-      for (const row of unshippedEstRows) {
-        unshippedEstCostMap.set(row.orderId, parseFloat(row.estCostCny || '0'));
-      }
-
       for (const order of list) {
         // 博主佣金：根据订单金额 × 佣金比例计算（展示全额收款时的预期利润）
         const rate = parseFloat(order.bloggerCommissionRate || '0');
@@ -681,8 +510,8 @@ export class SalesOrderService {
         (order as any).bloggerCommissionAmountCny = bloggerCommissionCny.toFixed(2);
         (order as any).bloggerCommissionAmountUsd = bloggerCommissionUsd.toFixed(2);
 
-        // 销售利润 = 订单金额 - 博主佣金 - 已退款 - 直接退款 - 产品成本(已发货实际+未发货估算) - 额外成本
-        const productCostCny = (productCostMap.get(order.id) || 0) + (unshippedEstCostMap.get(order.id) || 0);
+        // 销售利润 = 订单金额 - 博主佣金 - 已退款 - 直接退款 - 产品成本(收付实现制：仅已发货实际成本) - 额外成本
+        const productCostCny = productCostMap.get(order.id) || 0;
         const extraCostCny = extraCostMap.get(order.id) || 0;
         const refundedAmountCny = parseFloat(order.refundedAmountCny || '0');
         const standaloneRefundedAmountCny = parseFloat(order.standaloneRefundedAmountCny || '0');
@@ -693,7 +522,7 @@ export class SalesOrderService {
 
         // 销售员提成 = 销售利润 × 提成比例
         const spCommissionRate = spCommissionRateMap.get(order.salespersonId) || 0;
-        const commissionAmountCny = salesProfitCny * spCommissionRate / 100;
+        const commissionAmountCny = Math.max(0, salesProfitCny) * spCommissionRate / 100;
         const commissionAmountUsd = exchangeRate > 0 ? commissionAmountCny / exchangeRate : 0;
         (order as any).commissionAmountUsd = commissionAmountUsd.toFixed(2);
         (order as any).commissionAmountCny = commissionAmountCny.toFixed(2);
@@ -704,15 +533,14 @@ export class SalesOrderService {
   }
 
   /**
-   * 取消订单（含库存解冻）
-   * - 待发货：释放全部冻结库存 → 取消订单
+   * 取消订单
+   * - 待发货：直接取消订单（无预留模型：下单未占库存，无需解冻）
    * - 已发货：拒绝取消，引导退货
    * - 已收款/部分收款：提示需先退款
    * 整个操作在事务中完成，保证原子性
    */
   async cancel(id: string): Promise<{
     order: SalesOrder;
-    unfrozenItems: Array<{ productId: string; quantity: number }>;
     needsRefund: boolean;
     refundableAmount: string;
     refundableAmountCny: string;
@@ -736,29 +564,6 @@ export class SalesOrderService {
         throw new BadRequestException('订单已有收款，请先完成退款后再取消');
       }
 
-      const items = await manager
-        .getRepository(SalesOrderItem)
-        .find({ where: { orderId: id } });
-
-      // 计算需要解冻的数量：订单数量 - 已发货数量
-      const unfrozenItems: Array<{ productId: string; quantity: number }> = [];
-      for (const item of items) {
-        const orderQty = parseFloat(item.quantity);
-        const shippedQty = parseFloat(item.shippedQuantity);
-        const toUnfreeze = orderQty - shippedQty;
-
-        if (toUnfreeze > 0) {
-          await this.fifoService.unfreeze(
-            item.productId,
-            item.productModelId,
-            toUnfreeze,
-            id,
-            manager,
-          );
-          unfrozenItems.push({ productId: item.productId, quantity: toUnfreeze });
-        }
-      }
-
       // 标记订单为已取消
       order.status = 3;
       order.remark = `${order.remark || ''}`;
@@ -770,12 +575,11 @@ export class SalesOrderService {
       const needsRefund = receivedUsd > 0 || receivedCny > 0;
 
       this.logger.log(
-        `订单取消成功: ${order.orderNo}, 解冻 ${unfrozenItems.length} 项, 需退款: ${needsRefund}`,
+        `订单取消成功: ${order.orderNo}, 需退款: ${needsRefund}`,
       );
 
       return {
         order,
-        unfrozenItems,
         needsRefund,
         refundableAmount: order.receivedAmountUsd,
         refundableAmountCny: order.receivedAmountCny,
@@ -788,7 +592,6 @@ export class SalesOrderService {
    * 适用场景：订单已部分发货，客户不再需要剩余未发的货品
    * - 仅允许 status=1（进行中）且 shipmentStatus=2（部分发货）
    * - 逐明细：保留量 = max(0, 已发 - 已退)，弃购量 = 剩余待发量
-   * - 解冻弃购量对应的冻结库存（释放回可用库存，不占用其他订单冻结额度）
    * - 收缩明细数量到保留量，同步更新明细金额与订单总金额
    * - 若已收 > 新总额：事务内生成退款记录 Payment(type=2) 并扣减已收金额
    *   注意：不调用 increaseStandaloneRefundedAmount —— 总金额已收缩，
@@ -842,7 +645,7 @@ export class SalesOrderService {
           '仅部分发货的订单可以终止：待发货订单请使用取消，全部发货订单无需终止',
         );
 
-      // 3. 逐明细：计算弃购量 → 解冻 → 收缩数量
+      // 3. 逐明细：计算弃购量 → 收缩数量（无预留模型：下单未占库存，无需解冻）
       const cancelledItems: Array<{
         productId: string;
         productName: string;
@@ -860,15 +663,6 @@ export class SalesOrderService {
         if (remaining <= 0) continue;
 
         hasCancellation = true;
-
-        // 解冻弃购量（与取消订单解冻公式一致，对退货换货场景同样正确）
-        await this.fifoService.unfreeze(
-          item.productId,
-          item.productModelId,
-          remaining,
-          id,
-          manager,
-        );
 
         // 收缩数量到保留量：新数量 = 保留量 + 退款退货量（保持有效需求量 = 客户持有量）
         const newQty = inCustomerHands + refundReturned;
@@ -910,7 +704,9 @@ export class SalesOrderService {
 
       // 5. 退款：已收超出新总额的部分退还（按订单币种比较，避免汇率精度漂移）
       const currency = order.currency || 'USD';
-      const exchangeRate = parseFloat(order.exchangeRate || '7');
+      const exchangeRate = parseFloat(
+        order.exchangeRate || String(this.rateService.getDefaultRate()),
+      );
       const receivedOrder = parseFloat(
         currency === 'CNY' ? order.receivedAmountCny : order.receivedAmountUsd,
       );
@@ -1274,7 +1070,7 @@ export class SalesOrderService {
 
     const exchangeRate = parseFloat(order.exchangeRate || this.rateService.getDefaultRate());
 
-    // ── 产品成本（CNY）= 已发货实际成本 + 未发货估算成本 ──
+    // ── 产品成本（CNY）：收付实现制，仅统计已发货实际成本 ──
     // 已发货实际成本来自 FIFO（shipment_item.total_cost_cny）
     const costResult = await this.shipmentItemRepo
       .createQueryBuilder('si')
@@ -1282,27 +1078,7 @@ export class SalesOrderService {
       .select('COALESCE(SUM(si.total_cost_cny), 0)', 'totalCost')
       .where('s.order_id = :orderId', { orderId })
       .getRawOne();
-    const shippedActualCostCny = parseFloat(costResult?.totalCost || '0');
-
-    // 未发货部分使用冻结时的估算成本（区分退货退款和退货换货）
-    // remaining = effectiveQty - inCustomerHands = (qty - refundReturned) - (shipped - returned)
-    const orderItems = await this.itemRepo.find({ where: { orderId } });
-    let unshippedEstCostCny = 0;
-    for (const item of orderItems) {
-      const qty = parseFloat(item.quantity);
-      const shippedQty = parseFloat(item.shippedQuantity || '0');
-      const returned = parseFloat(item.returnedQuantity || '0');
-      const refundReturned = parseFloat(item.refundReturnedQuantity || '0');
-      const effectiveQty = qty - refundReturned;
-      const inCustomerHands = Math.max(0, shippedQty - returned); // P5: 防御性下界
-      const remaining = Math.max(0, effectiveQty - inCustomerHands);
-      const estCost = parseFloat(item.estimatedCostCny || '0');
-      if (qty > 0 && remaining > 0 && estCost > 0) {
-        unshippedEstCostCny += estCost * (remaining / qty);
-      }
-    }
-
-    const productCostCny = shippedActualCostCny + unshippedEstCostCny;
+    const productCostCny = parseFloat(costResult?.totalCost || '0');
     const productCostUsd = exchangeRate > 0 ? productCostCny / exchangeRate : 0;
 
     // ── 额外成本（预存 amount_cny，直接 SUM）──
@@ -1351,7 +1127,7 @@ export class SalesOrderService {
         spCommissionRate = parseFloat(spRow[0].commissionRate || String(defaultRate));
       }
     }
-    const salespersonCommissionCny = salesProfitCny * spCommissionRate / 100;
+    const salespersonCommissionCny = Math.max(0, salesProfitCny) * spCommissionRate / 100;
     const salespersonCommissionUsd = exchangeRate > 0 ? salespersonCommissionCny / exchangeRate : 0;
 
     return {

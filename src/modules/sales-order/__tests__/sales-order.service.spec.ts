@@ -1,18 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { getRepositoryToken } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
+import { ConfigService } from '@nestjs/config'
 import { BadRequestException } from '@nestjs/common'
 import { SalesOrderService } from '../sales-order.service'
 import { SalesOrder } from '../entities/sales-order.entity'
 import { SalesOrderItem } from '../entities/sales-order-item.entity'
 import { SalesOrderCost } from '../entities/sales-order-cost.entity'
-import { Inventory } from '@/modules/inventory/entities/inventory.entity'
 import { CommonContact } from '@/modules/common-contact/entities/common-contact.entity'
 import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity'
 import { CostType } from '@/modules/cost-type/entities/cost-type.entity'
+import { Payment } from '@/modules/payment/entities/payment.entity'
+import { ProductModel } from '@/modules/product/entities/product-model.entity'
 import { SequenceService } from '@/common/services/sequence.service'
-import { FifoService } from '@/modules/inventory/services/fifo.service'
-import { snowflake } from '@/common/utils/snowflake'
+import { RateService } from '@/common/rate/rate.service'
+import { CommissionService } from '@/modules/commission/commission.service'
 
 // Mock snowflake
 jest.mock('@/common/utils/snowflake', () => ({
@@ -37,10 +39,6 @@ const mockItemRepo = {
   delete: jest.fn(),
 }
 
-const mockInventoryRepo = {
-  findOne: jest.fn(),
-}
-
 const mockContactRepo = {
   findOne: jest.fn(),
   create: jest.fn((_entity: any, data: any) => data),
@@ -56,9 +54,22 @@ const mockCostRepo = {
   createQueryBuilder: jest.fn(),
 }
 
-const mockCostTypeRepo = {}
+const mockCostTypeRepo = {
+  find: jest.fn(),
+  create: jest.fn((data: any) => data),
+  save: jest.fn((entity: any) => Promise.resolve(entity)),
+}
 
-// ---- Mock QueryBuilder ----
+const mockPaymentRepo = {
+  create: jest.fn((data: any) => data),
+  save: jest.fn((entity: any) => Promise.resolve(entity)),
+}
+
+const mockProductModelRepo = {
+  find: jest.fn(),
+}
+
+// ---- Mock QueryBuilder（findAll 使用）----
 const mockQB = {
   andWhere: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
@@ -68,24 +79,35 @@ const mockQB = {
 }
 
 // ---- Mock Manager for DataSource.transaction ----
+// manager 级 QueryBuilder（cancel/terminate 的悲观锁链 createQueryBuilder().setLock().where().getOne()）
+let mockManagerQB: any
+
 const mockManager = {
   findOne: jest.fn(),
   find: jest.fn(),
   save: jest.fn((entity: any) => Promise.resolve(entity)),
   create: jest.fn((_entity: any, data: any) => data),
-  getRepository: jest.fn((): any => mockItemRepo),
+  getRepository: jest.fn(),
+  createQueryBuilder: jest.fn(),
 }
 
 const mockDataSource = {
   transaction: jest.fn((cb: (m: any) => any) => cb(mockManager)),
+  query: jest.fn().mockResolvedValue([]),
 }
 
 // ---- Mock Services ----
 const mockSequenceService = { generate: jest.fn().mockResolvedValue('SO202601010001') }
-const mockFifoService = {
-  freeze: jest.fn(),
-  unfreeze: jest.fn(),
+const mockRateService = {
+  getRate: jest.fn().mockResolvedValue('7.12'),
+  getDefaultRate: jest.fn().mockReturnValue('7.12'),
 }
+const mockCommissionService = {
+  accrueOrderCommission: jest.fn(),
+  revokeOrderCommission: jest.fn(),
+  recalculateOrderCommission: jest.fn(),
+}
+const mockConfigService = { get: jest.fn().mockReturnValue(40) }
 
 describe('SalesOrderService', () => {
   let service: SalesOrderService
@@ -93,19 +115,41 @@ describe('SalesOrderService', () => {
   beforeEach(async () => {
     jest.clearAllMocks()
 
+    // manager.getRepository 按实体路由到对应 mock 仓储
+    mockManager.getRepository.mockImplementation((entity: any) => {
+      if (entity === SalesOrder) return mockOrderRepo
+      if (entity === SalesOrderItem) return mockItemRepo
+      if (entity === SalesOrderCost) return mockCostRepo
+      if (entity === Payment) return mockPaymentRepo
+      return mockItemRepo
+    })
+
+    // 重建 manager 级 QueryBuilder，避免测试间串扰
+    mockManagerQB = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn(),
+      getMany: jest.fn().mockResolvedValue([]),
+    }
+    mockManager.createQueryBuilder.mockReturnValue(mockManagerQB)
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SalesOrderService,
         { provide: getRepositoryToken(SalesOrder), useValue: mockOrderRepo },
         { provide: getRepositoryToken(SalesOrderItem), useValue: mockItemRepo },
-        { provide: getRepositoryToken(Inventory), useValue: mockInventoryRepo },
         { provide: getRepositoryToken(CommonContact), useValue: mockContactRepo },
         { provide: getRepositoryToken(ShipmentItem), useValue: mockShipmentItemRepo },
         { provide: getRepositoryToken(SalesOrderCost), useValue: mockCostRepo },
         { provide: getRepositoryToken(CostType), useValue: mockCostTypeRepo },
+        { provide: getRepositoryToken(Payment), useValue: mockPaymentRepo },
+        { provide: getRepositoryToken(ProductModel), useValue: mockProductModelRepo },
         { provide: SequenceService, useValue: mockSequenceService },
-        { provide: FifoService, useValue: mockFifoService },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: RateService, useValue: mockRateService },
+        { provide: CommissionService, useValue: mockCommissionService },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile()
 
@@ -113,7 +157,7 @@ describe('SalesOrderService', () => {
   })
 
   // ============================================================
-  //  create
+  //  create（无预留模型：下单不校验/不占用库存）
   // ============================================================
   describe('create', () => {
     const validDto = {
@@ -128,23 +172,17 @@ describe('SalesOrderService', () => {
       ],
     }
 
-    const mockInventory = {
-      productId: 'P001',
-      availableQuantity: '100',
-    }
-
-    it('创建订单成功应返回订单并冻结库存', async () => {
-      mockManager.findOne.mockResolvedValue(mockInventory)
-      mockManager.save.mockImplementation((entity: any) => Promise.resolve({ ...entity, id: entity.id || 'new-id' }))
-      mockContactRepo.findOne.mockResolvedValue(null)
+    it('创建订单成功应返回订单（不触碰库存）', async () => {
+      // upsertContact 查询联系人返回 null → 新建联系人
+      mockManager.findOne.mockResolvedValue(null)
 
       const result = await service.create(validDto)
 
       expect(mockSequenceService.generate).toHaveBeenCalledWith('SO')
-      expect(snowflake.nextId).toHaveBeenCalled()
       expect(mockManager.save).toHaveBeenCalled()
-      expect(mockFifoService.freeze).toHaveBeenCalledWith('P001', 10, expect.any(String))
       expect(result.orderNo).toBe('SO202601010001')
+      // 无预留模型：创建订单不做任何库存查询/冻结
+      expect(mockManager.createQueryBuilder).not.toHaveBeenCalled()
     })
 
     it('商品列表为空应抛出 BadRequestException', async () => {
@@ -166,21 +204,8 @@ describe('SalesOrderService', () => {
       await expect(service.create(dto)).rejects.toThrow(BadRequestException)
     })
 
-    it('商品无库存记录应抛出 BadRequestException', async () => {
-      mockManager.findOne.mockResolvedValue(null)
-
-      await expect(service.create(validDto)).rejects.toThrow(BadRequestException)
-    })
-
-    it('商品库存不足应抛出 BadRequestException', async () => {
-      mockManager.findOne.mockResolvedValue({ productId: 'P001', availableQuantity: '5' })
-
-      await expect(service.create(validDto)).rejects.toThrow(BadRequestException)
-    })
-
     it('客户名为空不应 upsert 联系人', async () => {
       const dto = { ...validDto, customerName: '' }
-      mockManager.findOne.mockResolvedValue(mockInventory)
 
       await service.create(dto)
 
@@ -264,7 +289,7 @@ describe('SalesOrderService', () => {
   })
 
   // ============================================================
-  //  update
+  //  update（无预留模型：修改明细不涉及库存操作）
   // ============================================================
   describe('update', () => {
     const existingOrder = {
@@ -272,119 +297,85 @@ describe('SalesOrderService', () => {
       orderNo: 'SO202601010001',
       customerName: '旧客户',
       shipmentStatus: 1,
+      currency: 'USD',
+      exchangeRate: '7.12',
+      orderDate: '2026-01-01',
+      receivedAmountUsd: '0',
+      receivedAmountCny: '0',
       totalAmountUsd: '500',
       remark: '备注',
     }
 
     it('仅修改备注和客户名应成功', async () => {
-      mockOrderRepo.findOne.mockResolvedValue(existingOrder)
+      // manager.findOne 既用于查订单（SalesOrder），也用于 upsertContact 查联系人（CommonContact）
+      mockManager.findOne.mockImplementation((entity: any) => {
+        if (entity === CommonContact) return Promise.resolve(null)
+        return Promise.resolve(existingOrder)
+      })
 
       const result = await service.update('O001', {
         customerName: '新客户',
         remark: '新备注',
       })
 
-      expect(mockOrderRepo.save).toHaveBeenCalledWith(
+      expect(mockManager.save).toHaveBeenCalledWith(
         expect.objectContaining({ customerName: '新客户', remark: '新备注' }),
       )
-      expect(mockItemRepo.find).not.toHaveBeenCalled()
+      expect(result.customerName).toBe('新客户')
     })
 
-    it('整体替换明细应成功', async () => {
-      mockOrderRepo.findOne.mockResolvedValue(existingOrder)
-      mockItemRepo.find.mockResolvedValue([
-        { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0', orderId: 'O001' },
-      ])
-      mockInventoryRepo.findOne.mockResolvedValue({ productId: 'P002', availableQuantity: '100' })
+    it('整体替换明细应成功（不做库存解冻/冻结）', async () => {
+      mockManager.findOne.mockResolvedValue(existingOrder)
 
       const result = await service.update('O001', {
         items: [{ productId: 'P002', quantity: '5', unitPrice: '100' }],
       })
 
-      // 解冻旧商品
-      expect(mockFifoService.unfreeze).toHaveBeenCalledWith('P001', 10, 'O001')
       // 删除旧明细
       expect(mockItemRepo.delete).toHaveBeenCalledWith({ orderId: 'O001' })
-      // 检查新商品库存
-      expect(mockInventoryRepo.findOne).toHaveBeenCalledWith({
-        where: { productId: 'P002' },
-      })
-      // 冻结新商品
-      expect(mockFifoService.freeze).toHaveBeenCalledWith('P002', 5, 'O001')
       // 保存新明细
-      expect(mockItemRepo.save).toHaveBeenCalled()
+      expect(mockItemRepo.create).toHaveBeenCalled()
+      expect(mockManager.save).toHaveBeenCalled()
+      // 无预留模型：不做任何库存操作
+      expect(mockManager.createQueryBuilder).not.toHaveBeenCalled()
       expect(result.totalAmountUsd).toBe('500.00')
     })
 
     it('订单不存在应抛出 BadRequestException', async () => {
-      mockOrderRepo.findOne.mockResolvedValue(null)
+      mockManager.findOne.mockResolvedValue(null)
 
       await expect(service.update('O999', { customerName: '新客户' })).rejects.toThrow(BadRequestException)
     })
 
     it('订单已发货不应修改应抛出 BadRequestException', async () => {
-      mockOrderRepo.findOne.mockResolvedValue({ ...existingOrder, shipmentStatus: 2 })
+      mockManager.findOne.mockResolvedValue({ ...existingOrder, shipmentStatus: 2 })
 
       await expect(service.update('O001', { remark: '新备注' })).rejects.toThrow(BadRequestException)
-    })
-
-    it('新商品库存不足应抛出 BadRequestException', async () => {
-      mockOrderRepo.findOne.mockResolvedValue(existingOrder)
-      mockItemRepo.find.mockResolvedValue([
-        { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0', orderId: 'O001' },
-      ])
-      mockInventoryRepo.findOne.mockResolvedValue({ productId: 'P002', availableQuantity: '2' })
-
-      await expect(service.update('O001', {
-        items: [{ productId: 'P002', quantity: '5', unitPrice: '100' }],
-      })).rejects.toThrow(BadRequestException)
     })
   })
 
   // ============================================================
-  //  cancel
+  //  cancel（无预留模型：取消不触碰库存）
   // ============================================================
   describe('cancel', () => {
-    it('待发货订单取消成功并解冻全部库存', async () => {
-      mockOrderRepo.findOne.mockResolvedValue({
+    it('待发货订单取消成功（不解冻库存）', async () => {
+      mockManagerQB.getOne.mockResolvedValue({
         id: 'O001',
         status: 1,
         shipmentStatus: 1,
         remark: '普通订单',
         receivedAmountUsd: '0',
+        receivedAmountCny: '0',
       })
-      mockItemRepo.find.mockResolvedValue([
-        { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
-      ])
 
       const result = await service.cancel('O001')
 
-      expect(mockFifoService.unfreeze).toHaveBeenCalledWith('P001', 10, 'O001', mockManager)
       expect(result.order.status).toBe(3)
-      expect(result.order.remark).toContain('[已取消]')
       expect(result.needsRefund).toBe(false)
     })
 
-    it('部分发货订单取消成功并解冻剩余库存', async () => {
-      mockOrderRepo.findOne.mockResolvedValue({
-        id: 'O001',
-        status: 1,
-        shipmentStatus: 2,
-        remark: '部分发货',
-        receivedAmountUsd: '0',
-      })
-      mockItemRepo.find.mockResolvedValue([
-        { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '4' },
-      ])
-
-      await service.cancel('O001')
-
-      // 应解冻 10 - 4 = 6
-      expect(mockFifoService.unfreeze).toHaveBeenCalledWith('P001', 6, 'O001', mockManager)
-    })
-
     it('已完成订单无法取消应抛出 BadRequestException', async () => {
-      mockOrderRepo.findOne.mockResolvedValue({
+      mockManagerQB.getOne.mockResolvedValue({
         id: 'O001',
         status: 2,
         shipmentStatus: 3,
@@ -394,7 +385,7 @@ describe('SalesOrderService', () => {
     })
 
     it('全部发货订单无法取消应抛出 BadRequestException', async () => {
-      mockOrderRepo.findOne.mockResolvedValue({
+      mockManagerQB.getOne.mockResolvedValue({
         id: 'O001',
         status: 1,
         shipmentStatus: 3,
@@ -403,8 +394,18 @@ describe('SalesOrderService', () => {
       await expect(service.cancel('O001')).rejects.toThrow(BadRequestException)
     })
 
+    it('部分发货订单无法取消应抛出 BadRequestException', async () => {
+      mockManagerQB.getOne.mockResolvedValue({
+        id: 'O001',
+        status: 1,
+        shipmentStatus: 2,
+      })
+
+      await expect(service.cancel('O001')).rejects.toThrow(BadRequestException)
+    })
+
     it('已取消订单不可重复取消应抛出 BadRequestException', async () => {
-      mockOrderRepo.findOne.mockResolvedValue({
+      mockManagerQB.getOne.mockResolvedValue({
         id: 'O001',
         status: 3,
       })
@@ -412,22 +413,16 @@ describe('SalesOrderService', () => {
       await expect(service.cancel('O001')).rejects.toThrow(BadRequestException)
     })
 
-    it('有已收金额的订单取消后应标记需要退款', async () => {
-      mockOrderRepo.findOne.mockResolvedValue({
+    it('已有收款的订单无法取消应抛出 BadRequestException', async () => {
+      mockManagerQB.getOne.mockResolvedValue({
         id: 'O001',
         status: 1,
         shipmentStatus: 1,
-        remark: '已收款订单',
         receivedAmountUsd: '500',
+        receivedAmountCny: '3560',
       })
-      mockItemRepo.find.mockResolvedValue([
-        { id: 'I001', productId: 'P001', quantity: '10', shippedQuantity: '0' },
-      ])
 
-      const result = await service.cancel('O001')
-
-      expect(result.needsRefund).toBe(true)
-      expect(result.refundableAmount).toBe('500')
+      await expect(service.cancel('O001')).rejects.toThrow(BadRequestException)
     })
   })
 
@@ -566,19 +561,19 @@ describe('SalesOrderService', () => {
       )
     })
 
-    it('订单已完成不应重复计算', async () => {
+    it('已取消订单不应重新计算', async () => {
       mockOrderRepo.findOne.mockResolvedValue({
         id: 'O001',
-        status: 2,
-        shipmentStatus: 3,
-        paymentStatus: 3,
+        status: 3,
+        shipmentStatus: 1,
+        paymentStatus: 1,
         totalAmountUsd: '1000',
-        receivedAmountUsd: '1000',
+        receivedAmountUsd: '0',
       })
 
       await service.recalculateStatus('O001')
 
-      // 如果 status===2，方法会 return，不会查 items
+      // status===3（已取消）时方法提前 return，不会查 items 也不会保存
       expect(mockItemRepo.find).not.toHaveBeenCalled()
       expect(mockOrderRepo.save).not.toHaveBeenCalled()
     })

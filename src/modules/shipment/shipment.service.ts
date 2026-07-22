@@ -25,7 +25,7 @@ import type { CreateShipmentDto, QueryShipmentDto } from './dto/shipment.dto';
 
 /**
  * 发货服务 ⭐
- * 核心业务：8 步事务完成发货，含 FIFO 扣减冻结库存、成本计算、利润核算
+ * 核心业务：8 步事务完成发货，含 FIFO 扣减可用库存、成本计算、利润核算
  */
 @Injectable()
 export class ShipmentService {
@@ -59,7 +59,7 @@ export class ShipmentService {
 	 * 1. 校验订单状态
 	 * 2. 校验发货数量 ≤ 可发数量
 	 * 3. 创建发货单 + 明细
-	 * 4. FIFO 扣减冻结库存
+	 * 4. FIFO 扣减可用库存（不足则报错）
 	 * 5. 写入发货批次明细
 	 * 6. 汇总成本、计算毛利
 	 * 7. 更新订单已发数量 + 重算三维状态
@@ -250,15 +250,16 @@ export class ShipmentService {
 				});
 				const savedItem = await itemRepo.save(shipmentItem);
 
-				// 4. FIFO 扣减冻结库存（传入 manager 保证事务原子性）
-				const fifoResult = await this.fifoService.deductFrozen(
+				// 4. FIFO 扣减可用库存（传入 manager 保证事务原子性）
+				// 无预留模型：订单不冻结库存，发货时按 FIFO 从可用库存扣减，不足则报错
+				const fifoResult = await this.fifoService.consume(
 					orderItem.productId,
 					orderItem.productModelId,
 					shipQty,
 					savedShipment.id,
 					2, // 销售发货
-					2, // changeType: 出库
 					manager,
+					2, // changeType: 出库
 				);
 
 				// 5. 写入发货批次明细
@@ -365,12 +366,14 @@ export class ShipmentService {
 			if (remaining <= 0) continue;
 
 			// 查询预估 FIFO 批次（按 productModelId 过滤，null 也算独立型号）
+			// 无预留模型：展示可用库存批次（与发货 consume 的选取条件一致）
 			const batchQb = this.inventoryBatchRepo
 				.createQueryBuilder('b')
 				.where('b.productId = :productId', {
 					productId: item.productId,
 				})
-				.andWhere('b.frozenQuantity > 0');
+				.andWhere('b.status = :status', { status: 1 })
+				.andWhere('b.availableQuantity > 0');
 
 			if (item.productModelId) {
 				batchQb.andWhere('b.productModelId = :productModelId', {
@@ -389,8 +392,8 @@ export class ShipmentService {
 			const orderCurrency = order.currency || 'USD';
 			for (const batch of batches) {
 				if (need <= 0) break;
-				const frozen = parseFloat(batch.frozenQuantity);
-				const qty = Math.min(frozen, need);
+				const available = parseFloat(batch.availableQuantity);
+				const qty = Math.min(available, need);
 				// 根据订单币种选择对应的批次成本
 				const batchUnitCost =
 					orderCurrency === 'CNY'
