@@ -405,6 +405,7 @@ export class SalesReturnService {
         // 创建退款记录
         const paymentNo = await this.sequenceService.generate('TK');
         const refundDual = computeDualAmounts(refundTotal, currency, order.exchangeRate || this.rateService.getDefaultRate());
+        const paymentRemark = `客户退货${dto.returnType === 3 ? '（仅退款）' : dto.returnType === 1 ? '（退货退款）' : ''}`;
         const payment = manager.create(Payment, {
           id: snowflake.nextId(),
           paymentNo,
@@ -416,7 +417,7 @@ export class SalesReturnService {
           amountCny: refundDual.amountCny,
           currency: order.currency || 'USD',
           paymentMethod: dto.paymentMethod || null,
-          remark: '客户退货',
+          remark: paymentRemark,
         });
         const savedPayment = await manager.save(payment);
 
