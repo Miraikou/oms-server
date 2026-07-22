@@ -11,6 +11,7 @@ import { Inventory } from '@/modules/inventory/entities/inventory.entity'
 import { InventoryBatch } from '@/modules/inventory/entities/inventory-batch.entity'
 import { InventoryFlow } from '@/modules/inventory/entities/inventory-flow.entity'
 import { SequenceService } from '@/common/services/sequence.service'
+import { RateService } from '@/common/rate/rate.service'
 import { snowflake } from '@/common/utils/snowflake'
 
 // Mock snowflake
@@ -26,7 +27,9 @@ const mockReceiptRepo = {
 const mockReceiptItemRepo = {
   find: jest.fn(),
 }
-const mockOrderRepo = {}
+const mockOrderRepo = {
+  findOne: jest.fn(),
+}
 const mockOrderItemRepo = {}
 const mockInventoryRepo = {}
 const mockBatchRepo = {}
@@ -34,11 +37,20 @@ const mockFlowRepo = {}
 
 // ---- Mock QueryBuilder ----
 const mockQB = {
+  leftJoinAndSelect: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
   skip: jest.fn().mockReturnThis(),
   take: jest.fn().mockReturnThis(),
   getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+}
+
+// ---- Mock Inventory QueryBuilder (step 5 pessimistic lock lookup) ----
+const mockInventoryQB = {
+  setLock: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+  andWhere: jest.fn().mockReturnThis(),
+  getOne: jest.fn(),
 }
 
 // ---- Mock Manager for DataSource.transaction ----
@@ -47,6 +59,7 @@ const mockManager = {
   find: jest.fn(),
   create: jest.fn((_entity: any, data: any) => data),
   save: jest.fn((entity: any) => Promise.resolve(entity)),
+  createQueryBuilder: jest.fn(() => mockInventoryQB),
 }
 
 const mockDataSource = {
@@ -55,6 +68,10 @@ const mockDataSource = {
 
 const mockSequenceService = {
   generate: jest.fn().mockResolvedValue('RK202601010001'),
+}
+
+const mockRateService = {
+  getDefaultRate: jest.fn(() => '7.0000'),
 }
 
 describe('PurchaseReceiptService', () => {
@@ -75,6 +92,7 @@ describe('PurchaseReceiptService', () => {
         { provide: getRepositoryToken(InventoryFlow), useValue: mockFlowRepo },
         { provide: SequenceService, useValue: mockSequenceService },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: RateService, useValue: mockRateService },
       ],
     }).compile()
 
@@ -98,8 +116,8 @@ describe('PurchaseReceiptService', () => {
         purchaseOrderId: 'PO001',
         productId: 'P001',
         quantity: '10',
-        unitPrice: '50.00',
-        amount: '500.00',
+        unitPriceUsd: '7.00',
+        unitPriceCny: '50.00',
         receivedQuantity: '0',
         returnedQuantity: '0',
       },
@@ -111,8 +129,8 @@ describe('PurchaseReceiptService', () => {
         purchaseOrderId: 'PO001',
         productId: 'P001',
         quantity: '10',
-        unitPrice: '50.00',
-        amount: '500.00',
+        unitPriceUsd: '7.00',
+        unitPriceCny: '50.00',
         receivedQuantity: '5.0000',
         returnedQuantity: '0',
       },
@@ -127,10 +145,9 @@ describe('PurchaseReceiptService', () => {
 
     it('成功创建入库单 - 全新商品无库存记录', async () => {
       // Step 1: 查询采购单
-      mockManager.findOne
-        .mockResolvedValueOnce(mockOrder)
-        // Step 5: 查询库存（不存在）
-        .mockResolvedValueOnce(null)
+      mockManager.findOne.mockResolvedValueOnce(mockOrder)
+      // Step 5: 查询库存（不存在，走 createQueryBuilder.getOne）
+      mockInventoryQB.getOne.mockResolvedValueOnce(null)
       // Step 1: 查询采购明细 / Step 7: 重新计算状态
       mockManager.find
         .mockResolvedValueOnce(mockOrderItems)
@@ -152,13 +169,12 @@ describe('PurchaseReceiptService', () => {
         availableQuantity: '100',
         frozenQuantity: '0',
         stockQuantity: '100',
-        minimumStock: '0',
         version: 0,
       }
 
-      mockManager.findOne
-        .mockResolvedValueOnce(mockOrder)
-        .mockResolvedValueOnce(existingInventory)
+      mockManager.findOne.mockResolvedValueOnce(mockOrder)
+      // Step 5: 查询库存（已存在，走 createQueryBuilder.getOne）
+      mockInventoryQB.getOne.mockResolvedValueOnce(existingInventory)
       mockManager.find
         .mockResolvedValueOnce(mockOrderItems)
         .mockResolvedValueOnce(mockUpdatedOrderItems)
@@ -233,10 +249,19 @@ describe('PurchaseReceiptService', () => {
       ]
       mockReceiptRepo.findOne.mockResolvedValue(mockReceipt)
       mockReceiptItemRepo.find.mockResolvedValue(mockItems)
+      mockOrderRepo.findOne.mockResolvedValue({
+        currency: 'USD',
+        purchaseNo: 'CG202601010001',
+      })
 
       const result = await service.findOne('R001')
 
-      expect(result).toEqual({ ...mockReceipt, items: mockItems })
+      expect(result).toEqual({
+        ...mockReceipt,
+        items: mockItems,
+        currency: 'USD',
+        purchaseNo: 'CG202601010001',
+      })
     })
 
     it('不存在应抛出 BadRequestException', async () => {

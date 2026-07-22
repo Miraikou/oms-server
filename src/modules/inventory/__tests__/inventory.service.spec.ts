@@ -4,6 +4,7 @@ import { InventoryService } from '../inventory.service'
 import { Inventory } from '../entities/inventory.entity'
 import { InventoryBatch } from '../entities/inventory-batch.entity'
 import { InventoryFlow } from '../entities/inventory-flow.entity'
+import { RateService } from '@/common/rate/rate.service'
 
 // Mock snowflake
 jest.mock('@/common/utils/snowflake', () => ({
@@ -29,6 +30,10 @@ describe('InventoryService', () => {
     save: jest.fn((e: any) => Promise.resolve(e)),
   }
 
+  const mockRateService = {
+    getDefaultRate: jest.fn(() => '7.0000'),
+  }
+
   beforeEach(async () => {
     jest.clearAllMocks()
 
@@ -38,6 +43,7 @@ describe('InventoryService', () => {
         { provide: getRepositoryToken(Inventory), useValue: mockInventoryRepo },
         { provide: getRepositoryToken(InventoryBatch), useValue: mockBatchRepo },
         { provide: getRepositoryToken(InventoryFlow), useValue: mockFlowRepo },
+        { provide: RateService, useValue: mockRateService },
       ],
     }).compile()
 
@@ -79,7 +85,6 @@ describe('InventoryService', () => {
           frozenQuantity: '0',
           stockQuantity: '100.0000',
           inboundTime,
-          freezeStatus: 1,
           status: 1,
           createdBy: '3001',
         }),
@@ -125,7 +130,6 @@ describe('InventoryService', () => {
         availableQuantity: '100.0000',
         frozenQuantity: '0.0000',
         stockQuantity: '100.0000',
-        minimumStock: '0',
         version: 0,
       }
       mockInventoryRepo.findOne.mockResolvedValue(existingInv)
@@ -133,7 +137,10 @@ describe('InventoryService', () => {
       const result = await service.updateInventorySummary('p1', null, 20, 'user1')
 
       expect(mockInventoryRepo.findOne).toHaveBeenCalledWith({
-        where: { productId: 'p1' },
+        where: {
+          productId: 'p1',
+          productModelId: expect.objectContaining({ _type: 'isNull' }),
+        },
       })
       expect(mockInventoryRepo.create).not.toHaveBeenCalled()
       expect(existingInv.availableQuantity).toBe('120')
@@ -149,7 +156,10 @@ describe('InventoryService', () => {
       const result = await service.updateInventorySummary('p2', null, 50)
 
       expect(mockInventoryRepo.findOne).toHaveBeenCalledWith({
-        where: { productId: 'p2' },
+        where: {
+          productId: 'p2',
+          productModelId: expect.objectContaining({ _type: 'isNull' }),
+        },
       })
       expect(mockInventoryRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -158,7 +168,6 @@ describe('InventoryService', () => {
           availableQuantity: '50',
           stockQuantity: '50',
           frozenQuantity: '0',
-          minimumStock: '0',
           version: 0,
         }),
       )
@@ -172,7 +181,6 @@ describe('InventoryService', () => {
         availableQuantity: '100.0000',
         frozenQuantity: '0.0000',
         stockQuantity: '100.0000',
-        minimumStock: '0',
         version: 0,
       }
       mockInventoryRepo.findOne.mockResolvedValue(existingInv)
@@ -190,7 +198,6 @@ describe('InventoryService', () => {
         availableQuantity: '100.0000',
         frozenQuantity: '0.0000',
         stockQuantity: '100.0000',
-        minimumStock: '0',
         version: 0,
       }
       mockInventoryRepo.findOne.mockResolvedValue(existingInv)
