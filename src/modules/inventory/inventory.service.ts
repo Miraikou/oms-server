@@ -52,7 +52,7 @@ export class InventoryService {
       unitCostUsd: data.unitCostUsd,
       unitCostCny: data.unitCostCny,
       currency: data.currency || 'CNY',
-      exchangeRate: data.exchangeRate || this.rateService.getDefaultRate(),
+      exchangeRate: data.exchangeRate || (await this.rateService.getDefaultRate()),
       originalQuantity: data.quantity,
       availableQuantity: data.quantity,
       frozenQuantity: '0',

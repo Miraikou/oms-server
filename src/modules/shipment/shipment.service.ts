@@ -205,7 +205,7 @@ export class ShipmentService {
 				const shipQty = parseFloat(dtoItem.quantity);
 				const orderCurrency = order.currency || 'USD';
 				const orderRate =
-					order.exchangeRate || this.rateService.getDefaultRate();
+					order.exchangeRate || (await this.rateService.getDefaultRate());
 
 				// 根据订单币种选择正确的原始单价
 				const originalUnitPrice =

@@ -35,6 +35,12 @@ export class SystemConfigModule implements OnModuleInit {
         configValue: '0',
         valueType: 'NUMBER',
       },
+      {
+        configKey: 'DEFAULT_EXCHANGE_RATE',
+        configName: '默认汇率（USD→CNY）',
+        configValue: '6.8',
+        valueType: 'NUMBER',
+      },
     ];
     for (const item of defaults) {
       const existing = await this.service.getByKey(item.configKey);

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
-import { ConfigModule } from '@nestjs/config';
+import { SystemConfigModule } from '@/modules/system-config/system-config.module';
 import { RateService } from './rate.service';
 import { ExchangeRate } from '@/modules/rate/entities/exchange-rate.entity';
 
@@ -9,7 +9,7 @@ import { ExchangeRate } from '@/modules/rate/entities/exchange-rate.entity';
   imports: [
     TypeOrmModule.forFeature([ExchangeRate]),
     HttpModule,
-    ConfigModule,
+    SystemConfigModule,
   ],
   providers: [RateService],
   exports: [RateService],

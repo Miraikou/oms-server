@@ -505,7 +505,7 @@ export class SalesOrderService {
         const rate = parseFloat(order.bloggerCommissionRate || '0');
         const totalCny = parseFloat(order.totalAmountCny || '0');
         const bloggerCommissionCny = totalCny * rate / 100;
-        const exchangeRate = parseFloat(order.exchangeRate || String(this.rateService.getDefaultRate()));
+        const exchangeRate = parseFloat(order.exchangeRate || (await this.rateService.getDefaultRate()));
         const bloggerCommissionUsd = exchangeRate > 0 ? bloggerCommissionCny / exchangeRate : 0;
         (order as any).bloggerCommissionAmountCny = bloggerCommissionCny.toFixed(2);
         (order as any).bloggerCommissionAmountUsd = bloggerCommissionUsd.toFixed(2);
@@ -705,7 +705,7 @@ export class SalesOrderService {
       // 5. 退款：已收超出新总额的部分退还（按订单币种比较，避免汇率精度漂移）
       const currency = order.currency || 'USD';
       const exchangeRate = parseFloat(
-        order.exchangeRate || String(this.rateService.getDefaultRate()),
+        order.exchangeRate || (await this.rateService.getDefaultRate()),
       );
       const receivedOrder = parseFloat(
         currency === 'CNY' ? order.receivedAmountCny : order.receivedAmountUsd,
@@ -1068,7 +1068,7 @@ export class SalesOrderService {
     const order = await this.orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new BadRequestException('订单不存在');
 
-    const exchangeRate = parseFloat(order.exchangeRate || this.rateService.getDefaultRate());
+    const exchangeRate = parseFloat(order.exchangeRate || (await this.rateService.getDefaultRate()));
 
     // ── 产品成本（CNY）：收付实现制，仅统计已发货实际成本 ──
     // 已发货实际成本来自 FIFO（shipment_item.total_cost_cny）

@@ -197,7 +197,7 @@ export class PaymentService {
 
 			// 汇率口径与退货退款路径统一：直接退款也使用订单汇率换算，
 			// 保证"全额退款→利润归零"，避免退款日汇率与订单汇率差异造成虚增汇兑损益
-			const exchangeRate = order.exchangeRate || this.rateService.getDefaultRate();
+			const exchangeRate = order.exchangeRate || (await this.rateService.getDefaultRate());
 			const dualAmounts = computeDualAmounts(dto.amount, currency, exchangeRate);
 
 			// 4. 创建退款记录

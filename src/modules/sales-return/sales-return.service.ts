@@ -174,7 +174,7 @@ export class SalesReturnService {
       const returnCostVal = parseFloat(dto.returnCost || '0');
       const returnCostCurrency = returnCostVal > 0 ? (dto.returnCostCurrency || 'CNY') : null;
       const returnCostDual = returnCostVal > 0
-        ? computeDualAmounts(returnCostVal, returnCostCurrency!, order.exchangeRate || this.rateService.getDefaultRate())
+        ? computeDualAmounts(returnCostVal, returnCostCurrency!, order.exchangeRate || (await this.rateService.getDefaultRate()))
         : null;
       const salesReturn = manager.create(SalesReturn, {
         id: snowflake.nextId(),
@@ -188,7 +188,7 @@ export class SalesReturnService {
         returnCostUsd: returnCostDual ? returnCostDual.amountUsd : null,
         returnCostCny: returnCostDual ? returnCostDual.amountCny : null,
         returnCostCurrency,
-        exchangeRate: order.exchangeRate || this.rateService.getDefaultRate(),
+        exchangeRate: order.exchangeRate || (await this.rateService.getDefaultRate()),
       });
       const savedReturn = await manager.save(salesReturn);
 
@@ -305,7 +305,7 @@ export class SalesReturnService {
                   totalCostUsd: (toRestore * parseFloat(sb.unitCostUsd || '0')).toFixed(2),
                   totalCostCny: (toRestore * parseFloat(sb.unitCostCny || '0')).toFixed(2),
                   flowCurrency: sb.currency || 'CNY',
-                  exchangeRate: sb.exchangeRate || this.rateService.getDefaultRate(),
+                  exchangeRate: sb.exchangeRate || (await this.rateService.getDefaultRate()),
                   beforeAvailable: beforeAvailable.toFixed(4),
                   afterAvailable: (beforeAvailable + toRestore).toFixed(4),
                   beforeFrozen: beforeFrozen.toFixed(4),
@@ -410,7 +410,7 @@ export class SalesReturnService {
 
         // 创建退款记录
         const paymentNo = await this.sequenceService.generate('TK');
-        const refundDual = computeDualAmounts(refundTotal, currency, order.exchangeRate || this.rateService.getDefaultRate());
+        const refundDual = computeDualAmounts(refundTotal, currency, order.exchangeRate || (await this.rateService.getDefaultRate()));
         const paymentRemark = `客户退货${dto.returnType === 3 ? '（仅退款）' : dto.returnType === 1 ? '（退货退款）' : ''}`;
         const payment = manager.create(Payment, {
           id: snowflake.nextId(),
@@ -444,7 +444,7 @@ export class SalesReturnService {
       if (returnCostVal > 0) {
         const costCurrency = dto.returnCostCurrency || 'CNY';
         // 与退货单存储使用相同汇率（order.exchangeRate），保证一致性
-        const usdToCnyRate = order.exchangeRate || this.rateService.getDefaultRate();
+        const usdToCnyRate = order.exchangeRate || (await this.rateService.getDefaultRate());
         const costDual = computeDualAmounts(returnCostVal, costCurrency, usdToCnyRate);
 
         // 查找或创建"客户退货成本"成本类型

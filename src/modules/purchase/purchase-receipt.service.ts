@@ -111,7 +111,7 @@ export class PurchaseReceiptService {
           );
         }
 
-        const poRate = parseFloat(order.exchangeRate || this.rateService.getDefaultRate());
+        const poRate = parseFloat(order.exchangeRate || (await this.rateService.getDefaultRate()));
         const currency = order.currency || 'CNY';
         // Bug 2 修复：根据订单币种选择正确的单价
         const originalUnitPrice = currency === 'USD'
@@ -147,7 +147,7 @@ export class PurchaseReceiptService {
           unitCostUsd: ri.unitPriceUsd,
           unitCostCny: ri.unitPriceCny,
           currency: order.currency || 'CNY',
-          exchangeRate: order.exchangeRate || this.rateService.getDefaultRate(),
+          exchangeRate: order.exchangeRate || (await this.rateService.getDefaultRate()),
           originalQuantity: ri.quantity,
           availableQuantity: ri.quantity,
           frozenQuantity: '0',
@@ -215,7 +215,7 @@ export class PurchaseReceiptService {
             totalCostUsd: ri.amountUsd,
             totalCostCny: ri.amountCny,
             flowCurrency: order.currency || 'CNY',
-            exchangeRate: order.exchangeRate || this.rateService.getDefaultRate(),
+            exchangeRate: order.exchangeRate || (await this.rateService.getDefaultRate()),
             beforeAvailable,
             afterAvailable: savedInventory.availableQuantity,
             beforeFrozen: savedInventory.frozenQuantity,

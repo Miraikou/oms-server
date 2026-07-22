@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { ConfigService } from '@nestjs/config';
+import { SystemConfigService } from '@/modules/system-config/system-config.service';
 import { ExchangeRate } from '@/modules/rate/entities/exchange-rate.entity';
 import { snowflake } from '@/common/utils/snowflake';
 
@@ -20,15 +20,15 @@ export class RateService {
     @InjectRepository(ExchangeRate)
     private readonly rateRepo: Repository<ExchangeRate>,
     private readonly httpService: HttpService,
-    private readonly configService: ConfigService,
+    private readonly systemConfigService: SystemConfigService,
   ) {}
 
   /**
    * 获取默认汇率（USD→CNY）
-   * 从环境变量 DEFAULT_EXCHANGE_RATE 读取，未配置时返回 '7.0000'
+   * 从系统参数 DEFAULT_EXCHANGE_RATE 读取，未配置时返回 '6.8'
    */
-  getDefaultRate(): string {
-    return this.configService.get<string>('DEFAULT_EXCHANGE_RATE', '7.0000');
+  async getDefaultRate(): Promise<string> {
+    return (await this.systemConfigService.getByKey('DEFAULT_EXCHANGE_RATE')) || '6.8';
   }
 
   /**

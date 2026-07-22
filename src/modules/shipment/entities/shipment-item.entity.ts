@@ -123,8 +123,8 @@ export class ShipmentItem extends BaseEntity {
     type: 'decimal',
     precision: 18,
     scale: 4,
-    default: 7.0,
+    default: 6.8,
     comment: 'USD→CNY汇率',
   })
-  exchangeRate: string = '7.0000';
+  exchangeRate: string = '6.8';
 }
