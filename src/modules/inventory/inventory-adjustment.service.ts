@@ -181,7 +181,6 @@ export class InventoryAdjustmentService {
               frozenQuantity: '0',
               stockQuantity: item.changeQuantity,
               inboundTime: new Date(),
-              freezeStatus: 1,
               status: 1,
             });
             const savedBatch = await manager.save(InventoryBatch, batch);
@@ -236,10 +235,8 @@ export class InventoryAdjustmentService {
             batch.stockQuantity = (
               parseFloat(batch.stockQuantity) - absQty
             ).toFixed(4);
-            if (
-              parseFloat(batch.availableQuantity) <= 0 &&
-              parseFloat(batch.frozenQuantity) <= 0
-            ) {
+            // 无预留模型：frozen 恒为 0，仅需判断 available
+            if (parseFloat(batch.availableQuantity) <= 0) {
               batch.status = 2; // 耗尽
             }
             batch.version += 1;

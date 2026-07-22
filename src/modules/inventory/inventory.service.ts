@@ -58,7 +58,6 @@ export class InventoryService {
       frozenQuantity: '0',
       stockQuantity: data.quantity,
       inboundTime: data.inboundTime,
-      freezeStatus: 1,
       status: 1,
       createdBy: data.createdBy || null,
     });

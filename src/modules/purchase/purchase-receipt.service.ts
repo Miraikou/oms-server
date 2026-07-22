@@ -153,7 +153,6 @@ export class PurchaseReceiptService {
           frozenQuantity: '0',
           stockQuantity: ri.quantity,
           inboundTime: savedReceipt.receiptDate,
-          freezeStatus: 1,
           status: 1,
         });
         const savedBatch = await manager.save(batch);
