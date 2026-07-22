@@ -130,10 +130,18 @@ export class CommissionService {
 					}
 				} else {
 					// 原计提分录待结算：利润变化 或 NET 偏差（如 revoke 后重新完成）时原地更新
+					// NET 必须基于 Σtype1（含"退款后利润上升补提"分录），不能只用最早一条，
+					// 否则存在补提分录时 NET 被低估，重新完成后会多付提成
+					const totalAccrualCny = await this.getTotalAccrualForOrder(orderId, manager);
+					const totalAccrualUsd = await this.getTotalAccrualForOrderUsd(orderId, manager);
 					const previousClawbackCny = await this.getTotalClawbackForOrder(orderId, manager);
 					const previousClawbackUsd = await this.getTotalClawbackForOrderUsd(orderId, manager);
-					const currentNetCny = parseFloat(existing.commissionAmountCny) - previousClawbackCny;
-					const currentNetUsd = parseFloat(existing.commissionAmountUsd || '0') - previousClawbackUsd;
+					// 当前净提成 = Σtype1 - Σ|type2|
+					const currentNetCny = totalAccrualCny - previousClawbackCny;
+					const currentNetUsd = totalAccrualUsd - previousClawbackUsd;
+					// 本条之外的其他 type=1 分录（补提）之和，更新本条时需扣除，保证 NET 收敛到应有提成
+					const otherAccrualCny = totalAccrualCny - parseFloat(existing.commissionAmountCny);
+					const otherAccrualUsd = totalAccrualUsd - parseFloat(existing.commissionAmountUsd || '0');
 
 					const profitChanged =
 						existing.profitBaseCny !== baseCny.toFixed(2) ||
@@ -144,10 +152,10 @@ export class CommissionService {
 						Math.abs(parseFloat(newCommissionUsd) - currentNetUsd) >= 0.01;
 
 					if (profitChanged || netDeviation) {
-						// 加上已冲回金额，避免双重计算：
-						// type=1 存储 (应有提成 + 已冲回)，使得 净提成 = type=1 - type=2 = 应有提成
-						const adjustedCommissionCny = (parseFloat(newCommissionCny) + previousClawbackCny).toFixed(2);
-						const adjustedCommissionUsd = (parseFloat(newCommissionUsd) + previousClawbackUsd).toFixed(2);
+						// 更新后 NET 应收敛到应有提成：本条 = 应有提成 + 已冲回 - 其他type=1分录
+						// （单分录场景 otherAccrual=0，退化为 应有提成 + 已冲回，与原逻辑一致）
+						const adjustedCommissionCny = (parseFloat(newCommissionCny) + previousClawbackCny - otherAccrualCny).toFixed(2);
+						const adjustedCommissionUsd = (parseFloat(newCommissionUsd) + previousClawbackUsd - otherAccrualUsd).toFixed(2);
 
 						existing.profitBaseCny = baseCny.toFixed(2);
 						existing.profitBaseUsd = baseUsd.toFixed(2);
@@ -303,10 +311,14 @@ export class CommissionService {
 			manager,
 		);
 
-		// P2: 提成已被全额撤销（revoke 后 NET≤0）时不再重算，防止产生错误补提
+		// P2: 提成已被全额冲回（NET≤0）且当前无应有提成时不再重算；
+		// 若利润回升（newCommission>0）仍需走下方补提逻辑，不能在此拦截，
+		// 否则会误伤"全额冲回后利润回升"的合法补提
 		if (
 			previousClawbackCny >= originalCommissionCny - 0.01 &&
-			previousClawbackUsd >= originalCommissionUsd - 0.01
+			previousClawbackUsd >= originalCommissionUsd - 0.01 &&
+			parseFloat(newCommissionCny) <= 0.01 &&
+			parseFloat(newCommissionUsd) <= 0.01
 		) {
 			return null;
 		}
@@ -838,37 +850,6 @@ export class CommissionService {
 			 ORDER BY netCommission DESC`,
 			params,
 		);
-	}
-
-	/**
-	 * 按订单 ID 批量查询销售员提成汇总
-	 * @param orderIds 订单 ID 数组
-	 * @returns Map<orderId, { commissionUsd, commissionCny }>
-	 */
-	async getCommissionByOrderIds(
-		orderIds: string[],
-	): Promise<Map<string, { commissionUsd: string; commissionCny: string }>> {
-		const result = new Map<string, { commissionUsd: string; commissionCny: string }>();
-		if (orderIds.length === 0) return result;
-
-		const rows = await this.dataSource.query(
-			`SELECT sales_order_id AS orderId,
-			        COALESCE(SUM(commission_amount_usd), 0) AS commissionUsd,
-			        COALESCE(SUM(commission_amount_cny), 0) AS commissionCny
-			 FROM commission_ledger
-			 WHERE sales_order_id IN (?)
-			 GROUP BY sales_order_id`,
-			[orderIds],
-		);
-
-		for (const row of rows) {
-			result.set(row.orderId, {
-				commissionUsd: parseFloat(row.commissionUsd || '0').toFixed(2),
-				commissionCny: parseFloat(row.commissionCny || '0').toFixed(2),
-			});
-		}
-
-		return result;
 	}
 
 	// ==================== 私有方法 ====================
