@@ -392,6 +392,18 @@ const DEFAULT_MENUS = [
 					{ name: '编辑', permission: 'dict-manage:edit' },
 				],
 			},
+			{
+				menuName: '帮助文档管理',
+				menuType: 1,
+				path: '/system/help-docs',
+				sortNo: 7,
+				buttons: [
+					{ name: '查询', permission: 'help-doc:query' },
+					{ name: '新增', permission: 'help-doc:create' },
+					{ name: '编辑', permission: 'help-doc:edit' },
+					{ name: '删除', permission: 'help-doc:delete' },
+				],
+			},
 		],
 	},
 ];

@@ -35,6 +35,7 @@ import { PurchaseReturnModule } from './modules/purchase-return/purchase-return.
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { CommissionModule } from './modules/commission/commission.module';
 import { RateModule } from './modules/rate/rate.module';
+import { HelpDocModule } from './modules/help-doc/help-doc.module';
 import { AuditSubscriber } from './common/subscribers/audit.subscriber';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 
@@ -122,6 +123,9 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
     DashboardModule,
 
     RateModule,
+
+    // 帮助文档（用户手册）
+    HelpDocModule,
   ],
   controllers: [AppController],
 })
