@@ -82,13 +82,6 @@ export const RESTORE_STOCK: DictItem[] = [
   { code: 1, label: '是' },
 ];
 
-/** 库存冻结状态 */
-export const FREEZE_STATUS: DictItem[] = [
-  { code: 1, label: '正常' },
-  { code: 2, label: '部分冻结' },
-  { code: 3, label: '全部冻结' },
-];
-
 /** 通用是否枚举 */
 export const YES_NO: DictItem[] = [
   { code: 0, label: '否' },
@@ -110,7 +103,6 @@ export const FIXED_DICTIONARIES: Record<string, DictItem[]> = {
   INVENTORY_ADJUST_REASON,
   RETURN_TYPE,
   RESTORE_STOCK,
-  FREEZE_STATUS,
   YES_NO,
 };
 
