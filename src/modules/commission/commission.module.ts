@@ -7,6 +7,7 @@ import { SalesOrder } from '@/modules/sales-order/entities/sales-order.entity';
 import { SalesOrderItem } from '@/modules/sales-order/entities/sales-order-item.entity';
 import { SalesOrderCost } from '@/modules/sales-order/entities/sales-order-cost.entity';
 import { ShipmentItem } from '@/modules/shipment/entities/shipment-item.entity';
+import { SystemConfigModule } from '@/modules/system-config/system-config.module';
 import { CommissionService } from './commission.service';
 import { CommissionController } from './commission.controller';
 
@@ -25,6 +26,7 @@ import { CommissionController } from './commission.controller';
 			SalesOrderCost,
 			ShipmentItem,
 		]),
+		SystemConfigModule,
 	],
 	controllers: [CommissionController],
 	providers: [CommissionService],

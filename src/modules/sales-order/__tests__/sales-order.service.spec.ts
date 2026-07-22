@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { getRepositoryToken } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
-import { ConfigService } from '@nestjs/config'
+import { SystemConfigService } from '@/modules/system-config/system-config.service'
 import { BadRequestException } from '@nestjs/common'
 import { SalesOrderService } from '../sales-order.service'
 import { SalesOrder } from '../entities/sales-order.entity'
@@ -107,7 +107,7 @@ const mockCommissionService = {
   revokeOrderCommission: jest.fn(),
   recalculateOrderCommission: jest.fn(),
 }
-const mockConfigService = { get: jest.fn().mockReturnValue(40) }
+const mockSystemConfigService = { getByKey: jest.fn().mockResolvedValue('40') }
 
 describe('SalesOrderService', () => {
   let service: SalesOrderService
@@ -149,7 +149,7 @@ describe('SalesOrderService', () => {
         { provide: DataSource, useValue: mockDataSource },
         { provide: RateService, useValue: mockRateService },
         { provide: CommissionService, useValue: mockCommissionService },
-        { provide: ConfigService, useValue: mockConfigService },
+        { provide: SystemConfigService, useValue: mockSystemConfigService },
       ],
     }).compile()
 

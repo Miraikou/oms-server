@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
+import { SystemConfigService } from '@/modules/system-config/system-config.service';
 import { CommissionLedger } from './entities/commission-ledger.entity';
 import { CommissionSettlement } from './entities/commission-settlement.entity';
 import { Salesperson } from '@/modules/salesperson/entities/salesperson.entity';
@@ -40,7 +40,7 @@ export class CommissionService {
 		@InjectRepository(ShipmentItem)
 		private readonly shipmentItemRepo: Repository<ShipmentItem>,
 		private readonly dataSource: DataSource,
-		private readonly configService: ConfigService,
+		private readonly systemConfigService: SystemConfigService,
 	) {}
 
 	/**
@@ -186,7 +186,7 @@ export class CommissionService {
 		});
 		if (!salesperson || salesperson.status !== 1) return null;
 
-		const rate = parseFloat(salesperson.commissionRate || String(this.configService.get<number>('DEFAULT_COMMISSION_RATE', 40)));
+		const rate = parseFloat(salesperson.commissionRate || (await this.systemConfigService.getByKey('DEFAULT_COMMISSION_RATE')) || '40');
 		if (rate <= 0) return null;
 
 		// 利润为负时提成为 0

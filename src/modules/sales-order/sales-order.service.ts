@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager, In } from 'typeorm';
+import { SystemConfigService } from '@/modules/system-config/system-config.service';
 import { SalesOrder } from './entities/sales-order.entity';
 import { SalesOrderItem } from './entities/sales-order-item.entity';
 import { SequenceService } from '@/common/services/sequence.service';
@@ -51,7 +51,7 @@ export class SalesOrderService {
     private readonly dataSource: DataSource,
     private readonly rateService: RateService,
     private readonly commissionService: CommissionService,
-    private readonly configService: ConfigService,
+    private readonly systemConfigService: SystemConfigService,
   ) {}
 
   /**
@@ -460,7 +460,7 @@ export class SalesOrderService {
       const orderIds = list.map((o) => o.id);
 
       // 批量查询销售员的提成比例
-      const defaultRate = this.configService.get<number>('DEFAULT_COMMISSION_RATE', 40);
+      const defaultRate = (await this.systemConfigService.getByKey('DEFAULT_COMMISSION_RATE')) || '40';
       const spIds = [...new Set(list.map((o) => o.salespersonId).filter(Boolean))];
       const spCommissionRateMap = new Map<string, number>();
       if (spIds.length > 0) {
@@ -469,7 +469,7 @@ export class SalesOrderService {
           [spIds],
         );
         for (const row of spRows) {
-          spCommissionRateMap.set(row.id, parseFloat(row.commissionRate || String(defaultRate)));
+          spCommissionRateMap.set(row.id, parseFloat(row.commissionRate || defaultRate));
         }
       }
 
@@ -1116,7 +1116,7 @@ export class SalesOrderService {
     const f = (n: number) => n.toFixed(2);
 
     // ── 销售员提成 = 销售利润 × 提成比例 ──
-    const defaultRate = this.configService.get<number>('DEFAULT_COMMISSION_RATE', 40);
+    const defaultRate = (await this.systemConfigService.getByKey('DEFAULT_COMMISSION_RATE')) || '40';
     let spCommissionRate = 0;
     if (order.salespersonId) {
       const spRow = await this.dataSource.query(
@@ -1124,7 +1124,7 @@ export class SalesOrderService {
         [order.salespersonId],
       );
       if (spRow.length > 0) {
-        spCommissionRate = parseFloat(spRow[0].commissionRate || String(defaultRate));
+        spCommissionRate = parseFloat(spRow[0].commissionRate || defaultRate);
       }
     }
     const salespersonCommissionCny = Math.max(0, salesProfitCny) * spCommissionRate / 100;

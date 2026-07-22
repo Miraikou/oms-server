@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { getRepositoryToken } from '@nestjs/typeorm'
-import { ConfigService } from '@nestjs/config'
+import { SystemConfigService } from '@/modules/system-config/system-config.service'
 import { DataSource } from 'typeorm'
 import { CommissionService } from '../commission.service'
 import { CommissionLedger } from '../entities/commission-ledger.entity'
@@ -52,7 +52,7 @@ describe('CommissionService', () => {
         { provide: getRepositoryToken(SalesOrderCost), useValue: { createQueryBuilder: jest.fn() } },
         { provide: getRepositoryToken(ShipmentItem), useValue: { createQueryBuilder: jest.fn() } },
         { provide: DataSource, useValue: {} },
-        { provide: ConfigService, useValue: { get: jest.fn() } },
+        { provide: SystemConfigService, useValue: { getByKey: jest.fn().mockResolvedValue('40') } },
       ],
     }).compile()
 
