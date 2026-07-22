@@ -106,6 +106,8 @@ export class ProductModelService {
 		if (existsDeleted) {
 			existsDeleted.isDeleted = 0;
 			existsDeleted.remark = dto.remark || null;
+			existsDeleted.minimumStock =
+				dto.minimumStock == null ? null : String(dto.minimumStock);
 			return this.repo.save(existsDeleted);
 		}
 
@@ -114,6 +116,7 @@ export class ProductModelService {
 			productId,
 			modelName: dto.modelName,
 			remark: dto.remark || null,
+			minimumStock: dto.minimumStock == null ? null : String(dto.minimumStock),
 		});
 
 		try {
@@ -135,6 +138,9 @@ export class ProductModelService {
 		if (dto.modelName !== undefined) model.modelName = dto.modelName;
 		if (dto.status !== undefined) model.status = dto.status;
 		if (dto.remark !== undefined) model.remark = dto.remark === '' ? null : dto.remark;
+		if (dto.minimumStock !== undefined)
+			model.minimumStock =
+				dto.minimumStock === null ? null : String(dto.minimumStock);
 
 		try {
 			return await this.repo.save(model);

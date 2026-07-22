@@ -661,10 +661,11 @@ export class DashboardService {
     const spParams: unknown[] = salespersonId ? [salespersonId] : [];
     const spFilter = salespersonId ? 'AND salesperson_id = ?' : '';
 
-    // 库存预警采用混合阈值：优先用每条记录的 minimum_stock（>0 时），否则回退到全局 LOW_STOCK_WARNING
+    // 库存预警采用混合阈值：型号 minimum_stock 非 NULL 时优先使用（0=库存为0时预警，负数=不预警），
+    // 为 NULL 时回退到全局 LOW_STOCK_WARNING
     const lowStockRaw = await this.systemConfigService.getByKey('LOW_STOCK_WARNING');
     const lowStock = parseFloat(lowStockRaw || '0') || 0;
-    const effectiveThreshold = `CASE WHEN CAST(minimum_stock AS DECIMAL(18,4)) > 0 THEN CAST(minimum_stock AS DECIMAL(18,4)) ELSE ? END`;
+    const effectiveThreshold = `CASE WHEN pm.id IS NOT NULL AND pm.minimum_stock IS NOT NULL THEN CAST(pm.minimum_stock AS DECIMAL(18,4)) ELSE ? END`;
 
     const [pendingShipment, pendingPayment, pendingReceipt, inventoryWarnings] =
       (await Promise.all([
@@ -684,10 +685,14 @@ export class DashboardService {
         salespersonId
           ? Promise.resolve([{ count: '0' }])
           : this.dataSource.query(
-              `SELECT COUNT(*) AS count FROM inventory
-             WHERE CAST(available_quantity AS DECIMAL(18,4)) <= ${effectiveThreshold}
-               AND ${effectiveThreshold} > 0`,
-              [lowStock, lowStock],
+              `SELECT COUNT(*) AS count
+             FROM inventory inv
+             INNER JOIN product p ON p.id = inv.product_id
+             LEFT JOIN product_model pm ON pm.id = inv.product_model_id AND pm.is_deleted = 0
+             WHERE p.status = 1
+               AND (inv.product_model_id IS NULL OR (pm.id IS NOT NULL AND pm.status = 1))
+               AND CAST(inv.available_quantity AS DECIMAL(18,4)) <= ${effectiveThreshold}`,
+              [lowStock],
             ),
       ])) as [CountResult, CountResult, CountResult, CountResult];
 

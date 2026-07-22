@@ -94,7 +94,6 @@ export class InventoryService {
         availableQuantity: String(quantityDelta),
         frozenQuantity: '0',
         stockQuantity: String(quantityDelta),
-        minimumStock: '0',
         createdBy: createdBy || null,
         version: 0,
       });

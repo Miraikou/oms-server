@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsIn } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsIn, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 
@@ -12,6 +12,13 @@ export class CreateProductModelDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @ApiPropertyOptional({
+    description: '最低库存预警值（留空=使用全局阈值 LOW_STOCK_WARNING，0=库存为0时预警，负数=不预警）',
+  })
+  @IsNumber()
+  @IsOptional()
+  minimumStock?: number | null;
 }
 
 export class UpdateProductModelDto {
@@ -29,6 +36,13 @@ export class UpdateProductModelDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @ApiPropertyOptional({
+    description: '最低库存预警值（留空=使用全局阈值 LOW_STOCK_WARNING，0=库存为0时预警，负数=不预警）',
+  })
+  @IsNumber()
+  @IsOptional()
+  minimumStock?: number | null;
 }
 
 export class QueryProductModelDto extends PaginationParamsDto {

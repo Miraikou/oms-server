@@ -327,7 +327,6 @@ export class InventoryAdjustmentService {
         availableQuantity: String(delta),
         frozenQuantity: '0',
         stockQuantity: String(delta),
-        minimumStock: '0',
         version: 0,
       });
     } else {

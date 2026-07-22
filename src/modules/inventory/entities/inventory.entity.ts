@@ -63,16 +63,6 @@ export class Inventory {
   stockQuantity: string = '0';
 
   @Column({
-    name: 'minimum_stock',
-    type: 'decimal',
-    precision: 18,
-    scale: 4,
-    default: 0,
-    comment: '最低库存预警值',
-  })
-  minimumStock: string = '0';
-
-  @Column({
     name: 'created_by',
     type: 'bigint',
     nullable: true,

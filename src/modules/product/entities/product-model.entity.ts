@@ -25,6 +25,17 @@ export class ProductModel extends BaseEntity {
   @Column({ type: 'tinyint', default: 1, comment: '状态：1=启用，0=停用' })
   status: number = 1;
 
+  @Column({
+    name: 'minimum_stock',
+    type: 'decimal',
+    precision: 18,
+    scale: 4,
+    nullable: true,
+    default: null,
+    comment: '最低库存预警值（NULL=使用全局阈值 LOW_STOCK_WARNING，0=库存为0时预警，负数=不预警）',
+  })
+  minimumStock: string | null = null;
+
   @Column({ name: 'is_deleted', type: 'tinyint', default: 0, comment: '软删除：0=未删除，1=已删除' })
   isDeleted: number = 0;
 

@@ -112,6 +112,11 @@ export class InventoryController {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
 
+    // 全局库存预警阈值（型号未单独设置 minimum_stock 时回退使用）
+    const lowStockRaw =
+      await this.systemConfigService.getByKey('LOW_STOCK_WARNING');
+    const lowStock = parseFloat(lowStockRaw || '0') || 0;
+
     // 1. 查询去重的商品列表（分页）
     const productQb = this.inventoryRepo
       .createQueryBuilder('inv')
@@ -153,27 +158,41 @@ export class InventoryController {
     }
     const inventories = await invQb.getMany();
 
-    // 2.1 查询商品名称
+    // 2.1 查询商品名称与状态
     const products = await this.productRepo
       .createQueryBuilder('p')
-      .select(['p.id', 'p.productName'])
+      .select(['p.id', 'p.productName', 'p.status'])
       .where('p.id IN (:...productIds)', { productIds })
       .getMany();
     const productNameMap = new Map(products.map((p) => [p.id, p.productName]));
+    const productStatusMap = new Map(products.map((p) => [p.id, p.status]));
 
-    // 2.2 查询型号名称
+    // 2.2 查询型号信息（名称、预警阈值、状态）
     const modelIds = inventories
       .map((inv) => inv.productModelId)
       .filter((id): id is string => !!id);
-    let modelNameMap = new Map<string, string>();
+    let modelInfoMap = new Map<
+      string,
+      { modelName: string; minimumStock: string | null; status: number; isDeleted: number }
+    >();
     if (modelIds.length > 0) {
       const uniqueModelIds = [...new Set(modelIds)];
       const productModels = await this.productModelRepo
         .createQueryBuilder('pm')
-        .select(['pm.id', 'pm.modelName'])
+        .select(['pm.id', 'pm.modelName', 'pm.minimumStock', 'pm.status', 'pm.isDeleted'])
         .where('pm.id IN (:...modelIds)', { modelIds: uniqueModelIds })
         .getMany();
-      modelNameMap = new Map(productModels.map((m) => [m.id, m.modelName]));
+      modelInfoMap = new Map(
+        productModels.map((m) => [
+          m.id,
+          {
+            modelName: m.modelName,
+            minimumStock: m.minimumStock,
+            status: m.status,
+            isDeleted: m.isDeleted,
+          },
+        ]),
+      );
     }
 
     // 3. 从批次表实时汇总（按 productId + productModelId）
@@ -217,6 +236,8 @@ export class InventoryController {
       frozenQuantity: string;
       stockQuantity: string;
       updatedTime: string;
+      belowThreshold: boolean;
+      lowStockModelCount: number;
       children: Array<{
         productId: string;
         productName: string;
@@ -226,6 +247,7 @@ export class InventoryController {
         frozenQuantity: string;
         stockQuantity: string;
         updatedTime: string;
+        belowThreshold: boolean;
       }>;
     }>();
 
@@ -242,17 +264,32 @@ export class InventoryController {
         ? inv.updatedTime.toISOString()
         : inv.updatedTime;
 
+      // 计算该库存行是否低于预警阈值（停用商品、停用/已删除型号不参与预警）
+      const productStatus = productStatusMap.get(inv.productId);
+      let belowThreshold = false;
+      if (inv.productModelId) {
+        const model = modelInfoMap.get(inv.productModelId);
+        if (productStatus === 1 && model && model.status === 1 && model.isDeleted === 0) {
+          const threshold =
+            model.minimumStock != null ? parseFloat(model.minimumStock) : lowStock;
+          belowThreshold = parseFloat(availableQuantity) <= threshold;
+        }
+      } else if (productStatus === 1) {
+        belowThreshold = parseFloat(availableQuantity) <= lowStock;
+      }
+
       const child = {
         productId: inv.productId,
         productName: productNameMap.get(inv.productId) || inv.productId,
         productModelId: inv.productModelId || null,
         modelName: inv.productModelId
-          ? (modelNameMap.get(inv.productModelId) || inv.productModelId)
+          ? (modelInfoMap.get(inv.productModelId)?.modelName || inv.productModelId)
           : '',
         availableQuantity,
         frozenQuantity,
         stockQuantity,
         updatedTime,
+        belowThreshold,
       };
 
       if (!productMap.has(inv.productId)) {
@@ -263,6 +300,8 @@ export class InventoryController {
           frozenQuantity: '0',
           stockQuantity: '0',
           updatedTime,
+          belowThreshold: false,
+          lowStockModelCount: 0,
           children: [],
         });
       }
@@ -287,6 +326,19 @@ export class InventoryController {
       }
     }
 
+    // 5. 计算商品级预警汇总：
+    //    有型号的商品本身不标红，仅统计低于阈值的型号数量用于前端提示；
+    //    无型号的商品取其无型号库存行的判定结果
+    for (const product of productMap.values()) {
+      const hasModels = product.children.some((c) => c.productModelId !== null);
+      product.lowStockModelCount = product.children.filter(
+        (c) => c.productModelId !== null && c.belowThreshold,
+      ).length;
+      product.belowThreshold = hasModels
+        ? false
+        : product.children.some((c) => c.belowThreshold);
+    }
+
     // 按更新时间倒序排列
     const list = Array.from(productMap.values()).sort((a, b) =>
       b.updatedTime.localeCompare(a.updatedTime),
@@ -298,15 +350,25 @@ export class InventoryController {
   @Get('warnings')
   @ApiOperation({ summary: '库存预警（低库存商品）' })
   async getWarnings() {
-    // 混合阈值：优先用每条记录的 minimum_stock（>0 时），否则回退到全局 LOW_STOCK_WARNING
+    // 混合阈值：型号 minimum_stock 非 NULL 时优先使用（0=库存为0时预警，负数=不预警），
+    // 为 NULL 时回退到全局 LOW_STOCK_WARNING；停用商品、停用/已删除型号不参与预警
     const lowStockRaw =
       await this.systemConfigService.getByKey('LOW_STOCK_WARNING');
     const lowStock = parseFloat(lowStockRaw || '0') || 0;
-    const effective = `CASE WHEN CAST(inv.minimum_stock AS DECIMAL(18,4)) > 0 THEN CAST(inv.minimum_stock AS DECIMAL(18,4)) ELSE :lowStock END`;
+    const effective = `CASE WHEN pm.id IS NOT NULL AND pm.minimum_stock IS NOT NULL THEN CAST(pm.minimum_stock AS DECIMAL(18,4)) ELSE :lowStock END`;
     const items = await this.inventoryRepo
       .createQueryBuilder('inv')
-      .where(`CAST(inv.available_quantity AS DECIMAL(18,4)) <= ${effective}`)
-      .andWhere(`${effective} > 0`)
+      .innerJoin('product', 'p', 'p.id = inv.product_id')
+      .leftJoin(
+        'product_model',
+        'pm',
+        'pm.id = inv.product_model_id AND pm.is_deleted = 0',
+      )
+      .where('p.status = 1')
+      .andWhere(
+        '(inv.product_model_id IS NULL OR (pm.id IS NOT NULL AND pm.status = 1))',
+      )
+      .andWhere(`CAST(inv.available_quantity AS DECIMAL(18,4)) <= ${effective}`)
       .setParameter('lowStock', lowStock)
       .orderBy('inv.available_quantity', 'ASC')
       .getMany();

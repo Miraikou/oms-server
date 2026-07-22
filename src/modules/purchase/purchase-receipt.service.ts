@@ -185,7 +185,6 @@ export class PurchaseReceiptService {
             availableQuantity: ri.quantity,
             frozenQuantity: '0',
             stockQuantity: ri.quantity,
-            minimumStock: '0',
             version: 0,
           });
         } else {
