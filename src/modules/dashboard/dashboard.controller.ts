@@ -78,6 +78,7 @@ export class DashboardController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
     @Query('viewMode') viewMode?: string,
+    @Query('statusScope') statusScope?: string,
   ) {
     return this.service.getSalespersonRanking(
       startDate,
@@ -85,6 +86,7 @@ export class DashboardController {
       parseInt(limit || '10'),
       userId,
       viewMode,
+      statusScope,
     );
   }
 

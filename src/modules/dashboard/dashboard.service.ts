@@ -502,6 +502,7 @@ export class DashboardService {
   /**
    * 销售员排行榜
    * 销售员视角：只返回自己的数据
+   * @param statusScope 'completed'=仅已完成订单 | 'withInProgress'（默认）=进行中+已完成，均不含已取消
    */
   async getSalespersonRanking(
     startDate?: string,
@@ -509,10 +510,13 @@ export class DashboardService {
     limit = 10,
     userId?: string,
     viewMode?: string,
+    statusScope?: string,
   ) {
     const salespersonId = userId ? await this.resolveSalespersonId(userId, viewMode) : null;
     if (salespersonId === '__NONE__') return [];
     const safeLimit = Math.max(1, Math.min(limit || 10, 100));
+    // 严格等值映射为固定条件串，避免注入
+    const statusCond = statusScope === 'completed' ? 'so.status = 2' : 'so.status IN (1, 2)';
     if (salespersonId) {
       // 销售员只看自己
       return this.executeQuery(
@@ -521,7 +525,7 @@ export class DashboardService {
                 COALESCE(SUM(so.total_amount_cny), 0) AS totalSalesCny,
                 COUNT(so.id) AS orderCount
          FROM salesperson sp
-         LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status IN (1, 2) {dateFilter}
+         LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND ${statusCond} {dateFilter}
          WHERE sp.id = ?
          GROUP BY sp.id, sp.name`,
         'so.order_date',
@@ -536,7 +540,7 @@ export class DashboardService {
               COALESCE(SUM(so.total_amount_cny), 0) AS totalSalesCny,
               COUNT(so.id) AS orderCount
        FROM salesperson sp
-       LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND so.status IN (1, 2) {dateFilter}
+       LEFT JOIN sales_order so ON sp.id = so.salesperson_id AND ${statusCond} {dateFilter}
        GROUP BY sp.id, sp.name ORDER BY totalSalesCny DESC LIMIT ?`,
       'so.order_date',
       startDate,
