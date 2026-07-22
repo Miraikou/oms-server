@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, SelectQueryBuilder } from 'typeorm';
 import { Inventory } from './entities/inventory.entity';
 import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
@@ -129,6 +129,29 @@ export class InventoryController {
       productQb.andWhere('inv.productId = :productId', { productId: query.productId });
     }
 
+    // 低库存过滤：与驾驶舱"待处理事项-库存预警"口径完全一致
+    // （停用商品、停用/已删除型号不参与；型号阈值优先，未设置时回退全局阈值）
+    const applyLowStockFilter = (qb: SelectQueryBuilder<Inventory>) => {
+      qb.innerJoin('product', 'p', 'p.id = inv.productId')
+        .leftJoin(
+          'product_model',
+          'pm',
+          'pm.id = inv.productModelId AND pm.is_deleted = 0',
+        )
+        .andWhere('p.status = 1')
+        .andWhere(
+          '(inv.productModelId IS NULL OR (pm.id IS NOT NULL AND pm.status = 1))',
+        )
+        .andWhere(
+          `CAST(inv.availableQuantity AS DECIMAL(18,4)) <= CASE WHEN pm.id IS NOT NULL AND pm.minimum_stock IS NOT NULL THEN CAST(pm.minimum_stock AS DECIMAL(18,4)) ELSE :lowStockThreshold END`,
+          { lowStockThreshold: lowStock },
+        );
+    };
+
+    if (query.lowStock === 1) {
+      applyLowStockFilter(productQb);
+    }
+
     const productResult = await productQb
       .skip((page - 1) * pageSize)
       .take(pageSize)
@@ -145,6 +168,9 @@ export class InventoryController {
       .select('COUNT(DISTINCT inv.productId)', 'count');
     if (query.productId) {
       countQb.andWhere('inv.productId = :productId', { productId: query.productId });
+    }
+    if (query.lowStock === 1) {
+      applyLowStockFilter(countQb);
     }
     const countResult = await countQb.getRawOne<{ count: string }>();
     const total = parseInt(countResult?.count || '0', 10);

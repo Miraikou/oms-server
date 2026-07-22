@@ -117,6 +117,12 @@ export class QueryInventoryTreeDto extends PaginationParamsDto {
   @IsString()
   @IsOptional()
   productId?: string;
+
+  @ApiPropertyOptional({ description: '仅显示低库存商品（1=仅低库存）' })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  lowStock?: number;
 }
 
 /** 成本估算请求 DTO */
