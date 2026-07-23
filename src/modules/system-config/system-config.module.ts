@@ -41,6 +41,20 @@ export class SystemConfigModule implements OnModuleInit {
         configValue: '6.8',
         valueType: 'NUMBER',
       },
+      {
+        configKey: 'STOCK_ALERT_EMAIL_ENABLED',
+        configName: '库存预警邮件通知',
+        configValue: 'false',
+        valueType: 'BOOLEAN',
+        remark: '开启后库存首次降至预警阈值以下时发送邮件通知',
+      },
+      {
+        configKey: 'STOCK_ALERT_EMAILS',
+        configName: '库存预警收件邮箱',
+        configValue: '',
+        valueType: 'STRING',
+        remark: '多个邮箱用英文逗号分隔',
+      },
     ];
     for (const item of defaults) {
       const existing = await this.service.getByKey(item.configKey);

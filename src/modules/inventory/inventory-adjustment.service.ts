@@ -8,6 +8,10 @@ import { InventoryBatch } from './entities/inventory-batch.entity';
 import { InventoryFlow } from './entities/inventory-flow.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from './services/fifo.service';
+import {
+  StockAlertService,
+  type StockDecreaseItem,
+} from './services/stock-alert.service';
 import { RateService } from '@/common/rate/rate.service';
 import { snowflake } from '@/common/utils/snowflake';
 import { computeDualUnitPrice } from '@/common/utils/dual-currency';
@@ -40,6 +44,7 @@ export class InventoryAdjustmentService {
     private readonly sequenceService: SequenceService,
     private readonly fifoService: FifoService,
     private readonly rateService: RateService,
+    private readonly stockAlertService: StockAlertService,
   ) {}
 
   /** 创建库存调整 */
@@ -50,7 +55,8 @@ export class InventoryAdjustmentService {
       throw new BadRequestException('调整明细不能为空');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const decreasedItems: StockDecreaseItem[] = [];
+    const result = await this.dataSource.transaction(async (manager) => {
       const adjustmentNo = await this.sequenceService.generate('KC');
 
       const adjustment = manager.create(InventoryAdjustment, {
@@ -211,6 +217,11 @@ export class InventoryAdjustmentService {
         } else {
           // 减少库存
           const absQty = Math.abs(changeQty);
+          decreasedItems.push({
+            productId: item.productId,
+            productModelId: item.productModelId || null,
+            decreasedQty: absQty,
+          });
           if (item.batchId) {
             // 指定批次：只从该批次扣减
             const batch = await manager
@@ -268,6 +279,11 @@ export class InventoryAdjustmentService {
       this.logger.log(`库存调整完成: ${adjustmentNo}`);
       return saved;
     });
+
+    // 事务提交后：库存预警检测（fire-and-forget，不影响业务流程）
+    void this.stockAlertService.checkAndNotify(decreasedItems);
+
+    return result;
   }
 
   /** 查询列表 */

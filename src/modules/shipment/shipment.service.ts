@@ -13,6 +13,10 @@ import { SalesReturnItem } from '@/modules/sales-return/entities/sales-return-it
 import { SalesReturn } from '@/modules/sales-return/entities/sales-return.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
+import {
+	StockAlertService,
+	type StockDecreaseItem,
+} from '@/modules/inventory/services/stock-alert.service';
 import { SalesOrderService } from '@/modules/sales-order/sales-order.service';
 import { RateService } from '@/common/rate/rate.service';
 import { CommissionService } from '@/modules/commission/commission.service';
@@ -52,6 +56,7 @@ export class ShipmentService {
 		private readonly dataSource: DataSource,
 		private readonly rateService: RateService,
 		private readonly commissionService: CommissionService,
+		private readonly stockAlertService: StockAlertService,
 	) {}
 
 	/**
@@ -135,7 +140,7 @@ export class ShipmentService {
 		}
 
 		// 3-7. 所有写操作包裹在事务中
-		return this.dataSource.transaction(async (manager: EntityManager) => {
+		const result = await this.dataSource.transaction(async (manager: EntityManager) => {
 			const shipmentRepo = manager.getRepository(Shipment);
 			const itemRepo = manager.getRepository(ShipmentItem);
 			const batchRepo = manager.getRepository(ShipmentItemBatch);
@@ -323,6 +328,19 @@ export class ShipmentService {
 			this.logger.log(`发货完成: ${shipmentNo}, 订单: ${order.orderNo}`);
 			return savedShipment;
 		});
+
+		// 事务提交后：库存预警检测（fire-and-forget，不影响业务流程）
+		const decreasedItems: StockDecreaseItem[] = dto.items.map((item) => {
+			const orderItem = orderItemMap.get(item.orderItemId)!;
+			return {
+				productId: orderItem.productId,
+				productModelId: orderItem.productModelId || null,
+				decreasedQty: parseFloat(item.quantity),
+			};
+		});
+		void this.stockAlertService.checkAndNotify(decreasedItems);
+
+		return result;
 	}
 
 	/**

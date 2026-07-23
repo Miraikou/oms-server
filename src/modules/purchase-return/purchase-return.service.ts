@@ -11,6 +11,10 @@ import { PurchaseOrderService } from '@/modules/purchase/purchase-order.service'
 import { Inventory } from '@/modules/inventory/entities/inventory.entity';
 import { SequenceService } from '@/common/services/sequence.service';
 import { FifoService } from '@/modules/inventory/services/fifo.service';
+import {
+  StockAlertService,
+  type StockDecreaseItem,
+} from '@/modules/inventory/services/stock-alert.service';
 import { snowflake } from '@/common/utils/snowflake';
 import type {
   CreatePurchaseReturnDto,
@@ -38,6 +42,7 @@ export class PurchaseReturnService {
     private readonly fifoService: FifoService,
     private readonly purchaseOrderService: PurchaseOrderService,
     private readonly dataSource: DataSource,
+    private readonly stockAlertService: StockAlertService,
   ) {}
 
   /**
@@ -48,7 +53,8 @@ export class PurchaseReturnService {
       throw new BadRequestException('退货明细不能为空');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const decreasedItems: StockDecreaseItem[] = [];
+    const result = await this.dataSource.transaction(async (manager) => {
       // 1. 校验采购单已入库
       const order = await manager.findOne(PurchaseOrder, {
         where: { id: dto.purchaseOrderId },
@@ -137,6 +143,11 @@ export class PurchaseReturnService {
           4, // 采购退货
           manager,
         );
+        decreasedItems.push({
+          productId: orderItem!.productId,
+          productModelId: orderItem!.productModelId || null,
+          decreasedQty: parseFloat(dtoItem.quantity),
+        });
 
         // 5. 更新采购明细退货数量
         orderItem!.returnedQuantity = (
@@ -154,6 +165,11 @@ export class PurchaseReturnService {
       this.logger.log(`采购退货完成: ${returnNo}, 采购单: ${order.purchaseNo}`);
       return savedReturn;
     });
+
+    // 事务提交后：库存预警检测（fire-and-forget，不影响业务流程）
+    void this.stockAlertService.checkAndNotify(decreasedItems);
+
+    return result;
   }
 
   /**
