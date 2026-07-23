@@ -38,6 +38,7 @@ import { RateModule } from './modules/rate/rate.module';
 import { HelpDocModule } from './modules/help-doc/help-doc.module';
 import { AuditSubscriber } from './common/subscribers/audit.subscriber';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { MailModule } from './modules/mail/mail.module';
 
 @Module({
   imports: [
@@ -126,6 +127,8 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 
     // 帮助文档（用户手册）
     HelpDocModule,
+
+    MailModule,
   ],
   controllers: [AppController],
 })
