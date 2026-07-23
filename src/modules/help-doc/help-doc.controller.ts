@@ -51,6 +51,12 @@ export class HelpDocController {
     return this.service.matchByRoute(path);
   }
 
+  @Get('category')
+  @ApiOperation({ summary: '获取文档分类列表（去重，按排序号升序）' })
+  getCategories() {
+    return this.service.getCategory();
+  }
+
   @Get('published/:id')
   @ApiOperation({ summary: '获取单篇已发布文档（阅读端）' })
   findOnePublished(@Param('id') id: string) {
