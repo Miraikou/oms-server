@@ -16,8 +16,19 @@ export interface MenuTreeNode extends SysMenu {
 	children?: MenuTreeNode[];
 }
 
+type MenuSeedItem = {
+  readonly menuName: string;
+  readonly menuType: number;
+  readonly path?: string;
+  readonly icon?: string;
+  readonly sortNo: number;
+  readonly visible?: 0 | 1;
+  readonly buttons?: readonly { readonly name: string; readonly permission: string; }[];
+  readonly children?: readonly MenuSeedItem[];
+};
+
 /** 默认菜单树种子数据（目录 + 菜单 + 按钮） */
-const DEFAULT_MENUS = [
+const DEFAULT_MENUS: readonly MenuSeedItem[] = [
 	{
 		menuName: '驾驶舱',
 		menuType: 1,
@@ -393,7 +404,7 @@ const DEFAULT_MENUS = [
 				],
 			},
 			{
-				menuName: '帮助文档管理',
+				menuName: '帮助文档',
 				menuType: 1,
 				path: '/system/help-docs',
 				sortNo: 7,
@@ -404,9 +415,16 @@ const DEFAULT_MENUS = [
 					{ name: '删除', permission: 'help-doc:delete' },
 				],
 			},
+			{
+				menuName: '编辑帮助文档',
+				menuType: 1,
+				path: '/system/help-docs-edit',
+				visible: 0,
+				sortNo: 8,
+			},
 		],
 	},
-];
+] as const;
 
 /**
  * 菜单管理服务
@@ -683,22 +701,7 @@ export class MenuService {
 		const allMenus: SysMenu[] = [];
 
 		const createMenuRecursive = async (
-			items: Array<{
-				menuName: string;
-				menuType: number;
-				path?: string;
-				icon?: string;
-				sortNo: number;
-				buttons?: Array<{ name: string; permission: string }>;
-				children?: Array<{
-					menuName: string;
-					menuType: number;
-					path?: string;
-					icon?: string;
-					sortNo: number;
-					buttons?: Array<{ name: string; permission: string }>;
-				}>;
-			}>,
+			items: readonly MenuSeedItem[],
 			parentId: string | null = null,
 		) => {
 			for (const item of items) {
@@ -710,7 +713,7 @@ export class MenuService {
 					path: item.path || null,
 					icon: item.icon || null,
 					sortNo: item.sortNo,
-					visible: 1,
+					visible: item.visible ?? 1,
 					status: 1,
 				});
 				const saved = await this.menuRepo.save(menu);
