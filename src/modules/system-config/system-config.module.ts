@@ -59,8 +59,12 @@ export class SystemConfigModule implements OnModuleInit {
     for (const item of defaults) {
       const existing = await this.service.getByKey(item.configKey);
       if (existing === null) {
-        await this.service.create(item);
-        this.logger.log(`已创建默认系统参数: ${item.configKey}`);
+        try {
+          await this.service.create(item);
+          this.logger.log(`已创建默认系统参数: ${item.configKey}`);
+        } catch {
+          // 参数已存在（值为空字符串时 getByKey 返回 null），跳过
+        }
       }
     }
   }
