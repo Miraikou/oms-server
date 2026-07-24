@@ -670,6 +670,11 @@ export class CommissionService {
 				settleMonth: query.settleMonth,
 			});
 		}
+		if (query.orderNo) {
+			qb.andWhere('so.orderNo = :orderNo', {
+				orderNo: query.orderNo,
+			});
+		}
 		if (query.startDate) {
 			qb.andWhere('l.createdTime >= :startDate', {
 				startDate: query.startDate,

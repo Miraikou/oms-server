@@ -22,6 +22,10 @@ export class QueryLedgerDto {
 	salesOrderId?: string;
 
 	@IsOptional()
+	@IsString()
+	orderNo?: string;
+
+	@IsOptional()
 	@IsNumber()
 	@Type(() => Number)
 	type?: number; // 1=计提 2=冲回
